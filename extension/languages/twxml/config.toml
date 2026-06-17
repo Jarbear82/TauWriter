@@ -1,0 +1,14 @@
+name = "TWXML"
+type = "language"
+file_types = ["twxml"]
+scope_name = "text.twxml"
+grammar = "twxml"
+
+[line_comments]
+# Note: XML doesn't have line comments, using block syntax
+start = "<!--"
+end = "-->"
+
+[indentation]
+increase_pattern = "<(?![\\/!])[^>]+(?:?<![\\/])>$"
+decrease_pattern = "^\\s*<\\/"
