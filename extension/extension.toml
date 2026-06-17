@@ -9,7 +9,12 @@ repository = "https://github.com/your/tauwriter"
 languages = ["languages/hubgs", "languages/twxml"]
 
 [grammars.hubgs]
+repository = "https://github.com/your/tree-sitter-hubgs"
+rev = "main"
+
 [grammars.twxml]
+repository = "https://github.com/your/tree-sitter-twxml"
+rev = "main"
 
 [language_servers.tauwriter-lsp]
 name = "TauWriter Language Server"
