@@ -1,39 +1,63 @@
-; keywords
-(imports_section "IMPORTS" @keyword)
-(definitions_section "DEFINITIONS" @keyword)
-(instances_section "INSTANCES" @keyword)
-(fields_block "FIELDS" @keyword)
-(enums_block "ENUMS" @keyword)
-(structs_block "STRUCTS" @keyword)
-(hubs_block "HUBS" @keyword)
-(import_statement "FROM" @keyword)
-(hub_role "ALLOWS" @keyword)
+; Keywords
+"IMPORTS" @keyword
+"FROM" @keyword
+"DEFINITIONS" @keyword
+"FIELDS" @keyword
+"ENUMS" @keyword
+"STRUCTS" @keyword
+"HUBS" @keyword
+"ALLOWS" @keyword
+"INSTANCES" @keyword
+
+; Punctuations
+"[" @punctuation.bracket
+"]" @punctuation.bracket
+"{" @punctuation.bracket
+"}" @punctuation.bracket
+"(" @punctuation.bracket
+")" @punctuation.bracket
+":" @punctuation.delimiter
+"," @punctuation.delimiter
+"." @punctuation.delimiter
+
+; Operators
+"=" @operator
+"->" @operator
+"<-" @operator
+"<->" @operator
+"-" @operator
+"&&" @operator
+"||" @operator
+"==" @operator
+"!=" @operator
+"+" @operator
+"*" @operator
+"/" @operator
+"!" @operator
+".." @operator
 
 ; Literals
 (string) @string
 (template_string) @string
 (number) @number
-(boolean) @boolean
+(boolean) @constant.builtin.boolean
 
-; Identifiers
-(field_definition (identifier) @property)
+; Comments
+(comment) @comment @spell
+
+; Identifiers and Types
+(identifier) @variable
+(instance_block ref: (identifier) @variable.member)
+(instance_block type: (identifier) @type)
+(field_definition (identifier) @variable.field)
 (enum_definition (identifier) @type)
 (struct_definition (identifier) @type)
 (hub_definition (identifier) @type)
-(instance_block ref: (identifier) @variable)
-(instance_block type: (identifier) @type)
-(instance_assignment (identifier) @property)
-(hub_field (identifier) @property)
-(hub_role (identifier) @function)
+(generic_type (identifier) @type)
+(type (identifier) @type)
 
-; Decorators
-(decorator ["@computed" "@default"] @function.macro)
-(metadata_block "@metadata" @function.macro)
-
-; Operators & Punctuation
-(binary_expression (operator) @operator)
-(unary_expression (operator) @operator)
-["[" "]" "{" "}" "(" ")" ":" "=" "," "." "->"] @punctuation.bracket
-
-; Comments
-(comment) @comment
+; Decorators and Metadata
+"@computed" @function.builtin
+"@default" @function.builtin
+"@metadata" @keyword.directive
+(decorator ["@computed" "@default"] @function.builtin)
