@@ -10,11 +10,13 @@ languages = ["languages/hubgs", "languages/twxml"]
 
 [grammars.hubgs]
 repository = "https://github.com/Jarbear82/TauWriter"
-rev = "79575af2932735983d02b6e291dacb2a6b184d16"
+commit = "e63e8503ef34a215a42a5ca263aff56eacb8c9b9"
+path = "extension/languages/hubgs"
 
 [grammars.twxml]
 repository = "https://github.com/Jarbear82/TauWriter"
-rev = "79575af2932735983d02b6e291dacb2a6b184d16"
+commit = "e63e8503ef34a215a42a5ca263aff56eacb8c9b9"
+path = "extension/languages/twxml"
 
 [language_servers.tauwriter-lsp]
 name = "TauWriter Language Server"
