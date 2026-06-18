@@ -558,3 +558,100 @@ async fn test_formatting_jsonrpc() {
         "INSTANCES [ aragorn:Person { name = 'Aragorn' } ]\n"
     );
 }
+
+#[tokio::test]
+async fn test_declaration_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let open_files = Arc::new(DashMap::new());
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_decl.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "
+DEFINITIONS [ HUBS [ Person { name } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
+";
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_arc.lock().unwrap();
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "hubgs".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = GotoDefinitionParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 2,
+                character: 15,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let request = Request::build("textDocument/declaration")
+        .id(7)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result: GotoDefinitionResponse =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    if let GotoDefinitionResponse::Scalar(location) = result {
+        assert_eq!(location.range.start.line, 2);
+    } else {
+        panic!("Expected Scalar GotoDefinitionResponse");
+    }
+}
