@@ -2,6 +2,11 @@
 **/*.rs.bk
 Cargo.lock
 
+# Keep the compiled production-ready binaries for the extension distribution
+!/extension/bin/
+!/extension/bin/*
+/extension/bin/.DS_Store
+
 # Binary files
 *.so
 *.a

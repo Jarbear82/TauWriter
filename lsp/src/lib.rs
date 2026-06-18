@@ -126,6 +126,7 @@ impl Backend {
             self.client
                 .publish_diagnostics(uri, diagnostics, None)
                 .await;
+            tokio::task::yield_now().await;
         }
     }
 }

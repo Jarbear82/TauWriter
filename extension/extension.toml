@@ -21,4 +21,3 @@ path = "extension/languages/twxml"
 [language_servers.tauwriter-lsp]
 name = "TauWriter Language Server"
 languages = ["HubGS", "TWXML"]
-command = "tauwriter-lsp"

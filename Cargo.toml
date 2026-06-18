@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "lsp",
+    "extension",
 ]
 resolver = "2"

@@ -27,7 +27,8 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Folding Ranges** | ✅ | Support for collapsing blocks, sections, and definitions. |
 | **Workspace Symbol** | ✅ | Searching for Hubs and Types across the entire project. |
 | Testing Suite | ✅ | Comprehensive integration tests for LSP handlers and Salsa queries. |
-| CI/CD | ⏳ | Automated builds for multi-platform binary distribution. |
+| **CI/CD** | ✅ | Automated GitHub Actions for multi-platform binary distribution. |
+| **Zed Extension** | ✅ | Functional Rust bridge with "one-click install" and auto-downloading. |
 
 ## Current Focus
 - [x] Implement context-aware autocomplete and hover.
@@ -35,33 +36,33 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 - [x] Implement Semantic Tokens and Scoped Resolution (IMPORTS).
 - [x] Implement folding ranges for Hub definitions and instances.
 - [x] Add workspace symbol search support.
-- [ ] Finalize CI/CD pipeline for release.
+- [x] Finalize CI/CD pipeline and automated extension distribution.
 
 ## JSON-RPC Testing Progress
 
 | LSP Operation | Implementation Status | JSON-RPC Test |
 |:---|:---:|:---:|
 | `initialize` | ✅ | ✅ |
-| `initialized` | ✅ | ⏳ |
-| `shutdown` | ✅ | ⏳ |
+| `initialized` | ✅ | ✅ |
+| `shutdown` | ✅ | ✅ |
 | `textDocument/didOpen` | ✅ | ✅ |
-| `textDocument/didChange` | ✅ | ⏳ |
+| `textDocument/didChange` | ✅ | ✅ |
 | `textDocument/didClose` | ✅ | ✅ |
-| `textDocument/didSave` | ✅ | ⏳ |
-| `textDocument/declaration` | ⏳ | ⏳ |
-| `textDocument/definition` | ✅ | ⏳ |
+| `textDocument/didSave` | ✅ | ✅ |
+| `textDocument/declaration` | ✅ | ✅ |
+| `textDocument/definition` | ✅ | ✅ |
 | `textDocument/typeDefinition` | ✅ | ✅ |
 | `textDocument/implementation` | ✅ | ✅ |
-| `textDocument/references` | ✅ | ⏳ |
-| `textDocument/hover` | ✅ | ⏳ |
-| `textDocument/completion` | ✅ | ⏳ |
-| `textDocument/rename` | ✅ | ⏳ |
+| `textDocument/references` | ✅ | ✅ |
+| `textDocument/hover` | ✅ | ✅ |
+| `textDocument/completion` | ✅ | ✅ |
+| `textDocument/rename` | ✅ | ✅ |
 | `textDocument/formatting` | ✅ | ✅ |
 | `textDocument/documentHighlight` | ✅ | ✅ |
 | `textDocument/documentSymbol` | ✅ | ✅ |
-| `textDocument/foldingRange` | ✅ | ⏳ |
-| `textDocument/semanticTokens/full` | ✅ | ⏳ |
-| `workspace/symbol` | ✅ | ⏳ |
-| `textDocument/publishDiagnostics` | ✅ | ⏳ |
+| `textDocument/foldingRange` | ✅ | ✅ |
+| `textDocument/semanticTokens/full` | ✅ | ✅ |
+| `workspace/symbol` | ✅ | ✅ |
+| `textDocument/publishDiagnostics` | ✅ | ✅ |
 
 *Note: Many other optional LSP features from the specification are currently not implemented.*
