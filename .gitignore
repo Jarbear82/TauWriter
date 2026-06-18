@@ -7,6 +7,15 @@ Cargo.lock
 **/grammars/hubgs/
 **/grammars/twxml/
 
+# Binary files
+*.so
+*.a
+*.o
+*.out
+*.exe
+**/target/
+tauwriter-lsp
+
 # OS files
 .DS_Store
 Thumbs.db
