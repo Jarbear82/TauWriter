@@ -1,6 +1,6 @@
 id = "tauwriter"
 name = "TauWriter"
-version = "0.1.0"
+version = "0.1.1"
 schema_version = 1
 authors = ["Jarbear82", "Gemini CLI"]
 description = "IDE-style, graph-augmented word processor for novelists and worldbuilders."
@@ -10,12 +10,12 @@ languages = ["languages/hubgs", "languages/twxml"]
 
 [grammars.hubgs]
 repository = "https://github.com/Jarbear82/TauWriter"
-rev = "main"
+rev = "56c7c486cd0759074fd6f23b386a1c4d629cec95"
 path = "extension/languages/hubgs"
 
 [grammars.twxml]
 repository = "https://github.com/Jarbear82/TauWriter"
-rev = "main"
+rev = "56c7c486cd0759074fd6f23b386a1c4d629cec95"
 path = "extension/languages/twxml"
 
 [language_servers.tauwriter-lsp]
