@@ -1,4 +1,8 @@
 DEFINITIONS [
+    FIELDS [
+        name: String,
+        description: String,
+    ],
     HUBS [
         Character {
             name,

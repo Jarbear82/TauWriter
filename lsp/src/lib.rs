@@ -40,7 +40,7 @@ pub struct Backend {
     pub client: Client,
     pub db: Arc<Mutex<RootDatabase>>,
     pub workspace_input: Arc<Mutex<db::Workspace>>,
-    pub open_files: DashMap<Url, String>,
+    pub open_files: Arc<DashMap<Url, String>>,
 }
 
 impl Backend {
@@ -152,6 +152,9 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::INCREMENTAL,
                 )),
                 definition_provider: Some(OneOf::Left(true)),
+                declaration_provider: Some(DeclarationProviderCapability::Simple(true)),
+                type_definition_provider: Some(TypeDefinitionProviderCapability::Simple(true)),
+                implementation_provider: Some(ImplementationProviderCapability::Simple(true)),
                 references_provider: Some(OneOf::Left(true)),
                 rename_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
@@ -164,7 +167,10 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                document_highlight_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensRegistrationOptions(
@@ -229,32 +235,126 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
 
         if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
-            let (db, ws) = {
-                let db = self.db.lock().unwrap();
-                let ws = self.workspace_input.lock().unwrap();
-                (db.clone(), *ws)
-            };
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
 
             // 1. Try resolve as Hub Instance
-            if let Some(instance) = db::resolve_reference(&db, ws, symbol.clone()) {
-                let target_uri = Url::from_file_path(instance.file(&db).path(&db)).unwrap();
+            if let Some(instance) = db::resolve_reference(db, ws, symbol.clone()) {
+                let target_uri = Url::from_file_path(instance.file(db).path(db)).unwrap();
                 return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                     uri: target_uri,
-                    range: instance.range(&db).into(),
+                    range: instance.range(db).into(),
                 })));
             }
 
             // 2. Try resolve as Hub Type (scoped)
             if let Ok(path) = uri.to_file_path() {
                 let path_str = path.to_string_lossy().to_string();
-                let file = ws.files(&db).into_iter().find(|f| f.path(&db) == path_str);
+                let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
                 if let Some(file) = file {
-                    if let Some(hub_type) = db::resolve_type(&db, ws, file, symbol) {
-                        let target_uri = Url::from_file_path(hub_type.file(&db).path(&db)).unwrap();
+                    if let Some(hub_type) = db::resolve_type(db, ws, file, symbol) {
+                        let target_uri = Url::from_file_path(hub_type.file(db).path(db)).unwrap();
                         return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                             uri: target_uri,
-                            range: hub_type.range(&db).into(),
+                            range: hub_type.range(db).into(),
                         })));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn goto_type_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
+
+            // 1. Try resolve as Hub Instance -> return its Type
+            if let Some(instance) = db::resolve_reference(db, ws, symbol.clone()) {
+                let type_name = instance.type_name(db);
+                if let Some(hub_type) = db::resolve_type(db, ws, instance.file(db), type_name) {
+                    let target_uri = Url::from_file_path(hub_type.file(db).path(db)).unwrap();
+                    return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                        uri: target_uri,
+                        range: hub_type.range(db).into(),
+                    })));
+                }
+            }
+
+            // 2. Try resolve as Hub Type -> return itself
+            if let Ok(path) = uri.to_file_path() {
+                let path_str: String = path.to_string_lossy().to_string();
+                let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
+                if let Some(file) = file {
+                    if let Some(hub_type) = db::resolve_type(db, ws, file, symbol) {
+                        let target_uri = Url::from_file_path(hub_type.file(db).path(db)).unwrap();
+                        return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                            uri: target_uri,
+                            range: hub_type.range(db).into(),
+                        })));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn goto_declaration(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        self.goto_definition(params).await
+    }
+
+    async fn goto_implementation(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
+
+            // 1. Try resolve as Hub Type -> return all its Instances
+            if let Ok(path) = uri.to_file_path() {
+                let path_str: String = path.to_string_lossy().to_string();
+                let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
+                if let Some(file) = file {
+                    if let Some(hub_type) = db::resolve_type(db, ws, file, symbol.clone()) {
+                        let type_name = hub_type.name(db);
+                        let instances = db::all_hub_instances(db, ws);
+                        let locations: Vec<Location> = instances
+                            .into_iter()
+                            .filter(|i| i.type_name(db) == type_name)
+                            .map(|i| {
+                                let i_path = i.file(db).path(db);
+                                Location {
+                                    uri: Url::from_file_path(i_path).unwrap(),
+                                    range: i.range(db).into(),
+                                }
+                            })
+                            .collect();
+
+                        if !locations.is_empty() {
+                            return Ok(Some(GotoDefinitionResponse::Array(locations)));
+                        }
                     }
                 }
             }
@@ -268,20 +368,19 @@ impl LanguageServer for Backend {
         let position = params.text_document_position.position;
 
         if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
-            let (db, ws) = {
-                let db = self.db.lock().unwrap();
-                let ws = self.workspace_input.lock().unwrap();
-                (db.clone(), *ws)
-            };
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
 
-            let refs = db::find_all_references(&db, ws, symbol);
+            let refs = db::find_all_references(db, ws, symbol);
             let locations = refs
                 .into_iter()
                 .map(|r| {
-                    let path = r.file(&db).path(&db);
+                    let path = r.file(db).path(db);
                     Location {
                         uri: Url::from_file_path(path).unwrap(),
-                        range: r.range(&db).into(),
+                        range: r.range(db).into(),
                     }
                 })
                 .collect();
@@ -299,16 +398,15 @@ impl LanguageServer for Backend {
         if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
             let mut changes = std::collections::HashMap::new();
 
-            let (db, ws) = {
-                let db = self.db.lock().unwrap();
-                let ws = self.workspace_input.lock().unwrap();
-                (db.clone(), *ws)
-            };
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
 
-            if let Some(instance) = db::resolve_reference(&db, ws, symbol.clone()) {
-                let def_uri = Url::from_file_path(instance.file(&db).path(&db)).unwrap();
+            if let Some(instance) = db::resolve_reference(db, ws, symbol.clone()) {
+                let def_uri = Url::from_file_path(instance.file(db).path(db)).unwrap();
                 let def_edit = TextEdit {
-                    range: instance.range(&db).into(),
+                    range: instance.range(db).into(),
                     new_text: new_name.clone(),
                 };
                 changes
@@ -317,11 +415,11 @@ impl LanguageServer for Backend {
                     .push(def_edit);
             }
 
-            let refs = db::find_all_references(&db, ws, symbol);
+            let refs = db::find_all_references(db, ws, symbol);
             for r in refs {
-                let ref_uri = Url::from_file_path(r.file(&db).path(&db)).unwrap();
+                let ref_uri = Url::from_file_path(r.file(db).path(db)).unwrap();
                 let ref_edit = TextEdit {
-                    range: r.range(&db).into(),
+                    range: r.range(db).into(),
                     new_text: new_name.clone(),
                 };
                 changes
@@ -343,24 +441,22 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
-        let (db, ws) = {
-            let db = self.db.lock().unwrap();
-            let ws = self.workspace_input.lock().unwrap();
-            (db.clone(), *ws)
-        };
+        let db_lock = self.db.lock().unwrap();
+        let ws_lock = self.workspace_input.lock().unwrap();
+        let db = &*db_lock;
+        let ws = *ws_lock;
 
         if let Ok(path) = uri.to_file_path() {
             let path_str = path.to_string_lossy().to_string();
-            let file = ws.files(&db).into_iter().find(|f| f.path(&db) == path_str);
+            let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
 
             if let Some(file) = file {
                 if path_str.ends_with(".hubgs") {
-                    if let Some(type_name) =
-                        db::get_hub_type_at_position(&db, file, position.into())
+                    if let Some(type_name) = db::get_hub_type_at_position(db, file, position.into())
                     {
-                        if let Some(hub_type) = db::resolve_type(&db, ws, file, type_name) {
+                        if let Some(hub_type) = db::resolve_type(db, ws, file, type_name) {
                             let mut items = Vec::new();
-                            for field in hub_type.fields(&db) {
+                            for field in hub_type.fields(db) {
                                 items.push(CompletionItem {
                                     label: field.name.clone(),
                                     kind: Some(CompletionItemKind::FIELD),
@@ -368,7 +464,7 @@ impl LanguageServer for Backend {
                                     ..Default::default()
                                 });
                             }
-                            for role in hub_type.roles(&db) {
+                            for role in hub_type.roles(db) {
                                 items.push(CompletionItem {
                                     label: role.name.clone(),
                                     kind: Some(CompletionItemKind::INTERFACE),
@@ -383,11 +479,11 @@ impl LanguageServer for Backend {
             }
         }
 
-        let instances = db::all_hub_instances(&db, ws);
+        let instances = db::all_hub_instances(db, ws);
         let items = instances
             .into_iter()
             .map(|i| CompletionItem {
-                label: i.name(&db),
+                label: i.name(db),
                 kind: Some(CompletionItemKind::REFERENCE),
                 detail: Some("Hub Instance".to_string()),
                 ..Default::default()
@@ -402,45 +498,44 @@ impl LanguageServer for Backend {
         let position = params.text_document_position_params.position;
 
         if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
-            let (db, ws) = {
-                let db = self.db.lock().unwrap();
-                let ws = self.workspace_input.lock().unwrap();
-                (db.clone(), *ws)
-            };
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
 
             // 1. Try resolve as Hub Instance
-            if let Some(instance) = db::resolve_reference(&db, ws, symbol.clone()) {
-                let mut hover_text = format!("**Hub: {}**", instance.name(&db));
-                if let Some(desc) = instance.description(&db) {
+            if let Some(instance) = db::resolve_reference(db, ws, symbol.clone()) {
+                let mut hover_text = format!("**Hub: {}**", instance.name(db));
+                if let Some(desc) = instance.description(db) {
                     hover_text.push_str("\n\n---\n\n");
                     hover_text.push_str(&desc);
                 }
 
                 return Ok(Some(Hover {
                     contents: HoverContents::Scalar(MarkedString::String(hover_text)),
-                    range: Some(instance.range(&db).into()),
+                    range: Some(instance.range(db).into()),
                 }));
             }
 
             // 2. Try resolve as Hub Type (scoped)
             if let Ok(path) = uri.to_file_path() {
                 let path_str = path.to_string_lossy().to_string();
-                let file = ws.files(&db).into_iter().find(|f| f.path(&db) == path_str);
+                let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
                 if let Some(file) = file {
-                    if let Some(hub_type) = db::resolve_type(&db, ws, file, symbol) {
-                        let mut hover_text = format!("**Type: {}**", hub_type.name(&db));
+                    if let Some(hub_type) = db::resolve_type(db, ws, file, symbol) {
+                        let mut hover_text = format!("**Type: {}**", hub_type.name(db));
                         hover_text.push_str("\n\n---\n\n");
 
-                        if !hub_type.fields(&db).is_empty() {
+                        if !hub_type.fields(db).is_empty() {
                             hover_text.push_str("**Fields:**\n");
-                            for f in hub_type.fields(&db) {
+                            for f in hub_type.fields(db) {
                                 hover_text.push_str(&format!("- {}\n", f.name));
                             }
                         }
 
-                        if !hub_type.roles(&db).is_empty() {
+                        if !hub_type.roles(db).is_empty() {
                             hover_text.push_str("\n**Roles:**\n");
-                            for r in hub_type.roles(&db) {
+                            for r in hub_type.roles(db) {
                                 hover_text.push_str(&format!(
                                     "- {} {} ({}) ALLOWS [{}]\n",
                                     r.name,
@@ -453,7 +548,7 @@ impl LanguageServer for Backend {
 
                         return Ok(Some(Hover {
                             contents: HoverContents::Scalar(MarkedString::String(hover_text)),
-                            range: Some(hub_type.range(&db).into()),
+                            range: Some(hub_type.range(db).into()),
                         }));
                     }
                 }
@@ -469,18 +564,17 @@ impl LanguageServer for Backend {
     ) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri;
 
-        let (db, ws) = {
-            let db = self.db.lock().unwrap();
-            let ws = self.workspace_input.lock().unwrap();
-            (db.clone(), *ws)
-        };
+        let db_lock = self.db.lock().unwrap();
+        let ws_lock = self.workspace_input.lock().unwrap();
+        let db = &*db_lock;
+        let ws = *ws_lock;
 
         if let Ok(path) = uri.to_file_path() {
             let path_str = path.to_string_lossy().to_string();
-            let file = ws.files(&db).into_iter().find(|f| f.path(&db) == path_str);
+            let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
 
             if let Some(file) = file {
-                let tokens = db::get_semantic_tokens(&db, file);
+                let tokens = db::get_semantic_tokens(db, file);
                 let mut last_line = 0;
                 let mut last_char = 0;
 
@@ -520,18 +614,17 @@ impl LanguageServer for Backend {
     async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
         let uri = params.text_document.uri;
 
-        let (db, ws) = {
-            let db = self.db.lock().unwrap();
-            let ws = self.workspace_input.lock().unwrap();
-            (db.clone(), *ws)
-        };
+        let db_lock = self.db.lock().unwrap();
+        let ws_lock = self.workspace_input.lock().unwrap();
+        let db = &*db_lock;
+        let ws = *ws_lock;
 
         if let Ok(path) = uri.to_file_path() {
             let path_str = path.to_string_lossy().to_string();
-            let file = ws.files(&db).into_iter().find(|f| f.path(&db) == path_str);
+            let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
 
             if let Some(file) = file {
-                let ranges = db::get_folding_ranges(&db, file);
+                let ranges = db::get_folding_ranges(db, file);
                 let folding_ranges = ranges
                     .into_iter()
                     .map(|r| FoldingRange {
@@ -551,25 +644,116 @@ impl LanguageServer for Backend {
         Ok(None)
     }
 
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        if let Some(symbol) = self.get_symbol_at_position(&uri, position) {
+            let db_lock = self.db.lock().unwrap();
+            let ws_lock = self.workspace_input.lock().unwrap();
+            let db = &*db_lock;
+            let ws = *ws_lock;
+
+            let mut highlights = Vec::new();
+
+            // 1. If it's a definition in this file, highlight it
+            if let Ok(path) = uri.to_file_path() {
+                let path_str = path.to_string_lossy().to_string();
+                if path_str.ends_with(".hubgs") {
+                    let result = db::parse_hubgs(
+                        db,
+                        ws.files(db)
+                            .into_iter()
+                            .find(|f| f.path(db) == path_str)
+                            .unwrap(),
+                    );
+                    if let Some(inst) = result.instances(db).iter().find(|i| i.name(db) == symbol) {
+                        highlights.push(DocumentHighlight {
+                            range: inst.range(db).into(),
+                            kind: Some(DocumentHighlightKind::WRITE),
+                        });
+                    }
+                    if let Some(t) = result.types(db).iter().find(|t| t.name(db) == symbol) {
+                        highlights.push(DocumentHighlight {
+                            range: t.range(db).into(),
+                            kind: Some(DocumentHighlightKind::WRITE),
+                        });
+                    }
+                }
+            }
+
+            // 2. Find all references and filter by this file
+            let refs = db::find_all_references(db, ws, symbol);
+            for r in refs {
+                let r_path = r.file(db).path(db);
+                if let Ok(uri_path) = uri.to_file_path() {
+                    if r_path == uri_path.to_string_lossy().to_string() {
+                        highlights.push(DocumentHighlight {
+                            range: r.range(db).into(),
+                            kind: Some(DocumentHighlightKind::READ),
+                        });
+                    }
+                }
+            }
+
+            return Ok(Some(highlights));
+        }
+
+        Ok(None)
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let uri = params.text_document.uri;
+
+        if let Some(content) = self.open_files.get(&uri) {
+            let mut new_text = String::new();
+            for line in content.lines() {
+                new_text.push_str(line.trim_end());
+                new_text.push('\n');
+            }
+
+            // Simple "replace all" edit
+            let edit = TextEdit {
+                range: Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: content.lines().count() as u32,
+                        character: 0,
+                    },
+                },
+                new_text,
+            };
+
+            return Ok(Some(vec![edit]));
+        }
+
+        Ok(None)
+    }
+
     async fn symbol(
         &self,
         params: WorkspaceSymbolParams,
     ) -> Result<Option<Vec<SymbolInformation>>> {
         let query = params.query.to_lowercase();
-        let (db, ws) = {
-            let db = self.db.lock().unwrap();
-            let ws = self.workspace_input.lock().unwrap();
-            (db.clone(), *ws)
-        };
+        let db_lock = self.db.lock().unwrap();
+        let ws_lock = self.workspace_input.lock().unwrap();
+        let db = &*db_lock;
+        let ws = *ws_lock;
 
         let mut symbols = Vec::new();
 
         // 1. Hub Instances
-        let instances = db::all_hub_instances(&db, ws);
+        let instances = db::all_hub_instances(db, ws);
         for inst in instances {
-            let name = inst.name(&db);
+            let name = inst.name(db);
             if name.to_lowercase().contains(&query) {
-                let path = inst.file(&db).path(&db);
+                let path = inst.file(db).path(db);
                 symbols.push(SymbolInformation {
                     name,
                     kind: SymbolKind::VARIABLE,
@@ -577,7 +761,7 @@ impl LanguageServer for Backend {
                     deprecated: None,
                     location: Location {
                         uri: Url::from_file_path(path).unwrap(),
-                        range: inst.range(&db).into(),
+                        range: inst.range(db).into(),
                     },
                     container_name: Some("Instances".to_string()),
                 });
@@ -585,11 +769,11 @@ impl LanguageServer for Backend {
         }
 
         // 2. Hub Types
-        let types = db::all_hub_types(&db, ws);
+        let types = db::all_hub_types(db, ws);
         for t in types {
-            let name = t.name(&db);
+            let name = t.name(db);
             if name.to_lowercase().contains(&query) {
-                let path = t.file(&db).path(&db);
+                let path = t.file(db).path(db);
                 symbols.push(SymbolInformation {
                     name,
                     kind: SymbolKind::CLASS,
@@ -597,7 +781,7 @@ impl LanguageServer for Backend {
                     deprecated: None,
                     location: Location {
                         uri: Url::from_file_path(path).unwrap(),
-                        range: t.range(&db).into(),
+                        range: t.range(db).into(),
                     },
                     container_name: Some("Types".to_string()),
                 });
@@ -605,6 +789,64 @@ impl LanguageServer for Backend {
         }
 
         Ok(Some(symbols))
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
+
+        let db_lock = self.db.lock().unwrap();
+        let ws_lock = self.workspace_input.lock().unwrap();
+        let db = &*db_lock;
+        let ws = *ws_lock;
+
+        if let Ok(path) = uri.to_file_path() {
+            let path_str = path.to_string_lossy().to_string();
+            let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
+
+            if let Some(file) = file {
+                let mut symbols = Vec::new();
+
+                #[allow(deprecated)]
+                if path_str.ends_with(".hubgs") {
+                    let result = db::parse_hubgs(db, file);
+
+                    for inst in result.instances(db) {
+                        symbols.push(SymbolInformation {
+                            name: inst.name(db),
+                            kind: SymbolKind::VARIABLE,
+                            tags: None,
+                            deprecated: None,
+                            location: Location {
+                                uri: uri.clone(),
+                                range: inst.range(db).into(),
+                            },
+                            container_name: Some("Instances".to_string()),
+                        });
+                    }
+
+                    for t in result.types(db) {
+                        symbols.push(SymbolInformation {
+                            name: t.name(db),
+                            kind: SymbolKind::CLASS,
+                            tags: None,
+                            deprecated: None,
+                            location: Location {
+                                uri: uri.clone(),
+                                range: t.range(db).into(),
+                            },
+                            container_name: Some("Types".to_string()),
+                        });
+                    }
+                }
+
+                return Ok(Some(DocumentSymbolResponse::Flat(symbols)));
+            }
+        }
+
+        Ok(None)
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
@@ -621,4 +863,11 @@ impl LanguageServer for Backend {
             self.publish_diagnostics(uri).await;
         }
     }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        let uri = params.text_document.uri;
+        self.open_files.remove(&uri);
+    }
+
+    async fn did_save(&self, _params: DidSaveTextDocumentParams) {}
 }

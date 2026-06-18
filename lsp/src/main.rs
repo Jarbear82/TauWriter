@@ -15,7 +15,7 @@ async fn main() {
         client,
         db: Arc::new(Mutex::new(db)),
         workspace_input: Arc::new(Mutex::new(workspace_input)),
-        open_files: DashMap::new(),
+        open_files: Arc::new(DashMap::new()),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }

@@ -429,6 +429,22 @@ pub fn find_all_references(
                     all_refs.push(r);
                 }
             }
+        } else if file.path(db).ends_with(".hubgs") {
+            let result = parse_hubgs(db, file);
+            for inst in result.instances(db) {
+                for assignment in inst.assignments(db) {
+                    for val in &assignment.values {
+                        if val == &name {
+                            all_refs.push(HubReference::new(
+                                db,
+                                val.clone(),
+                                file,
+                                assignment.range,
+                            ));
+                        }
+                    }
+                }
+            }
         }
     }
     all_refs
