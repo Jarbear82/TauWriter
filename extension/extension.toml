@@ -10,7 +10,7 @@ languages = ["languages/hubgs", "languages/twxml"]
 
 [grammars.hubgs]
 repository = "https://github.com/Jarbear82/TauWriter"
-rev = "825766a0a89574a7edff20176529a36c36669140"
+rev = "7ebb2b085e82ee18a4d654540b555c6084a9acf6"
 path = "extension/languages/hubgs"
 
 [grammars.twxml]
