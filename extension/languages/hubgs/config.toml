@@ -2,6 +2,3 @@ name = "HubGS"
 grammar = "hubgs"
 path_suffixes = ["hubgs"]
 line_comments = ["// "]
-# block_comment = { start = "/*", end = "*/", prefix = " * " }
-increase_indent_pattern = "\\{\\s*$"
-decrease_indent_pattern = "^\\s*\\}"
