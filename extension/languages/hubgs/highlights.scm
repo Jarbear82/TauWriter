@@ -27,7 +27,7 @@
 (hub_role (identifier) @function)
 
 ; Decorators
-(decorator (choice "@computed" "@default") @function.macro)
+(decorator ["@computed" "@default"] @function.macro)
 (metadata_block "@metadata" @function.macro)
 
 ; Operators & Punctuation
