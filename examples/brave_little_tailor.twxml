@@ -1,5 +1,6 @@
 <document>
-  <section alias="The Brave Little Tailor">
+  <heading>The Brave Little Tailor</heading>
+  <section alias="story">
     <paragraph>
       One summer morning a <hubref id="tailor">little tailor</hubref> was sitting on his table near the window. In good spirits, he was sewing with all his might. A peasant woman came down the street crying, "Good jam for sale! Good jam for sale!"
     </paragraph>
