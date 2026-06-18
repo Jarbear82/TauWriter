@@ -1,5 +1,0 @@
-[workspace]
-members = [
-    "lsp",
-]
-resolver = "2"

@@ -1,1 +1,0 @@
-An xml sturctured document language. Designed to be simple, but powerful.
