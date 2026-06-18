@@ -1,6 +1,6 @@
 fn main() {
-    let hubgs_dir = std::path::PathBuf::from("tree-sitter/hubgs/src");
-    let twxml_dir = std::path::PathBuf::from("tree-sitter/twxml/src");
+    let hubgs_dir = std::path::PathBuf::from("../extension/languages/hubgs/src");
+    let twxml_dir = std::path::PathBuf::from("../extension/languages/twxml/src");
 
     cc::Build::new()
         .include(&hubgs_dir)

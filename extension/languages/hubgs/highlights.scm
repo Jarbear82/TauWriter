@@ -31,7 +31,6 @@
 (metadata_block "@metadata" @function.macro)
 
 ; Operators & Punctuation
-(role_direction) @operator
 (binary_expression (operator) @operator)
 (unary_expression (operator) @operator)
 ["[" "]" "{" "}" "(" ")" ":" "=" "," "." "->"] @punctuation.bracket
