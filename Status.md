@@ -10,9 +10,11 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Project Initialization** | ✅ | Rust workspace, Salsa DB, and Zed extension skeleton. |
 | **Workspace Indexing** | ✅ | Background crawling and ingestion of all workspace files. |
 | **Semantic Resolution** | ✅ | Cross-language symbol resolution (HubGS <-> TWXML). |
-| **Diagnostics** | ✅ | Real-time error reporting and validation. |
+| **Diagnostics** | ✅ | Real-time error reporting, structural validation, and tag checking. |
 | **Refactoring Support** | ✅ | Global renames and structural changes (References/Rename). |
 | **AST Extraction** | ✅ | Tree-Sitter based AST extraction logic structure. |
+| **Structural Awareness**| ✅ | Full index support for HubGS FIELDS, ENUMS, STRUCTS, and TWXML elements. |
+| **Dynamic Evaluation**| 🔄 | Prototype evaluation for `@computed` and `@default` decorator expressions. |
 
 ## Production Roadmap
 
@@ -31,12 +33,11 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Zed Extension** | ✅ | Functional Rust bridge with "one-click install" and auto-downloading. |
 
 ## Current Focus
-- [x] Implement context-aware autocomplete and hover.
-- [x] Add deep validation diagnostics (Types, Multiplicity).
-- [x] Implement Semantic Tokens and Scoped Resolution (IMPORTS).
-- [x] Implement folding ranges for Hub definitions and instances.
-- [x] Add workspace symbol search support.
-- [x] Finalize CI/CD pipeline and automated extension distribution.
+- [ ] Implement full expression evaluation engine for `@computed` fields (math, string ops, cross-hub references).
+- [ ] Add diagnostic validation for Enum assignments and `Array<Type>` structural verification.
+- [ ] Explore document fragmentation/stitching for multi-file TWXML documents.
+- [ ] Lay groundwork for Traits (`EXTENDS` syntax) as defined in the vision document.
+- [ ] Implement advanced UI Views logic (e.g., Graph visualization data exports for the client).
 
 ## JSON-RPC Testing Progress
 

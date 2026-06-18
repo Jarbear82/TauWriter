@@ -67,6 +67,9 @@ pub struct Workspace {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HubFieldDef {
     pub name: String,
+    pub range: LspRange,
+    pub decorator: Option<String>,  // "@computed" or "@default"
+    pub expression: Option<String>, // The expression inside the decorator
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -86,11 +89,44 @@ pub struct HubType<'db> {
     pub roles: Vec<HubRoleDef>,
 }
 
+#[salsa::tracked]
+pub struct HubEnum<'db> {
+    pub name: String,
+    pub file: SourceFile,
+    pub range: LspRange,
+    pub variants: Vec<String>,
+}
+
+#[salsa::tracked]
+pub struct HubStruct<'db> {
+    pub name: String,
+    pub file: SourceFile,
+    pub range: LspRange,
+    pub field_names: Vec<String>,
+}
+
+#[salsa::tracked]
+pub struct GlobalField<'db> {
+    pub name: String,
+    pub file: SourceFile,
+    pub range: LspRange,
+    pub type_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HubValue {
+    Identifier(String),
+    Number(String),
+    String(String),
+    Boolean(bool),
+    Array(Vec<HubValue>),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HubAssignment {
     pub name: String,
     pub range: LspRange,
-    pub values: Vec<String>, // For roles, these are Hub references
+    pub value: HubValue,
 }
 
 #[salsa::tracked]
@@ -113,6 +149,9 @@ pub struct HubImport {
 pub struct HubgsParseResult<'db> {
     pub instances: Vec<HubInstance<'db>>,
     pub types: Vec<HubType<'db>>,
+    pub enums: Vec<HubEnum<'db>>,
+    pub structs: Vec<HubStruct<'db>>,
+    pub global_fields: Vec<GlobalField<'db>>,
     pub imports: Vec<HubImport>,
 }
 
@@ -134,12 +173,22 @@ pub fn parse_twxml(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
 }
 
 #[salsa::tracked]
+pub fn all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<(String, LspRange)> {
+    crate::parser::get_all_twxml_tags(db, file)
+}
+
+#[salsa::tracked]
 pub fn get_hub_type_at_position(
     db: &dyn Db,
     file: SourceFile,
     position: LspPosition,
 ) -> Option<String> {
     crate::parser::get_hub_type_at_position(db, file, position)
+}
+
+#[salsa::tracked]
+pub fn is_in_hub_definition(db: &dyn Db, file: SourceFile, position: LspPosition) -> bool {
+    crate::parser::is_in_hub_definition(db, file, position)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -178,6 +227,39 @@ pub fn all_hub_types(db: &dyn Db, workspace: Workspace) -> Vec<HubType<'_>> {
     for file in workspace.files(db) {
         if file.path(db).ends_with(".hubgs") {
             all.extend(parse_hubgs(db, file).types(db).clone());
+        }
+    }
+    all
+}
+
+#[salsa::tracked]
+pub fn all_global_fields(db: &dyn Db, workspace: Workspace) -> Vec<GlobalField<'_>> {
+    let mut all = Vec::new();
+    for file in workspace.files(db) {
+        if file.path(db).ends_with(".hubgs") {
+            all.extend(parse_hubgs(db, file).global_fields(db).clone());
+        }
+    }
+    all
+}
+
+#[salsa::tracked]
+pub fn all_enums(db: &dyn Db, workspace: Workspace) -> Vec<HubEnum<'_>> {
+    let mut all = Vec::new();
+    for file in workspace.files(db) {
+        if file.path(db).ends_with(".hubgs") {
+            all.extend(parse_hubgs(db, file).enums(db).clone());
+        }
+    }
+    all
+}
+
+#[salsa::tracked]
+pub fn all_structs(db: &dyn Db, workspace: Workspace) -> Vec<HubStruct<'_>> {
+    let mut all = Vec::new();
+    for file in workspace.files(db) {
+        if file.path(db).ends_with(".hubgs") {
+            all.extend(parse_hubgs(db, file).structs(db).clone());
         }
     }
     all
@@ -287,11 +369,51 @@ impl Multiplicity {
     }
 }
 
+const VALID_TWXML_TAGS: &[&str] = &[
+    "document",
+    "meta",
+    "section",
+    "heading",
+    "paragraph",
+    "aside",
+    "blockquote",
+    "codeblock",
+    "br",
+    "hr",
+    "ul",
+    "ol",
+    "li",
+    "dl",
+    "dt",
+    "dd",
+    "details",
+    "summary",
+    "hubref",
+    "link",
+    "image",
+    "audio",
+    "video",
+    "code",
+    "fr",
+    "bold",
+    "italic",
+    "underline",
+    "strikethrough",
+    "super",
+    "sub",
+    "table",
+    "tr",
+    "th",
+    "td",
+    "footnote",
+];
+
 #[salsa::tracked]
 pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
     if file.path(db).ends_with(".twxml") {
+        // 1. Validate Hub References
         let refs = parse_twxml(db, file);
         for r in refs {
             let name = r.name(db);
@@ -302,8 +424,38 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
                 });
             }
         }
+
+        // 2. Validate Tag Names
+        let tags = all_twxml_tags(db, file);
+        for (tag_name, range) in tags {
+            if !VALID_TWXML_TAGS.contains(&tag_name.as_str()) {
+                errors.push(ValidationError {
+                    range,
+                    message: format!("Unknown TWXML tag '{}'", tag_name),
+                });
+            }
+        }
     } else if file.path(db).ends_with(".hubgs") {
         let result = parse_hubgs(db, file);
+        let global_fields = all_global_fields(db, workspace);
+
+        // 1. Validate Hub Type Definitions
+        for hub_type in result.types(db) {
+            for field in hub_type.fields(db) {
+                if !global_fields.iter().any(|gf| gf.name(db) == field.name) {
+                    errors.push(ValidationError {
+                        range: field.range,
+                        message: format!(
+                            "Field '{}' used in Hub '{}' must be defined in a FIELDS block",
+                            field.name,
+                            hub_type.name(db)
+                        ),
+                    });
+                }
+            }
+        }
+
+        // 2. Validate Hub Instances
         for instance in result.instances(db) {
             let type_name = instance.type_name(db);
             if let Some(hub_type) = resolve_type(db, workspace, file, type_name.clone()) {
@@ -326,8 +478,9 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
                     }
 
                     if let Some(role_def) = role_def {
+                        let refs = get_refs_from_value(&assignment.value);
                         // 1. Type mismatch validation
-                        for ref_name in &assignment.values {
+                        for ref_name in &refs {
                             if let Some(target_inst) =
                                 resolve_reference(db, workspace, ref_name.clone())
                             {
@@ -351,16 +504,35 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
 
                         // 2. Multiplicity validation
                         let mult = Multiplicity::parse(&role_def.multiplicity);
-                        if !mult.validate(assignment.values.len()) {
+                        if !mult.validate(refs.len()) {
                             errors.push(ValidationError {
                                 range: assignment.range,
                                 message: format!(
                                     "Multiplicity violation for role '{}': expected {}, found {}",
                                     name,
                                     role_def.multiplicity,
-                                    assignment.values.len()
+                                    refs.len()
                                 ),
                             });
+                        }
+                    } else if is_field {
+                        // Type checking for primitive fields
+                        if let Some(gf) = global_fields.iter().find(|gf| gf.name(db) == *name) {
+                            let expected_type = gf.type_name(db);
+                            if !validate_value_type(
+                                db,
+                                workspace,
+                                &assignment.value,
+                                &expected_type,
+                            ) {
+                                errors.push(ValidationError {
+                                    range: assignment.range,
+                                    message: format!(
+                                        "Type mismatch for field '{}': expected '{}'",
+                                        name, expected_type
+                                    ),
+                                });
+                            }
                         }
                     }
                 }
@@ -414,6 +586,115 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
     errors
 }
 
+fn get_refs_from_value(value: &HubValue) -> Vec<String> {
+    match value {
+        HubValue::Identifier(s) => vec![s.clone()],
+        HubValue::Array(vals) => vals.iter().flat_map(get_refs_from_value).collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn validate_value_type(
+    db: &dyn Db,
+    workspace: Workspace,
+    value: &HubValue,
+    type_name: &str,
+) -> bool {
+    match type_name {
+        "Text" | "String" => matches!(value, HubValue::String(_)),
+        "Number" => matches!(value, HubValue::Number(_)),
+        "Boolean" => matches!(value, HubValue::Boolean(_)),
+        "Array<Text>" | "Array<String>" => {
+            if let HubValue::Array(vals) = value {
+                vals.iter().all(|v| matches!(v, HubValue::String(_)))
+            } else {
+                false
+            }
+        }
+        "Array<Number>" => {
+            if let HubValue::Array(vals) = value {
+                vals.iter().all(|v| matches!(v, HubValue::Number(_)))
+            } else {
+                false
+            }
+        }
+        _ => {
+            // check Enums
+            if let Some(hub_enum) = all_enums(db, workspace)
+                .into_iter()
+                .find(|e| e.name(db) == type_name)
+            {
+                if let HubValue::Identifier(s) = value {
+                    return hub_enum.variants(db).contains(s);
+                }
+                return false;
+            }
+            true // Default to true for now for complex types (Structs, etc)
+        }
+    }
+}
+
+#[salsa::tracked]
+pub fn compute_field_value(
+    db: &dyn Db,
+    workspace: Workspace,
+    instance: HubInstance<'_>,
+    field_name: String,
+) -> Option<HubValue> {
+    // 1. Check if assigned in instance
+    if let Some(assignment) = instance
+        .assignments(db)
+        .iter()
+        .find(|a| a.name == field_name)
+    {
+        return Some(assignment.value.clone());
+    }
+
+    // 2. Check if computed or default in type
+    let hub_type = resolve_type(db, workspace, instance.file(db), instance.type_name(db))?;
+    if let Some(field_def) = hub_type.fields(db).iter().find(|f| f.name == field_name) {
+        if let Some(expr) = &field_def.expression {
+            return evaluate_expression(db, workspace, instance, expr);
+        }
+    }
+    None
+}
+
+fn evaluate_expression(
+    db: &dyn Db,
+    workspace: Workspace,
+    instance: HubInstance<'_>,
+    expr: &str,
+) -> Option<HubValue> {
+    // Basic "evaluator" for prototype
+    // Currently only supports single field references or literal strings
+    let expr = expr.trim();
+    if expr.starts_with('\'') || expr.starts_with('"') || expr.starts_with('`') {
+        return Some(HubValue::String(
+            expr.trim_matches(|c| c == '\'' || c == '"' || c == '`')
+                .to_string(),
+        ));
+    }
+
+    if expr.parse::<f64>().is_ok() {
+        return Some(HubValue::Number(expr.to_string()));
+    }
+
+    if expr == "true" {
+        return Some(HubValue::Boolean(true));
+    }
+    if expr == "false" {
+        return Some(HubValue::Boolean(false));
+    }
+
+    // Try to resolve as another field in the same instance
+    if let Some(other_val) = compute_field_value(db, workspace, instance, expr.to_string()) {
+        return Some(other_val);
+    }
+
+    None
+}
+
 #[salsa::tracked]
 pub fn find_all_references(
     db: &dyn Db,
@@ -433,19 +714,29 @@ pub fn find_all_references(
             let result = parse_hubgs(db, file);
             for inst in result.instances(db) {
                 for assignment in inst.assignments(db) {
-                    for val in &assignment.values {
-                        if val == &name {
-                            all_refs.push(HubReference::new(
-                                db,
-                                val.clone(),
-                                file,
-                                assignment.range,
-                            ));
-                        }
+                    if let Some(r_range) =
+                        find_ref_in_value(&assignment.value, &name, assignment.range)
+                    {
+                        all_refs.push(HubReference::new(db, name.clone(), file, r_range));
                     }
                 }
             }
         }
     }
     all_refs
+}
+
+fn find_ref_in_value(value: &HubValue, name: &str, range: LspRange) -> Option<LspRange> {
+    match value {
+        HubValue::Identifier(s) if s == name => Some(range),
+        HubValue::Array(vals) => {
+            for v in vals {
+                if let Some(r) = find_ref_in_value(v, name, range) {
+                    return Some(r);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }

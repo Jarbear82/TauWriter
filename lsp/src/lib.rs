@@ -475,6 +475,18 @@ impl LanguageServer for Backend {
                             }
                             return Ok(Some(CompletionResponse::Array(items)));
                         }
+                    } else if db::is_in_hub_definition(db, file, position.into()) {
+                        let global_fields = db::all_global_fields(db, ws);
+                        let items = global_fields
+                            .into_iter()
+                            .map(|gf| CompletionItem {
+                                label: gf.name(db),
+                                kind: Some(CompletionItemKind::FIELD),
+                                detail: Some(format!("Global Field ({})", gf.type_name(db))),
+                                ..Default::default()
+                            })
+                            .collect();
+                        return Ok(Some(CompletionResponse::Array(items)));
                     }
                 }
             }
@@ -506,10 +518,34 @@ impl LanguageServer for Backend {
 
             // 1. Try resolve as Hub Instance
             if let Some(instance) = db::resolve_reference(db, ws, symbol.clone()) {
-                let mut hover_text = format!("**Hub: {}**", instance.name(db));
+                let mut hover_text = format!(
+                    "**Hub: {}** ({})",
+                    instance.name(db),
+                    instance.type_name(db)
+                );
                 if let Some(desc) = instance.description(db) {
                     hover_text.push_str("\n\n---\n\n");
                     hover_text.push_str(&desc);
+                }
+
+                hover_text.push_str("\n\n---\n\n**Fields:**\n");
+                if let Some(hub_type) =
+                    db::resolve_type(db, ws, instance.file(db), instance.type_name(db))
+                {
+                    for field in hub_type.fields(db) {
+                        if let Some(val) =
+                            db::compute_field_value(db, ws, instance, field.name.clone())
+                        {
+                            let val_str = match val {
+                                db::HubValue::String(s) => format!("'{}'", s),
+                                db::HubValue::Number(n) => n,
+                                db::HubValue::Boolean(b) => b.to_string(),
+                                db::HubValue::Identifier(i) => i,
+                                db::HubValue::Array(_) => "[...]".to_string(),
+                            };
+                            hover_text.push_str(&format!("- **{}**: {}\n", field.name, val_str));
+                        }
+                    }
                 }
 
                 return Ok(Some(Hover {
@@ -758,8 +794,9 @@ impl LanguageServer for Backend {
                 symbols.push(SymbolInformation {
                     name,
                     kind: SymbolKind::VARIABLE,
-                    tags: None,
+                    #[allow(deprecated)]
                     deprecated: None,
+                    tags: None,
                     location: Location {
                         uri: Url::from_file_path(path).unwrap(),
                         range: inst.range(db).into(),
@@ -778,8 +815,9 @@ impl LanguageServer for Backend {
                 symbols.push(SymbolInformation {
                     name,
                     kind: SymbolKind::CLASS,
-                    tags: None,
+                    #[allow(deprecated)]
                     deprecated: None,
+                    tags: None,
                     location: Location {
                         uri: Url::from_file_path(path).unwrap(),
                         range: t.range(db).into(),
@@ -818,8 +856,10 @@ impl LanguageServer for Backend {
                         symbols.push(SymbolInformation {
                             name: inst.name(db),
                             kind: SymbolKind::VARIABLE,
-                            tags: None,
+                            #[allow(deprecated)]
                             deprecated: None,
+                            tags: None,
+
                             location: Location {
                                 uri: uri.clone(),
                                 range: inst.range(db).into(),
@@ -832,8 +872,10 @@ impl LanguageServer for Backend {
                         symbols.push(SymbolInformation {
                             name: t.name(db),
                             kind: SymbolKind::CLASS,
-                            tags: None,
+                            #[allow(deprecated)]
                             deprecated: None,
+                            tags: None,
+
                             location: Location {
                                 uri: uri.clone(),
                                 range: t.range(db).into(),

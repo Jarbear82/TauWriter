@@ -63,14 +63,18 @@ The document uses a custom XML vocabulary called **TauWriter XML** as its raw fo
 - **Human-readable and editable** — Like HTML, TWXML is plain text that writers and power users can read, version-control, and manually edit
 
 #### TWXML Vocabulary
-The TWXML vocabulary mirrors common structural elements used in writing:
+TWXML uses an **enforced tree hierarchy**: heading levels are derived from nesting depth, not explicit attributes. A `<heading>` directly under `<document>` is H1 (document title), one inside a `<section>` is H2, and deeper nesting produces H3+.
+
+The vocabulary mirrors common structural elements used in writing:
 
 | Element | Purpose |
 |---------|---------|
 | `<document>` | Root element wrapping a complete document or fragment |
-| `<chapter>` | Top-level section divider; carries `id` and `title` attributes |
-| `<h1>`–`<h6>` | Heading levels for outline structure |
-| `<p>` | Paragraph — the fundamental prose unit |
+| `<meta />` | Document-level metadata (author, tags, status); placed inside `<document>` before block content |
+| `<section>` | Semantic divider for parts, chapters, scenes, etc.; carries `alias` attribute |
+| `<heading>` | Section heading; level is determined by nesting depth |
+| `<paragraph>` | Fundamental prose unit |
+| `<hr />` | Thematic break between paragraph-level elements |
 | `<hubref>` | Inline container for graph references; uses `id` attribute |
 | `<bold>`, `<italic>`, `<underline>` | Text styling (applied via nesting, not attributes) |
 
@@ -79,18 +83,21 @@ Custom elements can be added as the system evolves. The vocabulary is intentiona
 ### Document Structure Example
 ```xml
 <document>
-  <chapter id="ch1" title="The Fellowship">
-    <h2>Departure</h2>
-    <p>
+  <meta name="author" content="J.R.R. Tolkien" />
+  <section alias="The Fellowship">
+    <heading>Departure</heading>
+    <paragraph>
       <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
       and looked across the field toward <hubref id="mordor">Mordor</hubref>.
-    </p>
-  </chapter>
+    </paragraph>
+  </section>
 </document>
 ```
 
 Key points:
-- Prose lives inside standard structural tags (`<p>`, `<h1>`–`<h6>`, etc.)
+- Heading levels are determined by nesting depth — no explicit `<h1>`–`<h6>` needed
+- `<meta />` tags live inside `<document>` before any block content
+- Prose lives inside standard structural tags (`<paragraph>`, `<section>`, etc.)
 - Graph links use `<hubref id="<hub-reference>">`
 - Formatting (bold, italic) wraps the reference tag — not the other way around
 - Multiple hubs can be referenced within a single paragraph or even a single phrase
@@ -579,17 +586,17 @@ INSTANCES [
 ### TWXML Document (prose side)
 ```xml
 <document>
-  <chapter id="ch1" title="A Shadow of the Past">
-    <h2>Departure</h2>
-    <p>
+  <meta name="author" content="J.R.R. Tolkien" />
+  <section alias="A Shadow of the Past">
+    <heading>Departure</heading>
+    <paragraph>
       <hubref id="aragorn">Aragorn</hubref> stood at the edge of 
       <hubref id="rivendell">Rivendell</hubref>, his hand resting on the hilt of his sword. Beside him, 
       <hubref id="gandalf"><italic>Gandalf</italic></hubref> gazed into
       the distance.
-    </p>
-  </chapter>
+    </paragraph>
+  </section>
 </document>
-```
 ```
 
 In this setup:

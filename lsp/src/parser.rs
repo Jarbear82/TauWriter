@@ -182,9 +182,39 @@ pub fn get_hub_type_at_position(db: &dyn Db, file: SourceFile, pos: LspPosition)
     None
 }
 
+pub fn is_in_hub_definition(db: &dyn Db, file: SourceFile, pos: LspPosition) -> bool {
+    let contents = file.contents(db);
+    let language = unsafe { tree_sitter_hubgs() };
+    let mut parser = Parser::new();
+    parser.set_language(language).ok();
+    let tree = parser.parse(&contents, None).unwrap();
+
+    let ts_pos = tree_sitter::Point {
+        row: pos.line as usize,
+        column: pos.character as usize,
+    };
+
+    let mut node = match tree.root_node().descendant_for_point_range(ts_pos, ts_pos) {
+        Some(n) => n,
+        None => return false,
+    };
+
+    while node.kind() != "hub_definition" {
+        if let Some(parent) = node.parent() {
+            node = parent;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 pub fn parse_hubgs_ast(db: &dyn Db, file: SourceFile) -> HubgsParseResult<'_> {
     let mut instances = Vec::new();
     let mut types = Vec::new();
+    let mut enums = Vec::new();
+    let mut structs = Vec::new();
+    let mut global_fields = Vec::new();
     let mut imports = Vec::new();
     let contents = file.contents(db);
 
@@ -228,75 +258,185 @@ pub fn parse_hubgs_ast(db: &dyn Db, file: SourceFile) -> HubgsParseResult<'_> {
         if node.kind() == "definitions_section" {
             let mut def_cursor = node.walk();
             for block in node.children(&mut def_cursor) {
-                if block.kind() == "hubs_block" {
-                    let mut hub_cursor = block.walk();
-                    for hub_def in block.children(&mut hub_cursor) {
-                        if hub_def.kind() == "hub_definition" {
-                            if let Some(name_node) = hub_def.child(0) {
-                                let name = contents[name_node.byte_range()].to_string();
-                                let mut fields = Vec::new();
-                                let mut roles = Vec::new();
-
-                                let mut item_cursor = hub_def.walk();
-                                for item in hub_def.children(&mut item_cursor) {
-                                    match item.kind() {
-                                        "hub_field" => {
-                                            if let Some(id_node) = item.child(0) {
-                                                fields.push(HubFieldDef {
-                                                    name: contents[id_node.byte_range()]
-                                                        .to_string(),
-                                                });
-                                            }
-                                        }
-                                        "hub_role" => {
-                                            if let Some(id_node) = item.child(0) {
-                                                let role_name =
-                                                    contents[id_node.byte_range()].to_string();
-                                                let direction = item
-                                                    .child(1)
-                                                    .map(|n| contents[n.byte_range()].to_string())
-                                                    .unwrap_or_default();
-                                                let multiplicity = item
-                                                    .child(3)
-                                                    .map(|n| contents[n.byte_range()].to_string())
-                                                    .unwrap_or_default();
-                                                let mut allowed_types = Vec::new();
-                                                if let Some(allows_list) = item.child(7) {
-                                                    let mut list_cursor = allows_list.walk();
-                                                    for type_id in
-                                                        allows_list.children(&mut list_cursor)
-                                                    {
-                                                        if type_id.kind() == "identifier" {
-                                                            allowed_types.push(
-                                                                contents[type_id.byte_range()]
-                                                                    .to_string(),
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                                roles.push(HubRoleDef {
-                                                    name: role_name,
-                                                    direction,
-                                                    multiplicity,
-                                                    allowed_types,
-                                                });
-                                            }
-                                        }
-                                        _ => {}
-                                    }
+                match block.kind() {
+                    "fields_block" => {
+                        let mut field_cursor = block.walk();
+                        for field_def in block.children(&mut field_cursor) {
+                            if field_def.kind() == "field_definition" {
+                                if let (Some(id_node), Some(type_node)) =
+                                    (field_def.child(0), field_def.child(2))
+                                {
+                                    global_fields.push(crate::db::GlobalField::new(
+                                        db,
+                                        contents[id_node.byte_range()].to_string(),
+                                        file,
+                                        ts_range_to_lsp(id_node.range()),
+                                        contents[type_node.byte_range()].to_string(),
+                                    ));
                                 }
-
-                                types.push(HubType::new(
-                                    db,
-                                    name,
-                                    file,
-                                    ts_range_to_lsp(name_node.range()),
-                                    fields,
-                                    roles,
-                                ));
                             }
                         }
                     }
+                    "enums_block" => {
+                        let mut enum_cursor = block.walk();
+                        for enum_def in block.children(&mut enum_cursor) {
+                            if enum_def.kind() == "enum_definition" {
+                                if let Some(name_node) = enum_def.child(0) {
+                                    let mut variants = Vec::new();
+                                    let mut var_cursor = enum_def.walk();
+                                    for var_node in enum_def.children(&mut var_cursor) {
+                                        if var_node.kind() == "identifier"
+                                            && var_node.id() != name_node.id()
+                                        {
+                                            variants
+                                                .push(contents[var_node.byte_range()].to_string());
+                                        }
+                                    }
+                                    enums.push(crate::db::HubEnum::new(
+                                        db,
+                                        contents[name_node.byte_range()].to_string(),
+                                        file,
+                                        ts_range_to_lsp(name_node.range()),
+                                        variants,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    "structs_block" => {
+                        let mut struct_cursor = block.walk();
+                        for struct_def in block.children(&mut struct_cursor) {
+                            if struct_def.kind() == "struct_definition" {
+                                if let Some(name_node) = struct_def.child(0) {
+                                    let mut field_names = Vec::new();
+                                    let mut field_cursor = struct_def.walk();
+                                    for field_node in struct_def.children(&mut field_cursor) {
+                                        if field_node.kind() == "identifier"
+                                            && field_node.id() != name_node.id()
+                                        {
+                                            field_names.push(
+                                                contents[field_node.byte_range()].to_string(),
+                                            );
+                                        }
+                                    }
+                                    structs.push(crate::db::HubStruct::new(
+                                        db,
+                                        contents[name_node.byte_range()].to_string(),
+                                        file,
+                                        ts_range_to_lsp(name_node.range()),
+                                        field_names,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    "hubs_block" => {
+                        let mut hub_cursor = block.walk();
+                        for hub_def in block.children(&mut hub_cursor) {
+                            if hub_def.kind() == "hub_definition" {
+                                if let Some(name_node) = hub_def.child(0) {
+                                    let name = contents[name_node.byte_range()].to_string();
+                                    let mut fields = Vec::new();
+                                    let mut roles = Vec::new();
+
+                                    let mut item_cursor = hub_def.walk();
+                                    for item in hub_def.children(&mut item_cursor) {
+                                        match item.kind() {
+                                            "hub_field" => {
+                                                if let Some(id_node) = item.child(0) {
+                                                    let mut decorator = None;
+                                                    let mut expression = None;
+                                                    if let Some(eq_node) = item.child(1) {
+                                                        if eq_node.kind() == "=" {
+                                                            if let Some(dec_node) = item.child(2) {
+                                                                if dec_node.kind() == "decorator" {
+                                                                    if let Some(choice_node) =
+                                                                        dec_node.child(0)
+                                                                    {
+                                                                        decorator = Some(
+                                                                            contents[choice_node
+                                                                                .byte_range()]
+                                                                            .to_string(),
+                                                                        );
+                                                                    }
+                                                                    if let Some(expr_node) =
+                                                                        dec_node.child(2)
+                                                                    {
+                                                                        expression = Some(
+                                                                            contents[expr_node
+                                                                                .byte_range()]
+                                                                            .to_string(),
+                                                                        );
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    fields.push(HubFieldDef {
+                                                        name: contents[id_node.byte_range()]
+                                                            .to_string(),
+                                                        range: ts_range_to_lsp(id_node.range()),
+                                                        decorator,
+                                                        expression,
+                                                    });
+                                                }
+                                            }
+
+                                            "hub_role" => {
+                                                if let Some(id_node) = item.child(0) {
+                                                    let role_name =
+                                                        contents[id_node.byte_range()].to_string();
+                                                    let direction = item
+                                                        .child(1)
+                                                        .map(|n| {
+                                                            contents[n.byte_range()].to_string()
+                                                        })
+                                                        .unwrap_or_default();
+                                                    let multiplicity = item
+                                                        .child(3)
+                                                        .map(|n| {
+                                                            contents[n.byte_range()].to_string()
+                                                        })
+                                                        .unwrap_or_default();
+                                                    let mut allowed_types = Vec::new();
+                                                    if let Some(allows_list) = item.child(7) {
+                                                        let mut list_cursor = allows_list.walk();
+                                                        for type_id in
+                                                            allows_list.children(&mut list_cursor)
+                                                        {
+                                                            if type_id.kind() == "identifier" {
+                                                                allowed_types.push(
+                                                                    contents[type_id.byte_range()]
+                                                                        .to_string(),
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    roles.push(HubRoleDef {
+                                                        name: role_name,
+                                                        direction,
+                                                        multiplicity,
+                                                        allowed_types,
+                                                    });
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+
+                                    types.push(HubType::new(
+                                        db,
+                                        name,
+                                        file,
+                                        ts_range_to_lsp(name_node.range()),
+                                        fields,
+                                        roles,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -332,33 +472,13 @@ pub fn parse_hubgs_ast(db: &dyn Db, file: SourceFile) -> HubgsParseResult<'_> {
                                             }
                                         }
                                     } else if let Some(expr_node) = assignment.child(2) {
-                                        let mut values = Vec::new();
-                                        match expr_node.kind() {
-                                            "array" => {
-                                                let mut array_cursor = expr_node.walk();
-                                                for val_node in
-                                                    expr_node.children(&mut array_cursor)
-                                                {
-                                                    if val_node.kind() == "identifier" {
-                                                        values.push(
-                                                            contents[val_node.byte_range()]
-                                                                .to_string(),
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            "identifier" => {
-                                                values.push(
-                                                    contents[expr_node.byte_range()].to_string(),
-                                                );
-                                            }
-                                            _ => {}
+                                        if let Some(val) = node_to_hub_value(expr_node, &contents) {
+                                            assignments.push(HubAssignment {
+                                                name: attr_name,
+                                                range: ts_range_to_lsp(id_node.range()),
+                                                value: val,
+                                            });
                                         }
-                                        assignments.push(HubAssignment {
-                                            name: attr_name,
-                                            range: ts_range_to_lsp(id_node.range()),
-                                            values,
-                                        });
                                     }
                                 }
                             }
@@ -379,7 +499,51 @@ pub fn parse_hubgs_ast(db: &dyn Db, file: SourceFile) -> HubgsParseResult<'_> {
         }
     }
 
-    HubgsParseResult::new(db, instances, types, imports)
+    HubgsParseResult::new(db, instances, types, enums, structs, global_fields, imports)
+}
+
+fn node_to_hub_value(node: tree_sitter::Node, contents: &str) -> Option<crate::db::HubValue> {
+    match node.kind() {
+        "identifier" => Some(crate::db::HubValue::Identifier(
+            contents[node.byte_range()].to_string(),
+        )),
+        "number" => Some(crate::db::HubValue::Number(
+            contents[node.byte_range()].to_string(),
+        )),
+        "string" | "template_string" => Some(crate::db::HubValue::String(
+            contents[node.byte_range()]
+                .trim_matches('"')
+                .trim_matches('\'')
+                .trim_matches('`')
+                .to_string(),
+        )),
+        "boolean" => Some(crate::db::HubValue::Boolean(
+            &contents[node.byte_range()] == "true",
+        )),
+        "array" => {
+            let mut values = Vec::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if let Some(val) = node_to_hub_value(child, contents) {
+                    values.push(val);
+                }
+            }
+            Some(crate::db::HubValue::Array(values))
+        }
+        "_expression" | "parenthesized_expression" => {
+            // Recurse into first non-punctuation child
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if !["(", ")", "[", "]", "{", "}", ",", "."].contains(&child.kind()) {
+                    if let Some(val) = node_to_hub_value(child, contents) {
+                        return Some(val);
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
@@ -422,6 +586,31 @@ pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
     }
 
     refs
+}
+
+pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<(String, LspRange)> {
+    let mut tags = Vec::new();
+    let contents = file.contents(db);
+
+    let language = unsafe { tree_sitter_twxml() };
+    let mut parser = Parser::new();
+    parser.set_language(language).ok();
+    let tree = parser.parse(&contents, None).unwrap();
+
+    let query_str = "(tag_name) @tag";
+    let query = tree_sitter::Query::new(language, query_str).unwrap();
+    let mut query_cursor = tree_sitter::QueryCursor::new();
+    let matches = query_cursor.matches(&query, tree.root_node(), contents.as_bytes());
+
+    for m in matches {
+        for capture in m.captures {
+            let node = capture.node;
+            let tag_name = contents[node.byte_range()].to_string();
+            tags.push((tag_name, ts_range_to_lsp(node.range())));
+        }
+    }
+
+    tags
 }
 
 fn ts_range_to_lsp(range: tree_sitter::Range) -> LspRange {

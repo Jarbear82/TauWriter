@@ -1,12 +1,23 @@
 # TWXML Elements
 
 ## Document Hierarchy
+TWXML uses an **enforced tree hierarchy** where structural meaning is derived from nesting depth rather than explicit level attributes. This eliminates "structural drift" — the problem of accidental heading-level mismatches common in Markdown and HTML.
+
+### Heading Levels by Nesting Depth
+| Nesting Level | Equivalent | Typical Use |
+|---------------|------------|-------------|
+| `<document>` → `<heading>` | H1 | Document title (must be unique per document) |
+| `<document>` → `<section>` → `<heading>` | H2 | Chapter or major section title |
+| `<section>` → `<section>` → `<heading>` | H3+ | Sub-section titles, deeper nesting as needed |
+
+This means you never need to specify heading levels manually. The tree structure itself defines the outline.
+
 ### Document
-The root Element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document.
+The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document.
 Tags: `<document></document>`
 
 ### Meta
-Defines document-level metadata (author, tags, status). Not rendered in the primary prose view but indexed by the LSP. 
+Defines document-level metadata (author, tags, status). Placed inside `<document>` at the top, before any block content. Not rendered in the primary prose view but indexed by the LSP.
 Equivalent to Markdown Frontmatter (YAML).
 Tags: `<meta />`
 Tag Attributes:
@@ -117,11 +128,11 @@ Tag Attributes:
 - src: The file path or URL to the image.
 - alt: Alternative text for accessibility and context.
 
-### Vido
-Embeds a visual asset into the document.
+### Video
+Embeds a video asset into the document.
 Tags: `<video />`
 Tag Attributes:
-- src: The file path or URL to the image.
+- src: The file path or URL to the video.
 - alt: Alternative text for accessibility and context.
 
 ### Inline Code
@@ -171,12 +182,13 @@ Tag Attributes:
 
 ```xml
 <document>
-  <chapter id="ch1" title="A Shadow of the Past">
-    <h2>Departure</h2>
-    <p>
+  <meta name="author" content="J.R.R. Tolkien" />
+  <section alias="A Shadow of the Past">
+    <heading>Departure</heading>
+    <paragraph>
       <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
       and looked across the field toward <hubref id="mordor">Mordor</hubref>.
-    </p>
+    </paragraph>
     
     <ul>
       <li checked="true">Pack lembas bread</li>
@@ -187,5 +199,5 @@ Tag Attributes:
       "Not all those who wander are lost."<br />
       <italic>- <hubref id="bilbo">Bilbo Baggins</hubref></italic>
     </blockquote>
-  </chapter>
+  </section>
 </document>

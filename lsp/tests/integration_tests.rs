@@ -1,4 +1,4 @@
-use tauwriter_lsp::db::{self, Db};
+use tauwriter_lsp::db;
 use tauwriter_lsp::RootDatabase;
 
 #[test]
@@ -125,6 +125,12 @@ fn test_context_aware_completion() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Person {
             first_name,
@@ -161,9 +167,9 @@ INSTANCES [
         .any(|r| r.name == "resides_in"));
 
     // 2. Verify context identification
-    // Line 11 is inside aragorn:Person block
+    // Line 17 is inside aragorn:Person block
     let pos = db::LspPosition {
-        line: 11,
+        line: 17,
         character: 8,
     };
     let type_at_pos = db::get_hub_type_at_position(&db, hubgs_file, pos);
@@ -176,6 +182,12 @@ fn test_semantic_tokens_hubgs() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Person {
             first_name
@@ -201,14 +213,14 @@ INSTANCES [
         .iter()
         .find(|t| t.token_type == 0 && t.token_modifiers == 3)
         .unwrap();
-    assert_eq!(type_def.line, 3);
+    assert_eq!(type_def.line, 9);
 
     // Find 'aragorn' instance name
     let inst_name = tokens
         .iter()
         .find(|t| t.token_type == 2 && t.token_modifiers == 2)
         .unwrap();
-    assert_eq!(inst_name.line, 9);
+    assert_eq!(inst_name.line, 15);
 }
 
 #[test]
@@ -234,6 +246,12 @@ fn test_deep_validation() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Person {
             first_name,
@@ -285,6 +303,12 @@ fn test_multiplicity_validation() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Person {
             first_name,
@@ -335,6 +359,12 @@ fn test_imports_resolution() {
     // 1. Define 'Location' in schema.hubgs
     let schema_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Location {
             name
@@ -383,6 +413,12 @@ fn test_type_goto_definition() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Character {
             name
@@ -402,10 +438,48 @@ DEFINITIONS [
     assert!(resolved.is_some());
     let character_type = resolved.unwrap();
 
-    // 'Character' starts on line 3, character 8
+    // 'Character' starts on line 9, character 8
     let range = character_type.range(&db);
-    assert_eq!(range.start.line, 3);
+    assert_eq!(range.start.line, 9);
     assert_eq!(range.start.character, 8);
+}
+
+#[test]
+fn test_global_field_completion() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        last_name: Text
+    ],
+    HUBS [
+        Person {
+
+        }
+    ]
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "fantasy.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // Line 8 is inside Person { ... }
+    let pos = db::LspPosition {
+        line: 8,
+        character: 12,
+    };
+
+    assert!(db::is_in_hub_definition(&db, hubgs_file, pos));
+
+    let global_fields = db::all_global_fields(&db, workspace);
+    assert_eq!(global_fields.len(), 2);
+    assert_eq!(global_fields[0].name(&db), "first_name");
 }
 
 #[test]
@@ -414,6 +488,12 @@ fn test_type_hover() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Person {
             first_name,
@@ -450,6 +530,12 @@ fn test_folding_ranges() {
 
     let hubgs_content = "
 DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text,
+        unknown_field: Text
+    ],
     HUBS [
         Person {
             name
@@ -468,7 +554,9 @@ DEFINITIONS [
     // Should find at least DEFINITIONS block and HUBS block and Person definition
     assert!(ranges.len() >= 3);
 
-    // Check for DEFINITIONS block (line 1 to 7)
-    let def_block = ranges.iter().find(|r| r.start.line == 1 && r.end.line == 7);
+    // Check for DEFINITIONS block (line 1 to 13)
+    let def_block = ranges
+        .iter()
+        .find(|r| r.start.line == 1 && r.end.line == 13);
     assert!(def_block.is_some());
 }

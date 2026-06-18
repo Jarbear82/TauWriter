@@ -84,7 +84,7 @@ Sidebars and Disclosures
 <aside>
   <details open="true">
     <summary>Monster Stats</summary>
-    <p>HP: 50</p>
+    <paragraph>HP: 50</paragraph>
   </details>
 </aside>
 ---
