@@ -1,0 +1,107 @@
+DEFINITIONS [
+    HUBS [
+        Character {
+            name,
+            description,
+            resides_in -> (0..1) ALLOWS [Location],
+            associates <-> (0..*) ALLOWS [Character]
+        },
+        Location {
+            name,
+            description
+        },
+        Creature {
+            name,
+            description,
+            habitat -> (0..1) ALLOWS [Location]
+        },
+        Item {
+            name,
+            description,
+            owner -> (0..1) ALLOWS [Character]
+        }
+    ]
+],
+
+INSTANCES [
+    // Locations
+    workshop:Location {
+        name = "Tailor's Workshop",
+        description = "A small room near a window where the tailor sews."
+    },
+    woods:Location {
+        name = "The Woods",
+        description = "A large forest inhabited by giants, a unicorn, and a wild boar."
+    },
+    palace:Location {
+        name = "Royal Palace",
+        description = "The home of the King and the Princess."
+    },
+    cave:Location {
+        name = "Giants' Cave",
+        description = "A large, roomy cave where giants sleep and eat."
+    },
+
+    // Characters
+    tailor:Character {
+        name = "The Brave Little Tailor",
+        description = "A nimble and clever tailor who killed seven flies with one blow.",
+        resides_in = [workshop]
+    },
+    king:Character {
+        name = "The King",
+        description = "A ruler who is both impressed and terrified by the tailor's alleged prowess.",
+        resides_in = [palace]
+    },
+    princess:Character {
+        name = "The Princess",
+        description = "The King's daughter who eventually marries the tailor."
+    },
+    giant1:Character {
+        name = "The First Giant",
+        description = "A huge giant the tailor meets on a mountain.",
+        resides_in = [cave]
+    },
+    giant2:Character {
+        name = "The Second Giant",
+        description = "The companion of the first giant.",
+        resides_in = [cave]
+    },
+
+    // Creatures
+    flies:Creature {
+        name = "The Flies",
+        description = "Seven unbidden guests who settled on the tailor's jam."
+    },
+    unicorn:Creature {
+        name = "The Unicorn",
+        description = "A dangerous creature with a sharp horn.",
+        habitat = [woods]
+    },
+    wild_boar:Creature {
+        name = "The Wild Boar",
+        description = "A ferocious animal with foaming mouth and grinding teeth.",
+        habitat = [woods]
+    },
+    bird:Creature {
+        name = "The Bird",
+        description = "A small bird caught in a bush, used by the tailor to trick the giant."
+    },
+
+    // Items
+    jam:Item {
+        name = "Good Jam",
+        description = "Sweet jam purchased from a peasant woman.",
+        owner = [tailor]
+    },
+    banner:Item {
+        name = "The Banner",
+        description = "A banner embroidered with the words 'Seven with one blow'.",
+        owner = [tailor]
+    },
+    cheese:Item {
+        name = "Old Cheese",
+        description = "A piece of soft cheese used to trick the giant.",
+        owner = [tailor]
+    }
+];
