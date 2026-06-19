@@ -21,6 +21,76 @@ fn test_twxml_invalid_tag_diagnostic() {
 }
 
 #[test]
+fn test_twxml_nesting_rule_diagnostic() {
+    let mut db = RootDatabase::default();
+
+    // <heading> is only allowed as direct child of <section> or <document>
+    // Here it is inside <paragraph>, which is invalid.
+    let twxml_content = "<document><section><paragraph><heading>Invalid Nesting</heading></paragraph></section></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "story.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message
+            == "Invalid nesting: tag 'heading' is not allowed as a child of 'paragraph'"));
+}
+
+#[test]
+fn test_twxml_unresolved_hubref_diagnostic() {
+    let mut db = RootDatabase::default();
+    let hubgs_content = "INSTANCES [ aragorn: Character {} ]";
+    let twxml_content = r#"<document><hubref id="gandalf"></hubref></document>"#;
+
+    let hubgs_file =
+        db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "story.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Hub reference 'gandalf' not found"));
+}
+
+#[test]
+fn test_hubgs_type_mismatch_diagnostic() {
+    let mut db = RootDatabase::default();
+    let hubgs_content = r#"
+DEFINITIONS [
+    FIELDS [
+        age: Number
+    ]
+    HUBS [
+        Character { age }
+    ]
+]
+INSTANCES [
+    frodo: Character {
+        age = "fifty"
+    }
+]
+"#;
+    let hubgs_file =
+        db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Type mismatch for field 'age': expected 'Number'"));
+}
+
+#[test]
 fn test_hubgs_fields_enums_structs_parsing() {
     let mut db = RootDatabase::default();
 

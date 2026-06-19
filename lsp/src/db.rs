@@ -163,6 +163,14 @@ pub struct HubReference<'db> {
 }
 
 #[salsa::tracked]
+pub struct TwxmlTag<'db> {
+    pub name: String,
+    pub file: SourceFile,
+    pub range: LspRange,
+    pub parent_name: Option<String>,
+}
+
+#[salsa::tracked]
 pub fn parse_hubgs(db: &dyn Db, file: SourceFile) -> HubgsParseResult<'_> {
     crate::parser::parse_hubgs_ast(db, file)
 }
@@ -173,7 +181,7 @@ pub fn parse_twxml(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
 }
 
 #[salsa::tracked]
-pub fn all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<(String, LspRange)> {
+pub fn all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<TwxmlTag<'_>> {
     crate::parser::get_all_twxml_tags(db, file)
 }
 
@@ -427,12 +435,29 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
 
         // 2. Validate Tag Names
         let tags = all_twxml_tags(db, file);
-        for (tag_name, range) in tags {
-            if !VALID_TWXML_TAGS.contains(&tag_name.as_str()) {
+        for tag in tags.iter() {
+            if !VALID_TWXML_TAGS.contains(&tag.name(db).as_str()) {
                 errors.push(ValidationError {
-                    range,
-                    message: format!("Unknown TWXML tag '{}'", tag_name),
+                    range: tag.range(db),
+                    message: format!("Unknown TWXML tag '{}'", tag.name(db)),
                 });
+            }
+            // Validate nesting rules for 'heading'
+            if tag.name(db) == "heading" {
+                if let Some(parent_name) = tag.parent_name(db) {
+                    if parent_name != "section" && parent_name != "document" {
+                        errors.push(ValidationError {
+                            range: tag.range(db),
+                            message: format!(
+                                "Invalid nesting: tag '{}' is not allowed as a child of '{}'",
+                                tag.name(db),
+                                parent_name
+                            ),
+                        });
+                    }
+                } else {
+                    // A heading without a parent is implicitly at the top level, which is allowed (child of document)
+                }
             }
         }
     } else if file.path(db).ends_with(".hubgs") {
@@ -525,6 +550,7 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
                                 &assignment.value,
                                 &expected_type,
                             ) {
+                                eprintln!("[db] Pushing type mismatch error for field '{}'", name);
                                 errors.push(ValidationError {
                                     range: assignment.range,
                                     message: format!(
@@ -600,6 +626,10 @@ fn validate_value_type(
     value: &HubValue,
     type_name: &str,
 ) -> bool {
+    eprintln!(
+        "[db] Validating value {:?} against type {}",
+        value, type_name
+    );
     match type_name {
         "Text" | "String" => matches!(value, HubValue::String(_)),
         "Number" => matches!(value, HubValue::Number(_)),

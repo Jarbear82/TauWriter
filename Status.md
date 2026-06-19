@@ -33,11 +33,22 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Zed Extension** | ✅ | Functional Rust bridge with "one-click install" and auto-downloading. |
 
 ## Current Focus
-- [ ] Implement full expression evaluation engine for `@computed` fields (math, string ops, cross-hub references).
-- [ ] Add diagnostic validation for Enum assignments and `Array<Type>` structural verification.
-- [ ] Explore document fragmentation/stitching for multi-file TWXML documents.
-- [ ] Lay groundwork for Traits (`EXTENDS` syntax) as defined in the vision document.
-- [ ] Implement advanced UI Views logic (e.g., Graph visualization data exports for the client).
+
+### Structural Enforcement & Validation Pipeline (In Progress)
+- [x] Implement TWXML Nesting Rules
+- [x] Implement TWXML Referential Integrity (Unresolved references for <hubref>)
+- [x] Implement HubGS Type Checking (In Progress: Adding test for field type mismatches)
+- [ ] Implement HubGS Multiplicity Enforcement (Count references in assignments)
+
+### Formatter Module (`tauwriter-fmt`) (Not Started)
+- [ ] Develop a standalone formatting engine.
+- [ ] Integrate LSP `textDocument/formatting` handler.
+
+### Context-Aware Autocomplete (Not Started)
+- [ ] Implement context-aware completion suggestions.
+
+### Testing Suite Enhancement (Not Started)
+- [ ] Implement snapshot testing for LSP features.
 
 ## JSON-RPC Testing Progress
 

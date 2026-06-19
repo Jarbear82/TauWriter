@@ -588,7 +588,7 @@ pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
     refs
 }
 
-pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<(String, LspRange)> {
+pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::TwxmlTag<'_>> {
     let mut tags = Vec::new();
     let contents = file.contents(db);
 
@@ -604,9 +604,42 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<(String, LspRang
 
     for m in matches {
         for capture in m.captures {
-            let node = capture.node;
+            let node = capture.node; // This is the tag_name node
             let tag_name = contents[node.byte_range()].to_string();
-            tags.push((tag_name, ts_range_to_lsp(node.range())));
+
+            if let Some(start_tag_node) = node.parent() {
+                if start_tag_node.kind() == "start_tag" {
+                    if let Some(element_node) = start_tag_node.parent() {
+                        if element_node.kind() == "element" {
+                            let mut parent_name = None;
+                            if let Some(parent_element_node) = element_node.parent() {
+                                if parent_element_node.kind() == "element" {
+                                    if let Some(p_start_tag) = parent_element_node.child(0) {
+                                        if p_start_tag.kind() == "start_tag" {
+                                            if let Some(p_tag_name_node) =
+                                                p_start_tag.child_by_field_name("name")
+                                            {
+                                                parent_name = Some(
+                                                    contents[p_tag_name_node.byte_range()]
+                                                        .to_string(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            tags.push(crate::db::TwxmlTag::new(
+                                db,
+                                tag_name.clone(),
+                                file,
+                                ts_range_to_lsp(node.range()),
+                                parent_name,
+                            ));
+                        }
+                    }
+                }
+            }
         }
     }
 
