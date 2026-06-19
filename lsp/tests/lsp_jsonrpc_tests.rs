@@ -555,7 +555,7 @@ async fn test_formatting_jsonrpc() {
     assert_eq!(result.len(), 1);
     assert_eq!(
         result[0].new_text,
-        "INSTANCES [ aragorn:Person { name = 'Aragorn' } ]\n"
+        "INSTANCES [\n    aragorn: Person {\n        name = 'Aragorn'\n    }\n]\n"
     );
 }
 
@@ -1575,4 +1575,103 @@ async fn test_publish_diagnostics_jsonrpc() {
 
     rx.recv_timeout(Duration::from_secs(2))
         .expect("Should receive diagnostics");
+}
+
+#[tokio::test]
+async fn test_code_action_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let hubgs_path = std::env::current_dir().unwrap().join("test_ca.hubgs");
+    let twxml_path = std::env::current_dir().unwrap().join("test_ca.twxml");
+    let _hubgs_uri = Url::from_file_path(&hubgs_path).unwrap();
+    let twxml_uri = Url::from_file_path(&twxml_path).unwrap();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Character { name } ]
+],
+INSTANCES [
+    aragorn: Character { name = 'Elessar' }
+]
+";
+    let twxml_content = r#"<document><review><hubref id="aragorn" field="name">Strider</hubref></review></document>"#;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let h_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            hubgs_path.to_string_lossy().to_string(),
+            hubgs_content.to_string(),
+        );
+        let t_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            twxml_path.to_string_lossy().to_string(),
+            twxml_content.to_string(),
+        );
+        let ws = ws_arc.lock().unwrap();
+        ws.set_files(&mut *db_lock).to(vec![h_file, t_file]);
+    }
+
+    open_files.insert(twxml_uri.clone(), twxml_content.to_string());
+
+    let params = CodeActionParams {
+        text_document: TextDocumentIdentifier { uri: twxml_uri },
+        range: Range {
+            start: Position { line: 0, character: 15 },
+            end: Position { line: 0, character: 15 },
+        },
+        context: CodeActionContext::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let request = Request::build("textDocument/codeAction")
+        .id(2)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result: Vec<CodeActionOrCommand> =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    assert_eq!(result.len(), 2);
+    
+    let titles: Vec<String> = result.iter().map(|item| {
+        match item {
+            CodeActionOrCommand::CodeAction(ca) => ca.title.clone(),
+            CodeActionOrCommand::Command(cmd) => cmd.title.clone(),
+        }
+    }).collect();
+
+    assert!(titles.iter().any(|t| t.contains("Sync and Resolve")));
+    assert!(titles.iter().any(|t| t.contains("Mark as Resolved")));
 }

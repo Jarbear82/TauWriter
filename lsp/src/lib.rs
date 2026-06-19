@@ -1,5 +1,6 @@
 pub mod db;
-mod parser;
+pub mod parser;
+pub mod formatter;
 
 use dashmap::DashMap;
 use salsa::prelude::*;
@@ -168,6 +169,7 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
@@ -452,7 +454,87 @@ impl LanguageServer for Backend {
             let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
 
             if let Some(file) = file {
-                if path_str.ends_with(".hubgs") {
+                let content = file.contents(db);
+                if path_str.ends_with(".twxml") {
+                    let ctx = parser::get_twxml_completion_context(&content, position.into());
+                    match ctx {
+                        parser::TwxmlCompletionContext::HubrefId => {
+                            let instances = db::all_hub_instances(db, ws);
+                            let items = instances
+                                .into_iter()
+                                .map(|i| CompletionItem {
+                                    label: i.name(db),
+                                    kind: Some(CompletionItemKind::REFERENCE),
+                                    detail: Some("Hub Instance".to_string()),
+                                    ..Default::default()
+                                })
+                                .collect();
+                            return Ok(Some(CompletionResponse::Array(items)));
+                        }
+                        parser::TwxmlCompletionContext::HubrefField { id_val } => {
+                            if let Some(instance) = db::resolve_reference(db, ws, id_val) {
+                                let type_name = instance.type_name(db);
+                                if let Some(hub_type) = db::resolve_type(db, ws, file, type_name) {
+                                    let mut items = Vec::new();
+                                    for field in hub_type.fields(db) {
+                                        items.push(CompletionItem {
+                                            label: field.name.clone(),
+                                            kind: Some(CompletionItemKind::FIELD),
+                                            detail: Some("Field".to_string()),
+                                            ..Default::default()
+                                        });
+                                    }
+                                    for role in hub_type.roles(db) {
+                                        items.push(CompletionItem {
+                                            label: role.name.clone(),
+                                            kind: Some(CompletionItemKind::INTERFACE),
+                                            detail: Some("Role".to_string()),
+                                            ..Default::default()
+                                        });
+                                    }
+                                    return Ok(Some(CompletionResponse::Array(items)));
+                                }
+                            }
+                        }
+                        parser::TwxmlCompletionContext::None => {}
+                    }
+                } else if path_str.ends_with(".hubgs") {
+                    let ctx = parser::get_hubgs_completion_context(&content, position.into());
+                    match ctx {
+                        parser::HubgsCompletionContext::AllowsList => {
+                            let types = db::all_hub_types(db, ws);
+                            let items = types
+                                .into_iter()
+                                .map(|t| CompletionItem {
+                                    label: t.name(db),
+                                    kind: Some(CompletionItemKind::CLASS),
+                                    detail: Some("Hub Type".to_string()),
+                                    ..Default::default()
+                                })
+                                .collect();
+                            return Ok(Some(CompletionResponse::Array(items)));
+                        }
+                        parser::HubgsCompletionContext::InstanceAssignment { type_name, role_name } => {
+                            if let Some(hub_type) = db::resolve_type(db, ws, file, type_name.clone()) {
+                                if let Some(role) = hub_type.roles(db).iter().find(|r| r.name == role_name) {
+                                    let instances = db::all_hub_instances(db, ws);
+                                    let items = instances
+                                        .into_iter()
+                                        .filter(|i| role.allowed_types.contains(&i.type_name(db)))
+                                        .map(|i| CompletionItem {
+                                            label: i.name(db),
+                                            kind: Some(CompletionItemKind::REFERENCE),
+                                            detail: Some(format!("Hub Instance ({})", i.type_name(db))),
+                                            ..Default::default()
+                                        })
+                                        .collect();
+                                    return Ok(Some(CompletionResponse::Array(items)));
+                                }
+                            }
+                        }
+                        parser::HubgsCompletionContext::None => {}
+                    }
+
                     if let Some(type_name) = db::get_hub_type_at_position(db, file, position.into())
                     {
                         if let Some(hub_type) = db::resolve_type(db, ws, file, type_name) {
@@ -587,6 +669,82 @@ impl LanguageServer for Backend {
                             contents: HoverContents::Scalar(MarkedString::String(hover_text)),
                             range: Some(hub_type.range(db).into()),
                         }));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri;
+        let position = params.range.start;
+
+        if let Some(content) = self.open_files.get(&uri) {
+            if let Some((review_range, _hubref_range, id_val, field_val, current_text)) =
+                crate::parser::find_review_at_position(&content, position.into())
+            {
+                let db_lock = self.db.lock().unwrap();
+                let ws_lock = self.workspace_input.lock().unwrap();
+                let db = &*db_lock;
+                let ws = *ws_lock;
+
+                if let Some(instance) = db::resolve_reference(db, ws, id_val.clone()) {
+                    if let Some(eval_val) = db::compute_field_value(db, ws, instance, field_val.clone()) {
+                        let canonical_str = match eval_val {
+                            db::HubValue::String(s) => s,
+                            db::HubValue::Number(n) => n,
+                            db::HubValue::Boolean(b) => b.to_string(),
+                            db::HubValue::Identifier(i) => i,
+                            db::HubValue::Array(_) => "".to_string(),
+                        };
+
+                        let mut actions = Vec::new();
+
+                        let sync_text = format!(
+                            r#"<hubref id="{}" field="{}">{}</hubref>"#,
+                            id_val, field_val, canonical_str
+                        );
+                        let sync_edit = TextEdit {
+                            range: review_range.into(),
+                            new_text: sync_text,
+                        };
+                        let mut changes_sync = std::collections::HashMap::new();
+                        changes_sync.insert(uri.clone(), vec![sync_edit]);
+                        actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                            title: format!("Sync and Resolve: change to '{}'", canonical_str),
+                            kind: Some(CodeActionKind::QUICKFIX),
+                            edit: Some(WorkspaceEdit {
+                                changes: Some(changes_sync),
+                                ..Default::default()
+                            }),
+                            is_preferred: Some(true),
+                            ..Default::default()
+                        }));
+
+                        let keep_text = format!(
+                            r#"<hubref id="{}" field="{}">{}</hubref>"#,
+                            id_val, field_val, current_text
+                        );
+                        let keep_edit = TextEdit {
+                            range: review_range.into(),
+                            new_text: keep_text,
+                        };
+                        let mut changes_keep = std::collections::HashMap::new();
+                        changes_keep.insert(uri.clone(), vec![keep_edit]);
+                        actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                            title: "Mark as Resolved: keep current text".to_string(),
+                            kind: Some(CodeActionKind::QUICKFIX),
+                            edit: Some(WorkspaceEdit {
+                                changes: Some(changes_keep),
+                                ..Default::default()
+                            }),
+                            is_preferred: Some(false),
+                            ..Default::default()
+                        }));
+
+                        return Ok(Some(actions));
                     }
                 }
             }
@@ -746,13 +904,19 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
 
         if let Some(content) = self.open_files.get(&uri) {
-            let mut new_text = String::new();
-            for line in content.lines() {
-                new_text.push_str(line.trim_end());
-                new_text.push('\n');
-            }
+            let file_type = if uri.as_str().ends_with(".twxml") {
+                "twxml"
+            } else if uri.as_str().ends_with(".hubgs") {
+                "hubgs"
+            } else {
+                return Ok(None);
+            };
 
-            // Simple "replace all" edit
+            let new_text = formatter::format_source(&content, file_type);
+            let last_line_len = content.lines().last().map(|l| l.len()).unwrap_or(0) as u32;
+            let line_count = content.lines().count() as u32;
+            let end_line = if line_count > 0 { line_count - 1 } else { 0 };
+
             let edit = TextEdit {
                 range: Range {
                     start: Position {
@@ -760,8 +924,8 @@ impl LanguageServer for Backend {
                         character: 0,
                     },
                     end: Position {
-                        line: content.lines().count() as u32,
-                        character: 0,
+                        line: end_line,
+                        character: last_line_len,
                     },
                 },
                 new_text,
@@ -903,7 +1067,131 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         if let Some(change) = params.content_changes.first() {
             self.open_files.insert(uri.clone(), change.text.clone());
-            self.publish_diagnostics(uri).await;
+            self.publish_diagnostics(uri.clone()).await;
+
+            if uri.as_str().ends_with(".twxml") {
+                let self_client = self.client.clone();
+                let db_clone = self.db.clone();
+                let ws_clone = self.workspace_input.clone();
+                let uri_clone = uri.clone();
+
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    let mut edits = Vec::new();
+                    {
+                        let db = db_clone.lock().unwrap();
+                        let ws = *ws_clone.lock().unwrap();
+                        let path = uri_clone.to_file_path().unwrap().to_string_lossy().to_string();
+                        if let Some(file) = ws.files(&*db).into_iter().find(|f| f.path(&*db) == path) {
+                            let refs = db::parse_twxml(&*db, file);
+                            for r in refs {
+                                if r.is_reviewed(&*db) {
+                                    if let (Some(ref text_val), Some(ref field_name)) = (r.text(&*db), r.field(&*db)) {
+                                        let name = r.name(&*db);
+                                        if let Some(instance) = db::resolve_reference(&*db, ws, name.clone()) {
+                                            if let Some(eval_val) = db::compute_field_value(&*db, ws, instance, field_name.clone()) {
+                                                let canonical_str = match eval_val {
+                                                    db::HubValue::String(s) => s,
+                                                    db::HubValue::Number(n) => n,
+                                                    db::HubValue::Boolean(b) => b.to_string(),
+                                                    db::HubValue::Identifier(i) => i,
+                                                    db::HubValue::Array(_) => "".to_string(),
+                                                };
+                                                if canonical_str == *text_val {
+                                                    let review_range = r.tag_range(&*db);
+                                                    let keep_text = format!(
+                                                        r#"<hubref id="{}" field="{}">{}</hubref>"#,
+                                                        name, field_name, text_val
+                                                    );
+                                                    edits.push(TextEdit {
+                                                        range: review_range.into(),
+                                                        new_text: keep_text,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !edits.is_empty() {
+                        let mut changes = std::collections::HashMap::new();
+                        changes.insert(uri_clone, edits);
+                        let edit = WorkspaceEdit {
+                            changes: Some(changes),
+                            ..Default::default()
+                        };
+                        self_client.apply_edit(edit).await.ok();
+                    }
+                });
+            } else if uri.as_str().ends_with(".hubgs") {
+                let self_client = self.client.clone();
+                let db_clone = self.db.clone();
+                let ws_clone = self.workspace_input.clone();
+                let open_files_clone = self.open_files.clone();
+                
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    let mut changes = std::collections::HashMap::new();
+                    {
+                        let db = db_clone.lock().unwrap();
+                        let ws = *ws_clone.lock().unwrap();
+                        for file in ws.files(&*db) {
+                            let path = file.path(&*db);
+                            if path.ends_with(".twxml") {
+                                let file_uri = Url::from_file_path(&path).unwrap();
+                                let content = open_files_clone.get(&file_uri)
+                                    .map(|x| x.clone())
+                                    .unwrap_or_else(|| file.contents(&*db));
+                                
+                                let refs = db::parse_twxml(&*db, file);
+                                let mut edits = Vec::new();
+                                for r in refs {
+                                    if r.is_reviewed(&*db) {
+                                        continue;
+                                    }
+                                    if let (Some(ref text_val), Some(ref field_name)) = (r.text(&*db), r.field(&*db)) {
+                                        let name = r.name(&*db);
+                                        if let Some(instance) = db::resolve_reference(&*db, ws, name.clone()) {
+                                            if let Some(eval_val) = db::compute_field_value(&*db, ws, instance, field_name.clone()) {
+                                                let canonical_str = match eval_val {
+                                                    db::HubValue::String(s) => s,
+                                                    db::HubValue::Number(n) => n,
+                                                    db::HubValue::Boolean(b) => b.to_string(),
+                                                    db::HubValue::Identifier(i) => i,
+                                                    db::HubValue::Array(_) => "".to_string(),
+                                                };
+                                                if canonical_str != *text_val {
+                                                    let tag_range = r.tag_range(&*db);
+                                                    let original_text = get_range_text(&content, tag_range);
+                                                    if !original_text.is_empty() {
+                                                        let new_text = format!("<review>{}</review>", original_text);
+                                                        edits.push(TextEdit {
+                                                            range: tag_range.into(),
+                                                            new_text,
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if !edits.is_empty() {
+                                    changes.insert(file_uri, edits);
+                                }
+                            }
+                        }
+                    }
+                    if !changes.is_empty() {
+                        let edit = WorkspaceEdit {
+                            changes: Some(changes),
+                            ..Default::default()
+                        };
+                        self_client.apply_edit(edit).await.ok();
+                    }
+                });
+            }
         }
     }
 
@@ -913,4 +1201,40 @@ impl LanguageServer for Backend {
     }
 
     async fn did_save(&self, _params: DidSaveTextDocumentParams) {}
+}
+
+fn get_range_text(contents: &str, range: db::LspRange) -> String {
+    let lines: Vec<&str> = contents.lines().collect();
+    let start_line = range.start.line as usize;
+    let end_line = range.end.line as usize;
+    
+    if start_line >= lines.len() || end_line >= lines.len() {
+        return String::new();
+    }
+    
+    if start_line == end_line {
+        let line = lines[start_line];
+        let start_char = range.start.character as usize;
+        let end_char = range.end.character as usize;
+        if start_char <= line.len() && end_char <= line.len() {
+            return line[start_char..end_char].to_string();
+        }
+    } else {
+        let mut result = Vec::new();
+        let first_line = lines[start_line];
+        let start_char = range.start.character as usize;
+        if start_char <= first_line.len() {
+            result.push(&first_line[start_char..]);
+        }
+        for i in (start_line + 1)..end_line {
+            result.push(lines[i]);
+        }
+        let last_line = lines[end_line];
+        let end_char = range.end.character as usize;
+        if end_char <= last_line.len() {
+            result.push(&last_line[..end_char]);
+        }
+        return result.join("\n");
+    }
+    String::new()
 }

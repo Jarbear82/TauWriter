@@ -177,6 +177,59 @@ INSTANCES [
 }
 
 #[test]
+fn test_twxml_completion_contexts() {
+    let content = r#"<document>
+  <paragraph>
+    <hubref id="aragorn" field="name">Strider</hubref>
+  </paragraph>
+</document>"#;
+
+    let pos_id = db::LspPosition { line: 2, character: 17 };
+    let ctx_id = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_id);
+    assert!(matches!(ctx_id, tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId));
+
+    let pos_field = db::LspPosition { line: 2, character: 32 };
+    let ctx_field = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_field);
+    if let tauwriter_lsp::parser::TwxmlCompletionContext::HubrefField { id_val } = ctx_field {
+        assert_eq!(id_val, "aragorn");
+    } else {
+        panic!("Expected HubrefField context");
+    }
+}
+
+#[test]
+fn test_hubgs_completion_contexts() {
+    let content = "
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [
+        Character {
+            name -> (1) ALLOWS [Location]
+        }
+    ]
+],
+INSTANCES [
+    aragorn: Character {
+        name = rivendell
+    }
+]
+";
+
+    let pos_allows = db::LspPosition { line: 5, character: 32 };
+    let ctx_allows = tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_allows);
+    assert!(matches!(ctx_allows, tauwriter_lsp::parser::HubgsCompletionContext::AllowsList));
+
+    let pos_assign = db::LspPosition { line: 11, character: 16 };
+    let ctx_assign = tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_assign);
+    if let tauwriter_lsp::parser::HubgsCompletionContext::InstanceAssignment { type_name, role_name } = ctx_assign {
+        assert_eq!(type_name, "Character");
+        assert_eq!(role_name, "name");
+    } else {
+        panic!("Expected InstanceAssignment context, found something else");
+    }
+}
+
+#[test]
 fn test_semantic_tokens_hubgs() {
     let mut db = RootDatabase::default();
 
@@ -559,4 +612,45 @@ DEFINITIONS [
         .iter()
         .find(|r| r.start.line == 1 && r.end.line == 13);
     assert!(def_block.is_some());
+}
+
+#[test]
+fn test_snapshot_fixture_testing() {
+    let id_fixture = include_str!("fixtures/completion_id.fixture");
+    let field_fixture = include_str!("fixtures/completion_field.fixture");
+
+    let parse_fixture = |content: &str| -> (String, db::LspPosition) {
+        let mut clean_content = String::new();
+        let mut cursor_pos = db::LspPosition { line: 0, character: 0 };
+        
+        let mut current_line = 0;
+        let mut current_char = 0;
+        for ch in content.chars() {
+            if ch == '|' {
+                cursor_pos.line = current_line;
+                cursor_pos.character = current_char;
+            } else {
+                clean_content.push(ch);
+                if ch == '\n' {
+                    current_line += 1;
+                    current_char = 0;
+                } else {
+                    current_char += 1;
+                }
+            }
+        }
+        (clean_content, cursor_pos)
+    };
+
+    let (id_clean, id_pos) = parse_fixture(id_fixture);
+    let id_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&id_clean, id_pos);
+    assert!(matches!(id_ctx, tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId));
+
+    let (field_clean, field_pos) = parse_fixture(field_fixture);
+    let field_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&field_clean, field_pos);
+    if let tauwriter_lsp::parser::TwxmlCompletionContext::HubrefField { id_val } = field_ctx {
+        assert_eq!(id_val, "aragorn");
+    } else {
+        panic!("Expected HubrefField context for field completion fixture");
+    }
 }

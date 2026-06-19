@@ -160,6 +160,10 @@ pub struct HubReference<'db> {
     pub name: String,
     pub file: SourceFile,
     pub range: LspRange,
+    pub field: Option<String>,
+    pub text: Option<String>,
+    pub tag_range: LspRange,
+    pub is_reviewed: bool,
 }
 
 #[salsa::tracked]
@@ -414,6 +418,7 @@ const VALID_TWXML_TAGS: &[&str] = &[
     "th",
     "td",
     "footnote",
+    "review",
 ];
 
 #[salsa::tracked]
@@ -425,7 +430,37 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
         let refs = parse_twxml(db, file);
         for r in refs {
             let name = r.name(db);
-            if resolve_reference(db, workspace, name.clone()).is_none() {
+            if let Some(instance) = resolve_reference(db, workspace, name.clone()) {
+                if let Some(ref field_name) = r.field(db) {
+                    let type_name = instance.type_name(db);
+                    if let Some(hub_type) = resolve_type(db, workspace, instance.file(db), type_name.clone()) {
+                        let is_field = hub_type.fields(db).iter().any(|f| &f.name == field_name);
+                        let is_role = hub_type.roles(db).iter().any(|r| &r.name == field_name);
+                        if !is_field && !is_role {
+                            errors.push(ValidationError {
+                                range: r.range(db),
+                                message: format!("Unknown field '{}' for type '{}'", field_name, type_name),
+                            });
+                        } else if let Some(ref text_val) = r.text(db) {
+                            if let Some(eval_val) = compute_field_value(db, workspace, instance, field_name.clone()) {
+                                let canonical_str = match eval_val {
+                                    HubValue::String(s) => s,
+                                    HubValue::Number(n) => n,
+                                    HubValue::Boolean(b) => b.to_string(),
+                                    HubValue::Identifier(i) => i,
+                                    HubValue::Array(_) => "".to_string(),
+                                };
+                                if canonical_str != *text_val {
+                                    errors.push(ValidationError {
+                                        range: r.range(db),
+                                        message: format!("Out of sync: expected '{}', found '{}'", canonical_str, text_val),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
                 errors.push(ValidationError {
                     range: r.range(db),
                     message: format!("Hub reference '{}' not found", name),
@@ -747,7 +782,7 @@ pub fn find_all_references(
                     if let Some(r_range) =
                         find_ref_in_value(&assignment.value, &name, assignment.range)
                     {
-                        all_refs.push(HubReference::new(db, name.clone(), file, r_range));
+                        all_refs.push(HubReference::new(db, name.clone(), file, r_range, None, None, r_range, false));
                     }
                 }
             }

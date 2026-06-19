@@ -16,3 +16,4 @@
 ((tag_name) @keyword (#match? @keyword "^(hubref)$"))
 ((tag_name) @markup.bold (#match? @markup.bold "^(bold)$"))
 ((tag_name) @markup.italic (#match? @markup.italic "^(italic)$"))
+((tag_name) @keyword.exception (#match? @keyword.exception "^(review)$"))

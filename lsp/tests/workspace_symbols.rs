@@ -1,4 +1,4 @@
-use tauwriter_lsp::db::{self, Db};
+use tauwriter_lsp::db;
 use tauwriter_lsp::RootDatabase;
 
 #[test]

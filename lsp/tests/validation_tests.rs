@@ -63,17 +63,99 @@ fn test_twxml_unresolved_hubref_diagnostic() {
 }
 
 #[test]
+fn test_twxml_self_closing_hubref_field_validation() {
+    let mut db = RootDatabase::default();
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        age: Number
+    ],
+    HUBS [
+        Character { age }
+    ]
+],
+INSTANCES [
+    aragorn: Character { age = 87 }
+]
+";
+    let twxml_content_valid = r#"<document><hubref id="aragorn" field="age"/></document>"#;
+    let twxml_content_invalid = r#"<document><hubref id="aragorn" field="nonexistent"/></document>"#;
+
+    let hubgs_file =
+        db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
+    
+    let twxml_file_valid = db::SourceFile::new(
+        &mut db,
+        "story_valid.twxml".to_string(),
+        twxml_content_valid.to_string(),
+    );
+    let workspace_valid = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_valid]);
+    let errors_valid = db::validate_file(&db, workspace_valid, twxml_file_valid);
+    assert!(errors_valid.is_empty(), "Expected no errors, found {:?}", errors_valid);
+
+    let twxml_file_invalid = db::SourceFile::new(
+        &mut db,
+        "story_invalid.twxml".to_string(),
+        twxml_content_invalid.to_string(),
+    );
+    let workspace_invalid = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_invalid]);
+    let errors_invalid = db::validate_file(&db, workspace_invalid, twxml_file_invalid);
+    assert!(errors_invalid.iter().any(|e| e.message.contains("Unknown field 'nonexistent'")));
+}
+
+#[test]
+fn test_twxml_wrapping_hubref_sync_validation() {
+    let mut db = RootDatabase::default();
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Character { name }
+    ]
+],
+INSTANCES [
+    aragorn: Character { name = 'Elessar' }
+]
+";
+    let twxml_content_sync = r#"<document><hubref id="aragorn" field="name">Elessar</hubref></document>"#;
+    let twxml_content_unsync = r#"<document><hubref id="aragorn" field="name">Strider</hubref></document>"#;
+
+    let hubgs_file =
+        db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
+
+    let twxml_file_sync = db::SourceFile::new(
+        &mut db,
+        "story_sync.twxml".to_string(),
+        twxml_content_sync.to_string(),
+    );
+    let workspace_sync = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_sync]);
+    let errors_sync = db::validate_file(&db, workspace_sync, twxml_file_sync);
+    assert!(errors_sync.is_empty(), "Expected no errors, found {:?}", errors_sync);
+
+    let twxml_file_unsync = db::SourceFile::new(
+        &mut db,
+        "story_unsync.twxml".to_string(),
+        twxml_content_unsync.to_string(),
+    );
+    let workspace_unsync = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_unsync]);
+    let errors_unsync = db::validate_file(&db, workspace_unsync, twxml_file_unsync);
+    assert!(errors_unsync.iter().any(|e| e.message == "Out of sync: expected 'Elessar', found 'Strider'"));
+}
+
+#[test]
 fn test_hubgs_type_mismatch_diagnostic() {
     let mut db = RootDatabase::default();
     let hubgs_content = r#"
 DEFINITIONS [
     FIELDS [
         age: Number
-    ]
+    ],
     HUBS [
         Character { age }
     ]
-]
+],
 INSTANCES [
     frodo: Character {
         age = "fifty"
