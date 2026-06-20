@@ -1,4 +1,9 @@
-; Tags
+; Structural blocks
+(document_block) @keyword.control
+(metadata_block) @keyword.control
+(body_block) @keyword.control
+
+; Tags (generic elements inside body/metadata)
 (tag_name) @tag
 
 ; Attributes
@@ -11,8 +16,8 @@
 ; Comments
 (comment) @comment
 
-; Specialized Tags (Contextual)
-((tag_name) @keyword.control (#match? @keyword.control "^(section|document)$"))
+; Specialized Tags (Contextual) - still applies to tag_name nodes
+((tag_name) @keyword.control (#match? @keyword.control "^(section)$"))
 ((tag_name) @keyword (#match? @keyword "^(hubref)$"))
 ((tag_name) @markup.bold (#match? @markup.bold "^(bold)$"))
 ((tag_name) @markup.italic (#match? @markup.italic "^(italic)$"))

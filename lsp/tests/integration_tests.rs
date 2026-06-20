@@ -1,6 +1,16 @@
 use tauwriter_lsp::db;
 use tauwriter_lsp::RootDatabase;
 
+/// Wrap TWXML content in the required skeleton
+macro_rules! twxml {
+    ($content:expr) => {
+        format!(
+            "<document><metadata></metadata><body>{}</body></document>",
+            $content
+        )
+    };
+}
+
 #[test]
 fn test_salsa_indexing_and_resolution() {
     let mut db = RootDatabase::default();
@@ -14,7 +24,7 @@ fn test_salsa_indexing_and_resolution() {
     );
 
     // 2. Create a reference in TWXML
-    let twxml_content = "<hubref id='aragorn'>Aragorn</hubref>";
+    let twxml_content = twxml!("<hubref id='aragorn'>Aragorn</hubref>");
     let twxml_file = db::SourceFile::new(
         &mut db,
         "story.twxml".to_string(),
@@ -44,7 +54,7 @@ fn test_broken_reference_diagnostic() {
     let mut db = RootDatabase::default();
 
     // Reference to non-existent 'gandalf'
-    let twxml_content = "<hubref id='gandalf'>Gandalf</hubref>";
+    let twxml_content = twxml!("<hubref id='gandalf'>Gandalf</hubref>");
     let twxml_file = db::SourceFile::new(
         &mut db,
         "story.twxml".to_string(),
@@ -71,8 +81,8 @@ fn test_unknown_hub_type_diagnostic() {
     let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
 
     let errors = db::validate_file(&db, workspace, hubgs_file);
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].message.contains("Alien"));
+    // With strict grammar: unknown type error + orphaned instances guard
+    assert!(errors.iter().any(|e| e.message.contains("Alien")));
 }
 
 #[test]
@@ -178,17 +188,26 @@ INSTANCES [
 
 #[test]
 fn test_twxml_completion_contexts() {
-    let content = r#"<document>
+    let content = r#"<document><metadata></metadata><body>
   <paragraph>
     <hubref id="aragorn" field="name">Strider</hubref>
   </paragraph>
-</document>"#;
+</body></document>"#;
 
-    let pos_id = db::LspPosition { line: 2, character: 17 };
+    let pos_id = db::LspPosition {
+        line: 2,
+        character: 17,
+    };
     let ctx_id = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_id);
-    assert!(matches!(ctx_id, tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId));
+    assert!(matches!(
+        ctx_id,
+        tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId
+    ));
 
-    let pos_field = db::LspPosition { line: 2, character: 32 };
+    let pos_field = db::LspPosition {
+        line: 2,
+        character: 32,
+    };
     let ctx_field = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_field);
     if let tauwriter_lsp::parser::TwxmlCompletionContext::HubrefField { id_val } = ctx_field {
         assert_eq!(id_val, "aragorn");
@@ -215,13 +234,26 @@ INSTANCES [
 ]
 ";
 
-    let pos_allows = db::LspPosition { line: 5, character: 32 };
+    let pos_allows = db::LspPosition {
+        line: 5,
+        character: 32,
+    };
     let ctx_allows = tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_allows);
-    assert!(matches!(ctx_allows, tauwriter_lsp::parser::HubgsCompletionContext::AllowsList));
+    assert!(matches!(
+        ctx_allows,
+        tauwriter_lsp::parser::HubgsCompletionContext::AllowsList
+    ));
 
-    let pos_assign = db::LspPosition { line: 11, character: 16 };
+    let pos_assign = db::LspPosition {
+        line: 11,
+        character: 16,
+    };
     let ctx_assign = tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_assign);
-    if let tauwriter_lsp::parser::HubgsCompletionContext::InstanceAssignment { type_name, role_name } = ctx_assign {
+    if let tauwriter_lsp::parser::HubgsCompletionContext::InstanceAssignment {
+        type_name,
+        role_name,
+    } = ctx_assign
+    {
         assert_eq!(type_name, "Character");
         assert_eq!(role_name, "name");
     } else {
@@ -280,7 +312,7 @@ INSTANCES [
 fn test_semantic_tokens_twxml() {
     let mut db = RootDatabase::default();
 
-    let twxml_content = "<hubref id='aragorn'>Aragorn</hubref>";
+    let twxml_content = twxml!("<hubref id='aragorn'>Aragorn</hubref>");
     let twxml_file = db::SourceFile::new(
         &mut db,
         "story.twxml".to_string(),
@@ -290,7 +322,7 @@ fn test_semantic_tokens_twxml() {
     let tokens = db::get_semantic_tokens(&db, twxml_file);
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].token_type, 2); // VARIABLE
-    assert_eq!(tokens[0].character, 12); // After id='
+    assert_eq!(tokens[0].character, 49); // After id=' (shifted by skeleton prefix)
 }
 
 #[test]
@@ -621,8 +653,11 @@ fn test_snapshot_fixture_testing() {
 
     let parse_fixture = |content: &str| -> (String, db::LspPosition) {
         let mut clean_content = String::new();
-        let mut cursor_pos = db::LspPosition { line: 0, character: 0 };
-        
+        let mut cursor_pos = db::LspPosition {
+            line: 0,
+            character: 0,
+        };
+
         let mut current_line = 0;
         let mut current_char = 0;
         for ch in content.chars() {
@@ -644,7 +679,10 @@ fn test_snapshot_fixture_testing() {
 
     let (id_clean, id_pos) = parse_fixture(id_fixture);
     let id_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&id_clean, id_pos);
-    assert!(matches!(id_ctx, tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId));
+    assert!(matches!(
+        id_ctx,
+        tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId
+    ));
 
     let (field_clean, field_pos) = parse_fixture(field_fixture);
     let field_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&field_clean, field_pos);
@@ -653,4 +691,32 @@ fn test_snapshot_fixture_testing() {
     } else {
         panic!("Expected HubrefField context for field completion fixture");
     }
+}
+
+#[test]
+fn test_formatter_structural_blocks() {
+    // Verify the formatter handles structural blocks correctly
+    let content = "<document><metadata></metadata><body><heading>Title</heading></body></document>";
+    let formatted = tauwriter_lsp::formatter::format_source(content, "twxml");
+
+    // The formatted output should contain proper document structure
+    assert!(formatted.contains("<document>"));
+    assert!(formatted.contains("</document>"));
+}
+
+#[test]
+fn test_metadata_block_parsed() {
+    let mut db = RootDatabase::default();
+
+    // Verify that metadata block is properly recognized in tag listing
+    let twxml_content = twxml!(""); // Empty body, with metadata
+    let twxml_file =
+        db::SourceFile::new(&mut db, "test.twxml".to_string(), twxml_content.to_string());
+
+    let tags = db::all_twxml_tags(&db, twxml_file);
+
+    // Should find 'metadata' and 'body' structural tags
+    let tag_names: Vec<_> = tags.iter().map(|t| t.name(&db).clone()).collect();
+    assert!(tag_names.iter().any(|n| n == "metadata"));
+    assert!(tag_names.iter().any(|n| n == "body"));
 }

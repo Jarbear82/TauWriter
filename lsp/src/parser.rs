@@ -530,7 +530,10 @@ fn node_to_hub_value(node: tree_sitter::Node, contents: &str) -> Option<crate::d
     }
 }
 
-fn get_attributes(tag_node: tree_sitter::Node, contents: &str) -> (Option<(String, LspRange)>, Option<String>) {
+fn get_attributes(
+    tag_node: tree_sitter::Node,
+    contents: &str,
+) -> (Option<(String, LspRange)>, Option<String>) {
     let mut id_val = None;
     let mut field_val = None;
     let mut cursor = tag_node.walk();
@@ -621,7 +624,11 @@ pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
                     let start_tag = node.child(0).unwrap();
                     let (id_val, field) = get_attributes(start_tag, &contents);
                     let text = get_recursive_text(node, &contents);
-                    let text_opt = if text.is_empty() { None } else { Some(text.trim().to_string()) };
+                    let text_opt = if text.is_empty() {
+                        None
+                    } else {
+                        Some(text.trim().to_string())
+                    };
                     (id_val, field, text_opt, ts_range_to_lsp(node.range()))
                 }
                 "self_closing" => {
@@ -659,6 +666,33 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
     parser.set_language(language).ok();
     let tree = parser.parse(&contents, None).unwrap();
 
+    // Structural tags are now hardcoded in the grammar (document_block, metadata_block, body_block)
+    // and don't appear as tag_name nodes. Inject them synthetically if present.
+    let root = tree.root_node();
+    for child in root.children(&mut root.walk()) {
+        match child.kind() {
+            "metadata_block" => {
+                tags.push(crate::db::TwxmlTag::new(
+                    db,
+                    "metadata".to_string(),
+                    file,
+                    ts_range_to_lsp(child.range()),
+                    Some("document".to_string()),
+                ));
+            }
+            "body_block" => {
+                tags.push(crate::db::TwxmlTag::new(
+                    db,
+                    "body".to_string(),
+                    file,
+                    ts_range_to_lsp(child.range()),
+                    Some("document".to_string()),
+                ));
+            }
+            _ => {}
+        }
+    }
+
     let query_str = "(tag_name) @tag";
     let query = tree_sitter::Query::new(language, query_str).unwrap();
     let mut query_cursor = tree_sitter::QueryCursor::new();
@@ -675,19 +709,29 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
                         if element_node.kind() == "element" {
                             let mut parent_name = None;
                             if let Some(parent_element_node) = element_node.parent() {
-                                if parent_element_node.kind() == "element" {
-                                    if let Some(p_start_tag) = parent_element_node.child(0) {
-                                        if p_start_tag.kind() == "start_tag" {
-                                            if let Some(p_tag_name_node) =
-                                                p_start_tag.child_by_field_name("name")
-                                            {
-                                                parent_name = Some(
-                                                    contents[p_tag_name_node.byte_range()]
-                                                        .to_string(),
-                                                );
+                                // Parent could be another element, or a body_block/metadata_block
+                                match parent_element_node.kind() {
+                                    "element" => {
+                                        if let Some(p_start_tag) = parent_element_node.child(0) {
+                                            if p_start_tag.kind() == "start_tag" {
+                                                if let Some(p_tag_name_node) =
+                                                    p_start_tag.child_by_field_name("name")
+                                                {
+                                                    parent_name = Some(
+                                                        contents[p_tag_name_node.byte_range()]
+                                                            .to_string(),
+                                                    );
+                                                }
                                             }
                                         }
                                     }
+                                    "body_block" => {
+                                        parent_name = Some("body".to_string());
+                                    }
+                                    "metadata_block" => {
+                                        parent_name = Some("metadata".to_string());
+                                    }
+                                    _ => {}
                                 }
                             }
 
@@ -735,7 +779,9 @@ pub fn find_review_at_position(
         column: pos.character as usize,
     };
 
-    let mut node = tree.root_node().descendant_for_point_range(ts_pos, ts_pos)?;
+    let mut node = tree
+        .root_node()
+        .descendant_for_point_range(ts_pos, ts_pos)?;
 
     while node.kind() != "element" && node.kind() != "self_closing_element" {
         if let Some(parent) = node.parent() {
@@ -818,20 +864,20 @@ pub fn get_twxml_completion_context(contents: &str, pos: LspPosition) -> TwxmlCo
         Some(t) => t,
         None => return TwxmlCompletionContext::None,
     };
-    
+
     let ts_pos = tree_sitter::Point {
         row: pos.line as usize,
         column: pos.character as usize,
     };
-    
+
     let node = match tree.root_node().descendant_for_point_range(ts_pos, ts_pos) {
         Some(n) => n,
         None => return TwxmlCompletionContext::None,
     };
-    
+
     let mut current = node;
     let mut attribute_node = None;
-    while current.kind() != "document" {
+    while current.kind() != "document" && current.kind() != "source_file" {
         if current.kind() == "attribute" {
             attribute_node = Some(current);
             break;
@@ -842,16 +888,16 @@ pub fn get_twxml_completion_context(contents: &str, pos: LspPosition) -> TwxmlCo
             break;
         }
     }
-    
+
     let attr = match attribute_node {
         Some(a) => a,
         None => return TwxmlCompletionContext::None,
     };
-    
+
     if let (Some(name_node), Some(_val_node)) = (attr.child(0), attr.child(2)) {
         let attr_name = &contents[name_node.byte_range()];
         let parent = attr.parent().unwrap();
-        
+
         let is_hubref = if parent.kind() == "start_tag" {
             if let Some(nm) = parent.child_by_field_name("name") {
                 &contents[nm.byte_range()] == "hubref"
@@ -867,7 +913,7 @@ pub fn get_twxml_completion_context(contents: &str, pos: LspPosition) -> TwxmlCo
         } else {
             false
         };
-        
+
         if is_hubref {
             if attr_name == "id" {
                 return TwxmlCompletionContext::HubrefId;
@@ -879,13 +925,16 @@ pub fn get_twxml_completion_context(contents: &str, pos: LspPosition) -> TwxmlCo
             }
         }
     }
-    
+
     TwxmlCompletionContext::None
 }
 
 pub enum HubgsCompletionContext {
     AllowsList,
-    InstanceAssignment { type_name: String, role_name: String },
+    InstanceAssignment {
+        type_name: String,
+        role_name: String,
+    },
     None,
 }
 
@@ -950,7 +999,7 @@ pub fn get_hubgs_completion_context(contents: &str, pos: LspPosition) -> HubgsCo
     if let Some(assign) = assignment_node {
         if let Some(id_node) = assign.child(0) {
             let role_name = contents[id_node.byte_range()].trim().to_string();
-            
+
             let mut inst_block = assign;
             while inst_block.kind() != "instance_block" && inst_block.kind() != "document" {
                 if let Some(p) = inst_block.parent() {
@@ -959,11 +1008,14 @@ pub fn get_hubgs_completion_context(contents: &str, pos: LspPosition) -> HubgsCo
                     break;
                 }
             }
-            
+
             if inst_block.kind() == "instance_block" {
                 if let Some(type_node) = inst_block.child_by_field_name("type") {
                     let type_name = contents[type_node.byte_range()].trim().to_string();
-                    return HubgsCompletionContext::InstanceAssignment { type_name, role_name };
+                    return HubgsCompletionContext::InstanceAssignment {
+                        type_name,
+                        role_name,
+                    };
                 }
             }
         }

@@ -1,12 +1,22 @@
 use tauwriter_lsp::db;
 use tauwriter_lsp::RootDatabase;
 
+/// Wrap TWXML content in the required skeleton: <document><metadata></metadata><body>...</body></document>
+macro_rules! twxml {
+    ($content:expr) => {
+        format!(
+            "<document><metadata></metadata><body>{}</body></document>",
+            $content
+        )
+    };
+}
+
 #[test]
 fn test_twxml_invalid_tag_diagnostic() {
     let mut db = RootDatabase::default();
 
     // 'invalidtag' is not in the list of valid tags
-    let twxml_content = "<document><invalidtag>Content</invalidtag></document>";
+    let twxml_content = twxml!("<invalidtag>Content</invalidtag>");
     let twxml_file = db::SourceFile::new(
         &mut db,
         "story.twxml".to_string(),
@@ -24,9 +34,10 @@ fn test_twxml_invalid_tag_diagnostic() {
 fn test_twxml_nesting_rule_diagnostic() {
     let mut db = RootDatabase::default();
 
-    // <heading> is only allowed as direct child of <section> or <document>
+    // <heading> is only allowed as direct child of <section>, <document> or <body>
     // Here it is inside <paragraph>, which is invalid.
-    let twxml_content = "<document><section><paragraph><heading>Invalid Nesting</heading></paragraph></section></document>";
+    let twxml_content =
+        twxml!("<section><paragraph><heading>Invalid Nesting</heading></paragraph></section>");
     let twxml_file = db::SourceFile::new(
         &mut db,
         "story.twxml".to_string(),
@@ -45,7 +56,7 @@ fn test_twxml_nesting_rule_diagnostic() {
 fn test_twxml_unresolved_hubref_diagnostic() {
     let mut db = RootDatabase::default();
     let hubgs_content = "INSTANCES [ aragorn: Character {} ]";
-    let twxml_content = r#"<document><hubref id="gandalf"></hubref></document>"#;
+    let twxml_content = twxml!(r#"<hubref id="gandalf"></hubref>"#);
 
     let hubgs_file =
         db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
@@ -78,12 +89,12 @@ INSTANCES [
     aragorn: Character { age = 87 }
 ]
 ";
-    let twxml_content_valid = r#"<document><hubref id="aragorn" field="age"/></document>"#;
-    let twxml_content_invalid = r#"<document><hubref id="aragorn" field="nonexistent"/></document>"#;
+    let twxml_content_valid = twxml!(r#"<hubref id="aragorn" field="age"/>"#);
+    let twxml_content_invalid = twxml!(r#"<hubref id="aragorn" field="nonexistent"/>"#);
 
     let hubgs_file =
         db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
-    
+
     let twxml_file_valid = db::SourceFile::new(
         &mut db,
         "story_valid.twxml".to_string(),
@@ -91,7 +102,11 @@ INSTANCES [
     );
     let workspace_valid = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_valid]);
     let errors_valid = db::validate_file(&db, workspace_valid, twxml_file_valid);
-    assert!(errors_valid.is_empty(), "Expected no errors, found {:?}", errors_valid);
+    assert!(
+        errors_valid.is_empty(),
+        "Expected no errors, found {:?}",
+        errors_valid
+    );
 
     let twxml_file_invalid = db::SourceFile::new(
         &mut db,
@@ -100,7 +115,9 @@ INSTANCES [
     );
     let workspace_invalid = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_invalid]);
     let errors_invalid = db::validate_file(&db, workspace_invalid, twxml_file_invalid);
-    assert!(errors_invalid.iter().any(|e| e.message.contains("Unknown field 'nonexistent'")));
+    assert!(errors_invalid
+        .iter()
+        .any(|e| e.message.contains("Unknown field 'nonexistent'")));
 }
 
 #[test]
@@ -119,8 +136,8 @@ INSTANCES [
     aragorn: Character { name = 'Elessar' }
 ]
 ";
-    let twxml_content_sync = r#"<document><hubref id="aragorn" field="name">Elessar</hubref></document>"#;
-    let twxml_content_unsync = r#"<document><hubref id="aragorn" field="name">Strider</hubref></document>"#;
+    let twxml_content_sync = twxml!(r#"<hubref id="aragorn" field="name">Elessar</hubref>"#);
+    let twxml_content_unsync = twxml!(r#"<hubref id="aragorn" field="name">Strider</hubref>"#);
 
     let hubgs_file =
         db::SourceFile::new(&mut db, "lotr.hubgs".to_string(), hubgs_content.to_string());
@@ -132,7 +149,11 @@ INSTANCES [
     );
     let workspace_sync = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_sync]);
     let errors_sync = db::validate_file(&db, workspace_sync, twxml_file_sync);
-    assert!(errors_sync.is_empty(), "Expected no errors, found {:?}", errors_sync);
+    assert!(
+        errors_sync.is_empty(),
+        "Expected no errors, found {:?}",
+        errors_sync
+    );
 
     let twxml_file_unsync = db::SourceFile::new(
         &mut db,
@@ -141,7 +162,9 @@ INSTANCES [
     );
     let workspace_unsync = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file_unsync]);
     let errors_unsync = db::validate_file(&db, workspace_unsync, twxml_file_unsync);
-    assert!(errors_unsync.iter().any(|e| e.message == "Out of sync: expected 'Elessar', found 'Strider'"));
+    assert!(errors_unsync
+        .iter()
+        .any(|e| e.message == "Out of sync: expected 'Elessar', found 'Strider'"));
 }
 
 #[test]
@@ -371,4 +394,58 @@ INSTANCES [
         full_name_val,
         Some(db::HubValue::String("Aragorn".to_string()))
     );
+}
+
+#[test]
+fn test_hubgs_orphaned_instances() {
+    let mut db = RootDatabase::default();
+
+    // File with INSTANCES but no DEFINITIONS or IMPORTS
+    let hubgs_content = "INSTANCES [ hero:Person { name = 'Hero' } ]";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "orphan.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("no definitions or imports")));
+}
+
+#[test]
+fn test_hubgs_instances_resolved_via_imports() {
+    let mut db = RootDatabase::default();
+
+    // File B has DEFINITIONS
+    let schema_content = "
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Person { name } ]
+]
+";
+    let schema_file = db::SourceFile::new(
+        &mut db,
+        "schema.hubgs".to_string(),
+        schema_content.to_string(),
+    );
+
+    // File A has INSTANCES + IMPORTS
+    let story_content = "
+IMPORTS [ [Person] FROM 'schema.hubgs' ],
+INSTANCES [ hero:Person { name = 'Hero' } ]
+";
+    let story_file = db::SourceFile::new(
+        &mut db,
+        "story.hubgs".to_string(),
+        story_content.to_string(),
+    );
+
+    let workspace = db::Workspace::new(&mut db, vec![schema_file, story_file]);
+
+    // Story file should have zero errors because Person is resolved via import
+    let errors = db::validate_file(&db, workspace, story_file);
+    assert!(errors.is_empty(), "Expected no errors, found: {:?}", errors);
 }

@@ -383,6 +383,8 @@ impl Multiplicity {
 
 const VALID_TWXML_TAGS: &[&str] = &[
     "document",
+    "metadata",
+    "body",
     "meta",
     "section",
     "heading",
@@ -433,16 +435,23 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
             if let Some(instance) = resolve_reference(db, workspace, name.clone()) {
                 if let Some(ref field_name) = r.field(db) {
                     let type_name = instance.type_name(db);
-                    if let Some(hub_type) = resolve_type(db, workspace, instance.file(db), type_name.clone()) {
+                    if let Some(hub_type) =
+                        resolve_type(db, workspace, instance.file(db), type_name.clone())
+                    {
                         let is_field = hub_type.fields(db).iter().any(|f| &f.name == field_name);
                         let is_role = hub_type.roles(db).iter().any(|r| &r.name == field_name);
                         if !is_field && !is_role {
                             errors.push(ValidationError {
                                 range: r.range(db),
-                                message: format!("Unknown field '{}' for type '{}'", field_name, type_name),
+                                message: format!(
+                                    "Unknown field '{}' for type '{}'",
+                                    field_name, type_name
+                                ),
                             });
                         } else if let Some(ref text_val) = r.text(db) {
-                            if let Some(eval_val) = compute_field_value(db, workspace, instance, field_name.clone()) {
+                            if let Some(eval_val) =
+                                compute_field_value(db, workspace, instance, field_name.clone())
+                            {
                                 let canonical_str = match eval_val {
                                     HubValue::String(s) => s,
                                     HubValue::Number(n) => n,
@@ -453,7 +462,10 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
                                 if canonical_str != *text_val {
                                     errors.push(ValidationError {
                                         range: r.range(db),
-                                        message: format!("Out of sync: expected '{}', found '{}'", canonical_str, text_val),
+                                        message: format!(
+                                            "Out of sync: expected '{}', found '{}'",
+                                            canonical_str, text_val
+                                        ),
                                     });
                                 }
                             }
@@ -480,7 +492,10 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
             // Validate nesting rules for 'heading'
             if tag.name(db) == "heading" {
                 if let Some(parent_name) = tag.parent_name(db) {
-                    if parent_name != "section" && parent_name != "document" {
+                    if parent_name != "section"
+                        && parent_name != "document"
+                        && parent_name != "body"
+                    {
                         errors.push(ValidationError {
                             range: tag.range(db),
                             message: format!(
@@ -497,6 +512,24 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
         }
     } else if file.path(db).ends_with(".hubgs") {
         let result = parse_hubgs(db, file);
+
+        // 0. Guard: orphaned instances (instances without definitions or imports)
+        if !result.instances(db).is_empty()
+            && result.types(db).is_empty()
+            && result.imports(db).is_empty()
+        {
+            for instance in result.instances(db) {
+                errors.push(ValidationError {
+                    range: instance.range(db),
+                    message: format!(
+                        "Instance '{}' uses type '{}' but no definitions or imports are present",
+                        instance.name(db),
+                        instance.type_name(db)
+                    ),
+                });
+            }
+        }
+
         let global_fields = all_global_fields(db, workspace);
 
         // 1. Validate Hub Type Definitions
@@ -782,7 +815,16 @@ pub fn find_all_references(
                     if let Some(r_range) =
                         find_ref_in_value(&assignment.value, &name, assignment.range)
                     {
-                        all_refs.push(HubReference::new(db, name.clone(), file, r_range, None, None, r_range, false));
+                        all_refs.push(HubReference::new(
+                            db,
+                            name.clone(),
+                            file,
+                            r_range,
+                            None,
+                            None,
+                            r_range,
+                            false,
+                        ));
                     }
                 }
             }

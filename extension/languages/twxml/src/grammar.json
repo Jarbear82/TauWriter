@@ -1,0 +1,317 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/grammar.schema.json",
+  "name": "twxml",
+  "rules": {
+    "source_file": {
+      "type": "SYMBOL",
+      "name": "document_block"
+    },
+    "document_block": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<document>"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "metadata_block"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "body_block"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "STRING",
+          "value": "</document>"
+        }
+      ]
+    },
+    "metadata_block": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<metadata>"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_inner_node"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "</metadata>"
+        }
+      ]
+    },
+    "body_block": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<body>"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_inner_node"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "</body>"
+        }
+      ]
+    },
+    "_inner_node": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "element"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "self_closing_element"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "text"
+        }
+      ]
+    },
+    "element": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "start_tag"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_node_content"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "end_tag"
+        }
+      ]
+    },
+    "start_tag": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ">"
+        }
+      ]
+    },
+    "end_tag": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "</"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ">"
+        }
+      ]
+    },
+    "self_closing_element": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "/>"
+        }
+      ]
+    },
+    "_node_content": {
+      "type": "SYMBOL",
+      "name": "_inner_node"
+    },
+    "attribute": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute_name"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "="
+        },
+        {
+          "type": "FIELD",
+          "name": "value",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute_value"
+          }
+        }
+      ]
+    },
+    "tag_name": {
+      "type": "PATTERN",
+      "value": "[a-zA-Z0-9_-]+"
+    },
+    "attribute_name": {
+      "type": "PATTERN",
+      "value": "[a-zA-Z0-9_-]+"
+    },
+    "attribute_value": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "\""
+            },
+            {
+              "type": "PATTERN",
+              "value": "[^\"]*"
+            },
+            {
+              "type": "STRING",
+              "value": "\""
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "'"
+            },
+            {
+              "type": "PATTERN",
+              "value": "[^']*"
+            },
+            {
+              "type": "STRING",
+              "value": "'"
+            }
+          ]
+        }
+      ]
+    },
+    "text": {
+      "type": "PATTERN",
+      "value": "[^<]+"
+    },
+    "comment": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "<!--"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "PATTERN",
+            "value": "[^-]|-[^-]"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "-->"
+        }
+      ]
+    }
+  },
+  "extras": [
+    {
+      "type": "PATTERN",
+      "value": "\\s+"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "comment"
+    }
+  ],
+  "conflicts": [],
+  "precedences": [],
+  "externals": [],
+  "inline": [],
+  "supertypes": [],
+  "reserved": {}
+}

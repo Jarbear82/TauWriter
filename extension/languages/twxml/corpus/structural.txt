@@ -1,0 +1,197 @@
+============================
+Valid Full Skeleton
+============================
+
+<document>
+  <metadata>
+    <meta name="title" value="Test" />
+  </metadata>
+  <body>
+    <heading level="1">Hello World</heading>
+    <paragraph>This is a test.</paragraph>
+  </body>
+</document>
+
+---
+
+(source_file
+  (document_block
+    (metadata_block
+      (self_closing_meta_element))
+    (body_block
+      (element
+        (start_tag)
+        (text)
+        (end_tag))
+      (element
+        (start_tag)
+        (text)
+        (end_tag)))))
+
+============================
+Minimal Skeleton (empty blocks)
+============================
+
+<document>
+  <metadata></metadata>
+  <body></body>
+</document>
+
+---
+
+(source_file
+  (document_block))
+
+============================
+Body Only (no metadata)
+============================
+
+<document>
+  <body>
+    <paragraph>Hello</paragraph>
+  </body>
+</document>
+
+---
+
+(source_file
+  (document_block
+    (body_block
+      (element
+        (start_tag
+          (tag_name))
+        (text
+        )
+        (end_tag
+          (tag_name)))))
+
+============================
+Document Block Only
+============================
+
+<document></document>
+
+---
+
+(source_file
+  (document_block))
+
+============================
+Self-closing Elements in Body
+============================
+
+<document><metadata></metadata><body>
+  <br />
+  <hr />
+</body></document>
+
+---
+
+(source_file
+  (document_block
+    (metadata_block)
+    (body_block
+      (self_closing_element)
+      (self_closing_element))))
+
+============================
+Hubref in Body
+============================
+
+<document><metadata></metadata><body>
+  <hubref id="hero">The Hero</hubref>
+</body></document>
+
+---
+
+(source_file
+  (document_block
+    (metadata_block)
+    (body_block
+      (element
+        (start_tag
+          (tag_name)
+          (attribute))
+        (text)
+        (end_tag
+          (tag_name)))))
+
+============================
+Comment in Body
+============================
+
+<document><metadata></metadata><body>
+  <!-- This is a comment -->
+  <paragraph>Hello</paragraph>
+</body></document>
+
+---
+
+(source_file
+  (document_block
+    (metadata_block)
+    (body_block
+      (comment)
+      (element))))
+
+============================
+Nested Elements
+============================
+
+<document><metadata></metadata><body>
+  <section>
+    <heading>Title</heading>
+    <paragraph>Text with <bold>bold text</bold>.</paragraph>
+  </section>
+</body></document>
+
+---
+
+(source_file
+  (document_block
+    (metadata_block)
+    (body_block
+      (element
+        (start_tag)
+        (element
+          (start_tag)
+          (text)
+          (end_tag))
+        (element
+          (start_tag)
+          (text)
+          (element
+            (start_tag)
+            (text)
+            (end_tag))
+          (text)
+          (end_tag))
+        (end_tag)))))
+
+============================
+Tag Names with Hyphens and Underscores
+============================
+
+<document><metadata></metadata><body>
+  <custom-tag>Hello</custom-tag>
+  <another_custom_tag>World</another_custom_tag>
+</body></document>
+
+---
+
+(source_file
+  (document_block
+    (metadata_block)
+    (body_block
+      (element
+        (start_tag
+          (tag_name))
+        (text)
+        (end_tag
+          (tag_name)))
+      (element
+        (start_tag
+          (tag_name))
+        (text)
+        (end_tag
+          (tag_name)))))

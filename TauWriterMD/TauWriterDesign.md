@@ -343,6 +343,100 @@ aragorn:Person {
 
 ---
 
+## Dynamic Evaluation Engine
+
+TauWriter has transitioned from a purely static parser to an **active evaluation engine**. This means HubGS definitions are not just structural—they carry executable semantics that are computed at instantiation time.
+
+### How `@computed` Works
+
+The `@computed()` decorator marks a field as dynamically derived. During instance creation, the LSP evaluates the expression and assigns the result:
+
+```hubgs
+Person {
+    first_name,
+    last_name,
+    full_name = @computed(first_name + " " + last_name)
+}
+```
+
+When `aragorn:Person` is instantiated with `first_name = "Aragorn"` and `last_name = "Elessar"`, the engine computes `full_name` as `"Aragorn Elessar"`. This value **cannot be directly overridden** in the instance block.
+
+### How `@default` Works
+
+The `@default()` decorator provides a fallback value that can be overridden at instantiation:
+
+```hubgs
+Person {
+    name,
+    age = @default(18),
+    realm_association = @default(PHYSICAL)
+}
+```
+
+If an instance does not provide `age`, the engine uses `18`. If the instance explicitly sets `age = 33`, that value takes precedence.
+
+### Evaluation Order
+
+The evaluation pipeline follows a strict order to guarantee deterministic results:
+
+1. **Parse**: The tree-sitter grammar produces an AST for all blocks in dependency order.
+2. **Type Resolution**: All Hub types, fields, and enums are resolved across imports into a unified schema.
+3. **Default Assignment**: For each instance, `@default()` values fill any unassigned fields.
+4. **Computed Evaluation**: `@computed()` expressions execute against the now-complete field set.
+5. **Role Resolution**: Cross-Hub references in role assignments are validated and linked.
+6. **Validation Pass**: Multiplicity constraints and allows-list rules are checked; violations produce LSP diagnostics.
+
+### Future Extension Points
+
+The evaluation engine is designed to support future extensions:
+- **Cross-Hub computed fields**: Expressions like `@computed(this.resides_in.name + " native")` to derive values from related Hubs.
+- **User-defined functions**: Custom computation logic beyond built-in expressions (planned scripting support).
+- **Reactive re-evaluation**: When a source field changes, dependent computed fields update automatically via the Salsa incremental pipeline.
+
+---
+
+## Formatting Pipeline (`tauwriter-fmt`)
+
+The `tauwriter-fmt` module is TauWriter's integrated code formatter. It standardizes document structure across both TWXML and HubGS files, ensuring consistent indentation, nesting depth, and whitespace formatting.
+
+### LSP Integration
+
+Formatting hooks into the standard [`textDocument/formatting`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting) LSP request:
+
+```
+Editor triggers Format Document (Ctrl+Shift+F / Cmd+Shift+F)
+    → LSP client sends textDocument/formatting
+    → tauwriter-fmt receives the AST and range parameters
+    → tauwriter-fmt re-formats the document according to rules
+    → Formatted text is returned as TextEdit operations
+    → Editor applies the changes atomically
+```
+
+### Formatting Rules by Language
+
+#### TWXML Formatting
+- **Indentation**: 2-space indent per nesting level. `<document>` is at column 0, children at column 2, grandchildren at column 4, etc.
+- **Tag placement**: Self-closing tags (e.g., `<meta />`, `<hr />`) are kept on a single line. Block-opening and block-closing tags (`<section>...</section>`) span multiple lines with children indented between them.
+- **Nesting enforcement**: If the formatter detects malformed nesting (e.g., a `<heading>` outside any section), it attempts to repair by inserting or moving elements to valid positions rather than silently dropping content.
+- **Attribute ordering**: Within each tag, attributes are sorted alphabetically for deterministic output.
+
+#### HubGS Formatting
+- **Block alignment**: Top-level blocks (`IMPORTS`, `DEFINITIONS`, `INSTANCES`) are left-aligned with a single blank line between them.
+- **Sub-block indentation**: Content within sub-blocks (e.g., inside `HUBS [ ... ]`) is indented consistently at 2 spaces per level.
+- **Trailing comma enforcement**: The formatter normalizes trailing commas in list contexts—either always present or absent, based on project configuration.
+- **Role and field alignment**: Within a Hub definition, fields and roles are aligned for readability using consistent spacing around `=` and `->` operators.
+
+### Configuration
+
+Formatting behavior can be tuned via the LSP client settings:
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `indentSize` | 2 | Number of spaces per indent level |
+| `trailingCommas` | `always` | Control trailing comma style: `always`, `never`, or `es5` (last element only) |
+| `maxLineLength` | 100 | Soft line length target; formatter wraps when exceeded where safe to do so |
+
+---
+
 ## IDE-Style Features
 
 ### Cross-Referencing & Autocomplete

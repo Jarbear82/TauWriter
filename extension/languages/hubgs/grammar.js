@@ -23,12 +23,29 @@ module.exports = grammar({
 
   rules: {
     // ------------------------------------------------------------------------
-    // Top-Level Structure
+    // Top-Level Structure (Strict Ordering: IMPORTS -> DEFINITIONS -> INSTANCES)
     // ------------------------------------------------------------------------
 
+    source_file: ($) => $.document,
+
     document: ($) =>
-      commaSep(
-        choice($.imports_section, $.definitions_section, $.instances_section),
+      choice(
+        // At least one section must be present, in correct order
+        seq(
+          $.imports_section,
+          optional(seq(optional(","), $.definitions_section)),
+          optional(seq(optional(","), $.instances_section)),
+        ),
+        seq(
+          optional($.imports_section),
+          $.definitions_section,
+          optional(seq(optional(","), $.instances_section)),
+        ),
+        seq(
+          optional($.imports_section),
+          optional(seq(optional(","), $.definitions_section)),
+          $.instances_section,
+        ),
       ),
 
     // ------------------------------------------------------------------------
