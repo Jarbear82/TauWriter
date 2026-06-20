@@ -1619,7 +1619,7 @@ INSTANCES [
     aragorn: Character { name = 'Elessar' }
 ]
 ";
-    let twxml_content = r#"<document><review><hubref id="aragorn" field="name">Strider</hubref></review></document>"#;
+    let twxml_content = r#"<document><metadata></metadata><body><review><hubref id="aragorn" field="name">Strider</hubref></review></body></document>"#;
 
     {
         let mut db_lock = db_arc.lock().unwrap();
@@ -1642,8 +1642,14 @@ INSTANCES [
     let params = CodeActionParams {
         text_document: TextDocumentIdentifier { uri: twxml_uri },
         range: Range {
-            start: Position { line: 0, character: 15 },
-            end: Position { line: 0, character: 15 },
+            start: Position {
+                line: 0,
+                character: 45, // Inside <review> after skeleton prefix
+            },
+            end: Position {
+                line: 0,
+                character: 45,
+            },
         },
         context: CodeActionContext::default(),
         work_done_progress_params: WorkDoneProgressParams::default(),
@@ -1664,13 +1670,14 @@ INSTANCES [
         serde_json::from_value(response.result().unwrap().clone()).unwrap();
 
     assert_eq!(result.len(), 2);
-    
-    let titles: Vec<String> = result.iter().map(|item| {
-        match item {
+
+    let titles: Vec<String> = result
+        .iter()
+        .map(|item| match item {
             CodeActionOrCommand::CodeAction(ca) => ca.title.clone(),
             CodeActionOrCommand::Command(cmd) => cmd.title.clone(),
-        }
-    }).collect();
+        })
+        .collect();
 
     assert!(titles.iter().any(|t| t.contains("Sync and Resolve")));
     assert!(titles.iter().any(|t| t.contains("Mark as Resolved")));

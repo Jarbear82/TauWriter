@@ -1,0 +1,121 @@
+============================
+Valid Full Document (All Sections)
+============================
+
+IMPORTS [ [Location] FROM "schema.hubgs" ],
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Person { name } ]
+],
+INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
+
+---
+
+(source_file
+  (document
+    (imports_section)
+    (definitions_section)
+    (instances_section)))
+
+============================
+Only Imports
+============================
+
+IMPORTS [ [Character] FROM "chars.hubgs" ]
+
+---
+
+(source_file
+  (document
+    (imports_section)))
+
+============================
+Only Definitions
+============================
+
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Person { name } ]
+]
+
+---
+
+(source_file
+  (document
+    (definitions_section)))
+
+============================
+Only Instances
+============================
+
+INSTANCES [ hero:Person {} ]
+
+---
+
+(source_file
+  (document
+    (instances_section)))
+
+============================
+Definitions and Instances (No Imports)
+============================
+
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Person { name } ]
+],
+INSTANCES [ hero:Person { name = 'Hero' } ]
+
+---
+
+(source_file
+  (document
+    (definitions_section)
+    (instances_section)))
+
+============================
+Strict Ordering Enforced - Imports before Definitions
+============================
+
+IMPORTS [ [Loc] FROM "locs.hubgs" ],
+DEFINITIONS [ FIELDS [ name: Text ] ]
+
+---
+
+(source_file
+  (document
+    (imports_section)
+    (definitions_section)))
+
+============================
+Multiple Imports
+============================
+
+IMPORTS [
+    [Location] FROM "schema.hubgs",
+    [Character] FROM "chars.hubgs"
+]
+
+---
+
+(source_file
+  (document
+    (imports_section
+      (import_statement)
+      (import_statement))))
+
+============================
+Enum and Struct Definitions
+============================
+
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    ENUMS [ Status { Active, Inactive } ],
+    STRUCTS [ Address { street, city } ]
+]
+
+---
+
+(source_file
+  (document
+    (definitions_section)))

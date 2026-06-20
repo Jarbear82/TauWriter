@@ -1,4 +1,4 @@
-use tree_sitter::{Language, Parser, Node};
+use tree_sitter::{Language, Node, Parser};
 
 extern "C" {
     pub fn tree_sitter_hubgs() -> Language;
@@ -21,7 +21,7 @@ fn format_twxml(contents: &str) -> String {
     parser.set_language(language).ok();
     let tree = parser.parse(contents, None).unwrap();
     let root = tree.root_node();
-    
+
     let mut result = String::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
@@ -32,9 +32,30 @@ fn format_twxml(contents: &str) -> String {
 
 fn is_block_tag(name: &str) -> bool {
     const BLOCK_TAGS: &[&str] = &[
-        "document", "meta", "section", "heading", "paragraph", "aside", 
-        "blockquote", "codeblock", "ul", "ol", "li", "dl", "dt", "dd", 
-        "details", "summary", "table", "tr", "th", "td", "footnote", "review"
+        "document",
+        "metadata",
+        "body",
+        "meta",
+        "section",
+        "heading",
+        "paragraph",
+        "aside",
+        "blockquote",
+        "codeblock",
+        "ul",
+        "ol",
+        "li",
+        "dl",
+        "dt",
+        "dd",
+        "details",
+        "summary",
+        "table",
+        "tr",
+        "th",
+        "td",
+        "footnote",
+        "review",
     ];
     BLOCK_TAGS.contains(&name)
 }
@@ -67,7 +88,12 @@ fn contains_block_tag(node: Node, contents: &str) -> bool {
     false
 }
 
-fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_of_line: bool) -> String {
+fn format_twxml_node(
+    node: Node,
+    contents: &str,
+    indent_level: usize,
+    is_start_of_line: bool,
+) -> String {
     let indent = "  ".repeat(indent_level);
     match node.kind() {
         "text" => {
@@ -94,7 +120,7 @@ fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_o
             let start_tag = node.child(0).unwrap();
             let name_node = start_tag.child_by_field_name("name").unwrap();
             let tag_name = &contents[name_node.byte_range()];
-            
+
             let mut attrs = Vec::new();
             let mut cursor = start_tag.walk();
             for child in start_tag.children(&mut cursor) {
@@ -107,10 +133,10 @@ fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_o
             } else {
                 format!(" {}", attrs.join(" "))
             };
-            
+
             let is_block = is_block_tag(tag_name);
             let has_blocks = contains_block_tag(node, contents);
-            
+
             if is_block && has_blocks {
                 let mut inner = String::new();
                 let mut cursor = node.walk();
@@ -123,7 +149,7 @@ fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_o
                         }
                     }
                 }
-                
+
                 let start_part = if is_start_of_line {
                     format!("{}<{}{}>\n", indent, tag_name, attrs_str)
                 } else {
@@ -139,9 +165,12 @@ fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_o
                         inner.push_str(&format_twxml_node(child, contents, 0, false));
                     }
                 }
-                
+
                 if is_block && is_start_of_line {
-                    format!("{}<{}{}>{}</{}>", indent, tag_name, attrs_str, inner, tag_name)
+                    format!(
+                        "{}<{}{}>{}</{}>",
+                        indent, tag_name, attrs_str, inner, tag_name
+                    )
                 } else {
                     format!("<{}{}>{}</{}>", tag_name, attrs_str, inner, tag_name)
                 }
@@ -162,7 +191,7 @@ fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_o
             } else {
                 format!(" {}", attrs.join(" "))
             };
-            
+
             let is_block = is_block_tag(tag_name);
             if is_block && is_start_of_line {
                 format!("{}<{}{} />", indent, tag_name, attrs_str)
@@ -170,11 +199,75 @@ fn format_twxml_node(node: Node, contents: &str, indent_level: usize, is_start_o
                 format!("<{}{} />", tag_name, attrs_str)
             }
         }
+        "document_block" => {
+            let mut inner = String::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() != "metadata_block"
+                    && child.kind() != "body_block"
+                    && !child.is_missing()
+                {
+                    inner.push_str(&format_twxml_node(child, contents, indent_level + 1, true));
+                }
+            }
+            // Reconstruct: <document> ... </document>
+            let content = inner.trim();
+            if content.is_empty() {
+                format!("<document></document>")
+            } else {
+                format!("<document>\n{}\n</document>", content)
+            }
+        }
+        "metadata_block" => {
+            let mut inner = String::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if !child.is_missing() {
+                    let formatted = format_twxml_node(child, contents, indent_level + 1, true);
+                    if !formatted.is_empty() {
+                        inner.push_str(&formatted);
+                        inner.push('\n');
+                    }
+                }
+            }
+            // Reconstruct: <metadata> ... </metadata>
+            let content = inner.trim();
+            if content.is_empty() {
+                format!("{}<metadata></metadata>", indent)
+            } else {
+                format!("{}<metadata>\n{}\n{}</metadata>", indent, content, indent)
+            }
+        }
+        "body_block" => {
+            let mut inner = String::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if !child.is_missing() {
+                    let formatted = format_twxml_node(child, contents, indent_level + 1, true);
+                    if !formatted.is_empty() {
+                        inner.push_str(&formatted);
+                        inner.push('\n');
+                    }
+                }
+            }
+            // Reconstruct: <body> ... </body>
+            let content = inner.trim();
+            if content.is_empty() {
+                format!("{}<body></body>", indent)
+            } else {
+                format!("{}<body>\n{}\n{}</body>", indent, content, indent)
+            }
+        }
         _ => {
             let mut inner = String::new();
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                inner.push_str(&format_twxml_node(child, contents, indent_level, is_start_of_line));
+                inner.push_str(&format_twxml_node(
+                    child,
+                    contents,
+                    indent_level,
+                    is_start_of_line,
+                ));
             }
             inner
         }
@@ -187,7 +280,7 @@ fn format_hubgs(contents: &str) -> String {
     parser.set_language(language).ok();
     let tree = parser.parse(contents, None).unwrap();
     let root = tree.root_node();
-    
+
     let mut sections = Vec::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
@@ -204,7 +297,7 @@ fn format_hubgs(contents: &str) -> String {
             _ => {}
         }
     }
-    
+
     sections.join(",\n\n") + "\n"
 }
 
@@ -286,7 +379,11 @@ fn format_definitions_section(node: Node, contents: &str) -> String {
                                     fields.push(contents[child.byte_range()].to_string());
                                 }
                             }
-                            structs.push(format!("        {} {{\n            {}\n        }}", name, fields.join(",\n            ")));
+                            structs.push(format!(
+                                "        {} {{\n            {}\n        }}",
+                                name,
+                                fields.join(",\n            ")
+                            ));
                         }
                     }
                 }
@@ -304,15 +401,25 @@ fn format_definitions_section(node: Node, contents: &str) -> String {
                             for child in hub_def.children(&mut item_cursor) {
                                 match child.kind() {
                                     "hub_field" => {
-                                        items.push(format!("            {}", &contents[child.byte_range()]));
+                                        items.push(format!(
+                                            "            {}",
+                                            &contents[child.byte_range()]
+                                        ));
                                     }
                                     "hub_role" => {
-                                        items.push(format!("            {}", &contents[child.byte_range()]));
+                                        items.push(format!(
+                                            "            {}",
+                                            &contents[child.byte_range()]
+                                        ));
                                     }
                                     _ => {}
                                 }
                             }
-                            hubs.push(format!("        {} {{\n{}\n        }}", name, items.join(",\n")));
+                            hubs.push(format!(
+                                "        {} {{\n{}\n        }}",
+                                name,
+                                items.join(",\n")
+                            ));
                         }
                     }
                 }
@@ -329,10 +436,13 @@ fn format_instances_section(node: Node, contents: &str) -> String {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "instance_block" {
-            if let (Some(ref_node), Some(type_node)) = (child.child_by_field_name("ref"), child.child_by_field_name("type")) {
+            if let (Some(ref_node), Some(type_node)) = (
+                child.child_by_field_name("ref"),
+                child.child_by_field_name("type"),
+            ) {
                 let ref_name = &contents[ref_node.byte_range()];
                 let type_name = &contents[type_node.byte_range()];
-                
+
                 let mut assignments = Vec::new();
                 let mut max_ident_len = 0;
                 let mut block_cursor = child.walk();
@@ -348,24 +458,22 @@ fn format_instances_section(node: Node, contents: &str) -> String {
                         }
                     }
                 }
-                
+
                 let mut formatted_assigns = Vec::new();
                 for (name, val) in assignments {
                     let padding = " ".repeat(max_ident_len - name.len());
                     formatted_assigns.push(format!("        {}{} = {}", name, padding, val));
                 }
-                
+
                 let inner = if formatted_assigns.is_empty() {
                     String::new()
                 } else {
                     format!("\n{}\n    ", formatted_assigns.join(",\n"))
                 };
-                
+
                 instances.push(format!("    {}: {} {{{}}}", ref_name, type_name, inner));
             }
         }
     }
     format!("INSTANCES [\n{}\n]", instances.join(",\n"))
 }
-
-
