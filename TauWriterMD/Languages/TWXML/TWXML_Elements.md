@@ -13,73 +13,73 @@ TWXML uses an **enforced tree hierarchy** where structural meaning is derived fr
 This means you never need to specify heading levels manually. The tree structure itself defines the outline.
 
 ### Document
-The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document.
-Tags: `<document></document>`
+The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document.  
+Tags: `<document></document>`  
 
 ### Meta
-Defines document-level metadata (author, tags, status). Placed inside `<document>` at the top, before any block content. Not rendered in the primary prose view but indexed by the LSP.
-Equivalent to Markdown Frontmatter (YAML).
-Tags: `<meta />`
-Tag Attributes:
-- name: The metadata key.
+Defines document-level metadata (author, tags, status). Placed inside `<document>` at the top, before any block content. Not rendered in the primary prose view but indexed by the LSP.  
+Equivalent to Markdown Frontmatter (YAML).  
+Tags: `<meta />`  
+Tag Attributes:  
+- name: The metadata key.  
 - content: The metadata value.
 
 ### Section
 A semantic divider element used to distinguish different sections and sub-sections within a document.
-Useful for: Parts, Chapters, Scenes, etc.
-Tags: `<section></section>`
-Tag Attributes:
+Useful for: Parts, Chapters, Scenes, etc.  
+Tags: `<section></section>`  
+Tag Attributes:  
 - alias: (ex: `<section alias="Scene 1">[CONTENT]</section>`)
 
 ### Heading
-A tag used to distinguish the heading of a section. Heading level is automatically determined by its nested level in the document tree. 
-Tags: `<heading></heading>`
+A tag used to distinguish the heading of a section. Heading level is automatically determined by its nested level in the document tree.  
+Tags: `<heading></heading>`  
 
 ---
 
 ## Block Elements
 ### Paragraph
-The fundamental prose unit. Wraps standard blocks of narrative text.
-Tags: `<paragraph></paragraph>`
+The fundamental prose unit. Wraps standard blocks of narrative text.  
+Tags: `<paragraph></paragraph>`  
 
 ### Aside
-Used for sidebars, callout boxes, or flavor text. Distinguishes non-linear content from the main prose.
-Maps to HTML `<aside>` or Markdown Admonitions/Blockquotes.
-Tags: `<aside></aside>`
+Used for sidebars, callout boxes, or flavor text. Distinguishes non-linear content from the main prose.  
+Maps to HTML `<aside>` or Markdown Admonitions/Blockquotes.  
+Tags: `<aside></aside>`  
 
 ### Blockquote
-Used to indicate that the enclosed text is an extended quotation from another source.
-Tags: `<blockquote></blockquote>`
+Used to indicate that the enclosed text is an extended quotation from another source.  
+Tags: `<blockquote></blockquote>`  
 
 ### Code Block
-Represents preformatted text or source code blocks. Replaces Markdown's fenced code blocks (```).
-Tags: `<codeblock></codeblock>`
-Tag Attributes:
+Represents preformatted text or source code blocks. Replaces Markdown's fenced code blocks (```).  
+Tags: `<codeblock></codeblock>`  
+Tag Attributes:  
 - language: Specifies the programming or scripting language for syntax highlighting (ex: `<codeblock language="javascript">`)
 
 ### Horizontal Rule
-Represents a thematic break between paragraph-level elements. Equivalent to Markdown's `---`.
-Tags: `<hr />`
+Represents a thematic break between paragraph-level elements. Equivalent to Markdown's `---`.  
+Tags: `<hr />`  
 
 ### Line Break
-Forces a hard line break within a block element without creating a new paragraph.
+Forces a hard line break within a block element without creating a new paragraph.  
 Tags: `<br />`
 
 ---
 
 ## Lists
-Containers for bulleted or numbered lists.
-Tags: `<ul></ul>` (Unordered), `<ol></ol>` (Ordered)
+Containers for bulleted or numbered lists.  
+Tags: `<ul></ul>` (Unordered), `<ol></ol>` (Ordered)  
 
 ### List Item
-Represents an individual item within a `<ul>` or `<ol>`.
-Tags: `<li></li>`
-Tag Attributes:
+Represents an individual item within a `<ul>` or `<ol>`.  
+Tags: `<li></li>`  
+Tag Attributes:  
 - checked: Adding this boolean attribute converts the list item into a task list item (ex: `<li checked="true">Buy potions</li>` or `<li checked="false">Slay dragon</li>`)
 
 ### Definition Lists
-Used to define terms. Equivalent to Markdown's definition list syntax.
-Tags: 
+Used to define terms. Equivalent to Markdown's definition list syntax.  
+Tags:   
 - `<dl></dl>`: The definition list container.
 - `<dt></dt>`: The definition term.
 - `<dd></dd>`: The definition description.

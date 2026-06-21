@@ -1,5 +1,7 @@
 <document>
-  <metadata></metadata>
+  <metadata>
+    <meta name="title" content="The Brave Little Tailor" />
+  </metadata>
   <body>
     <heading>The Brave Little Tailor</heading>
     <section alias="story">
