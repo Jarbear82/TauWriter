@@ -15,7 +15,7 @@ pub async fn hover(server: &Backend, params: HoverParams) -> Result<Option<Hover
     Ok(None)
 }
 
-fn hover_impl(
+pub fn hover_impl(
     db: &dyn crate::db::Db,
     ws: crate::db::Workspace,
     symbol: &str,
@@ -23,16 +23,25 @@ fn hover_impl(
 ) -> Result<Option<Hover>> {
     // 1. Try resolve as Hub Instance
     if let Some(instance) = crate::db::resolve_reference(db, ws, symbol.to_string()) {
-        return hover_instance(db, instance);
+        return hover_instance(db, ws, instance);
     }
 
     // 2. Try resolve as Hub Type (scoped)
     if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
-        let file = ws.files(db).into_iter().find(|f| f.path(db) == path_str);
+        let file_name = path.file_name().map(|s| s.to_string_lossy().to_string());
+        let file = ws
+            .files(db)
+            .into_iter()
+            .find(|f| f.path(db) == path_str || file_name.as_deref() == Some(f.path(db).as_str()));
         if let Some(file) = file {
             if let Some(hub_type) = crate::db::resolve_type(db, ws, file, symbol.to_string()) {
                 return hover_type(db, &hub_type);
+            }
+
+            // 3. Try resolve as Global Field
+            if let Some(global_field) = resolve_global_field(db, file, symbol) {
+                return hover_global_field(db, &global_field);
             }
         }
     }
@@ -40,59 +49,332 @@ fn hover_impl(
     Ok(None)
 }
 
-fn hover_instance(
-    db: &dyn crate::db::Db,
-    instance: crate::db::HubInstance<'_>,
-) -> Result<Option<Hover>> {
-    let mut hover_text = format!(
-        "**Hub: {}** ({})",
-        instance.name(db),
-        instance.type_name(db)
-    );
+fn resolve_global_field<'a>(
+    db: &'a dyn crate::db::Db,
+    file: crate::db::SourceFile,
+    name: &str,
+) -> Option<crate::db::GlobalField<'a>> {
+    let result = crate::db::parse_hubgs(db, file);
+    result
+        .global_fields(db)
+        .iter()
+        .find(|f| f.name(db) == name)
+        .cloned()
+}
 
-    if let Some(desc) = instance.description(db) {
-        hover_text.push_str("\n\n---\n\n");
-        hover_text.push_str(&desc);
+fn extract_source_snippet(db: &dyn crate::db::Db, instance: crate::db::HubInstance<'_>) -> String {
+    let file = instance.file(db);
+    let contents = file.contents(db);
+    let block_range = instance.block_range(db);
+    extract_text_range(&contents, block_range)
+}
+
+fn extract_source_snippet_type(
+    db: &dyn crate::db::Db,
+    hub_type: &crate::db::HubType<'_>,
+) -> String {
+    let file = hub_type.file(db);
+    let contents = file.contents(db);
+    let block_range = hub_type.block_range(db);
+    extract_text_range(&contents, block_range)
+}
+
+fn extract_text_range(contents: &str, range: crate::db::LspRange) -> String {
+    let lines: Vec<&str> = contents.lines().collect();
+    let start_line = range.start.line as usize;
+    let end_line = range.end.line as usize;
+
+    if start_line >= lines.len() || end_line >= lines.len() {
+        return String::new();
     }
 
-    hover_text.push_str("\n\n---\n\n**Fields:**\n");
+    let mut result = String::new();
+    for i in start_line..=end_line {
+        let line = lines[i];
+        if i == start_line && i == end_line {
+            let start_ch = (range.start.character as usize).min(line.len());
+            let end_ch = (range.end.character as usize).min(line.len());
+            if start_ch < line.len() {
+                result.push_str(&line[start_ch..end_ch]);
+            }
+        } else if i == start_line {
+            let start_ch = (range.start.character as usize).min(line.len());
+            if start_ch < line.len() {
+                result.push_str(&line[start_ch..]);
+            }
+        } else if i == end_line {
+            let end_ch = (range.end.character as usize).min(line.len());
+            result.push_str(&line[..end_ch]);
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
 
-    // This needs workspace to resolve type, which we don't have here.
-    // We'll need to pass it through. For now, accept the limitation.
+    result
+}
+
+fn format_hub_value(val: &crate::db::HubValue) -> String {
+    match val {
+        crate::db::HubValue::String(s) => format!("\"{}\"", s),
+        crate::db::HubValue::Number(n) => n.clone(),
+        crate::db::HubValue::Boolean(b) => b.to_string(),
+        crate::db::HubValue::Identifier(i) => i.clone(),
+        crate::db::HubValue::Array(arr) => {
+            let items: Vec<String> = arr.iter().map(format_hub_value).collect();
+            format!("[{}]", items.join(", "))
+        }
+    }
+}
+
+fn hover_instance(
+    db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
+    instance: crate::db::HubInstance<'_>,
+) -> Result<Option<Hover>> {
+    let mut md = MarkdownContent::new();
+
+    // Header: Type first, then name
+    md.heading(
+        2,
+        &format!("{}: {} (Hub)", instance.type_name(db), instance.name(db)),
+    );
+
+    // Resolve the type to get fields and roles info
+    let hub_type = {
+        let file = instance.file(db);
+        crate::db::resolve_type(db, ws, file, instance.type_name(db).clone())
+    };
+
+    // Collect all role names from the type definition
+    let role_names: Vec<String> = if let Some(ref ht) = hub_type {
+        ht.roles(db).iter().map(|r| r.name.clone()).collect()
+    } else {
+        Vec::new()
+    };
+
+    // Fields section - show non-role field values
+    let assignments = instance.assignments(db);
+    let field_assignments: Vec<_> = assignments
+        .iter()
+        .filter(|a| !role_names.contains(&a.name))
+        .collect();
+
+    if !field_assignments.is_empty() {
+        md.separator();
+        md.heading(3, "Fields:");
+        for assignment in field_assignments.iter() {
+            md.bold_list_item(&assignment.name, &format_hub_value(&assignment.value));
+        }
+    }
+
+    // Roles section - show relationship info with counts and linked targets
+    if let Some(ref ht) = hub_type {
+        let roles = ht.roles(db);
+        if !roles.is_empty() {
+            md.separator();
+            md.heading(3, "Roles:");
+            for role in roles.iter() {
+                // Find the assignment value for this role
+                let role_value = assignments.iter().find(|a| a.name == role.name);
+
+                md.bold(&format!("{} ({})", role.name, role.multiplicity));
+
+                if let Some(val) = role_value {
+                    match &val.value {
+                        crate::db::HubValue::Array(arr) => {
+                            md.text(&format!("Count: {}", arr.len()));
+                            for item in arr.iter() {
+                                if let crate::db::HubValue::Identifier(ref target) = item {
+                                    // Resolve to instance and build clickable file URI
+                                    if let Some(target_inst) =
+                                        crate::db::resolve_reference(db, ws, target.clone())
+                                    {
+                                        if let Ok(uri) =
+                                            Url::from_file_path(target_inst.file(db).path(db))
+                                        {
+                                            md.link_with_uri(target, &uri.to_string());
+                                        } else {
+                                            md.text_item(target);
+                                        }
+                                    } else {
+                                        md.text_item(target);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            // Single value role - try to link if it resolves
+                            if let crate::db::HubValue::Identifier(ref target) = &val.value {
+                                if let Some(target_inst) =
+                                    crate::db::resolve_reference(db, ws, target.clone())
+                                {
+                                    md.text(&format!("Count: 1"));
+                                    if let Ok(uri) =
+                                        Url::from_file_path(target_inst.file(db).path(db))
+                                    {
+                                        md.link_with_uri(target, &uri.to_string());
+                                    } else {
+                                        md.text_item(target);
+                                    }
+                                } else {
+                                    md.text(&format!("Value: {}", format_hub_value(&val.value)));
+                                }
+                            } else {
+                                md.text(&format!("Value: {}", format_hub_value(&val.value)));
+                            }
+                        }
+                    }
+                } else {
+                    md.text("Count: 0");
+                }
+            }
+        }
+    }
+
     Ok(Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(hover_text)),
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: md.to_string(),
+        }),
         range: Some(instance.range(db).into()),
     }))
 }
 
 fn hover_type(db: &dyn crate::db::Db, hub_type: &crate::db::HubType<'_>) -> Result<Option<Hover>> {
-    let mut hover_text = format!("**Type: {}**", hub_type.name(db));
-    hover_text.push_str("\n\n---\n\n");
+    let mut md = MarkdownContent::new();
 
-    if !hub_type.fields(db).is_empty() {
-        hover_text.push_str("**Fields:**\n");
-        for f in hub_type.fields(db) {
-            hover_text.push_str(&format!("- {}\n", f.name));
+    // Header
+    md.heading(2, &format!("Type: {}", hub_type.name(db)));
+
+    // Fields section with types resolved from global fields
+    let fields = hub_type.fields(db);
+    if !fields.is_empty() {
+        md.separator();
+        md.heading(3, "Fields:");
+        for f in fields.iter() {
+            md.bold_list_item(&f.name, "(from global field def)");
         }
     }
 
-    if !hub_type.roles(db).is_empty() {
-        hover_text.push_str("\n**Roles:**\n");
-        for r in hub_type.roles(db) {
-            hover_text.push_str(&format!(
-                "- {} {} ({}) ALLOWS [{}]\n",
-                r.name,
-                r.direction,
-                r.multiplicity,
-                r.allowed_types.join(", ")
-            ));
+    // Roles section
+    let roles = hub_type.roles(db);
+    if !roles.is_empty() {
+        md.separator();
+        md.heading(3, "Roles:");
+        for r in roles.iter() {
+            let allows_str = if r.allowed_types.is_empty() {
+                "(no allows list)".to_string()
+            } else {
+                format!("ALLOWS [{}]", r.allowed_types.join(", "))
+            };
+            md.bold_list_item(
+                &format!("{} {} ({})", r.name, r.direction, r.multiplicity),
+                &allows_str,
+            );
         }
+    }
+
+    // Source code snippet
+    let snippet = extract_source_snippet_type(db, hub_type);
+    if !snippet.is_empty() {
+        md.separator();
+        md.code_block(&snippet, "hubgs");
     }
 
     Ok(Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(hover_text)),
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: md.to_string(),
+        }),
         range: Some(hub_type.range(db).into()),
     }))
+}
+
+fn hover_global_field(
+    db: &dyn crate::db::Db,
+    global_field: &crate::db::GlobalField<'_>,
+) -> Result<Option<Hover>> {
+    let mut md = MarkdownContent::new();
+
+    md.heading(2, &format!("Field: {}", global_field.name(db)));
+    md.separator();
+    md.bold_list_item("Type", &global_field.type_name(db));
+
+    // Source snippet
+    let file = global_field.file(db);
+    let contents = file.contents(db);
+    let snippet = extract_text_range(&contents, global_field.range(db));
+    if !snippet.is_empty() {
+        md.separator();
+        md.code_block(&snippet, "hubgs");
+    }
+
+    Ok(Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: md.to_string(),
+        }),
+        range: Some(global_field.range(db).into()),
+    }))
+}
+
+/// Helper for building markdown content incrementally
+struct MarkdownContent {
+    lines: Vec<String>,
+}
+
+impl MarkdownContent {
+    fn new() -> Self {
+        Self { lines: Vec::new() }
+    }
+
+    fn heading(&mut self, level: u8, text: &str) {
+        let prefix = "#".repeat(level as usize);
+        self.lines.push(format!("{} {}", prefix, text));
+    }
+
+    fn text(&mut self, content: &str) {
+        self.lines.push(content.to_string());
+    }
+
+    fn bold_list_item(&mut self, key: &str, value: &str) {
+        self.lines.push(format!("- **{}:** {}", key, value));
+    }
+
+    fn bold(&mut self, text: &str) {
+        self.lines.push(format!("**{}**", text));
+    }
+
+    fn text_item(&mut self, content: &str) {
+        self.lines.push(format!("  - {}", content));
+    }
+
+    fn link_with_uri(&mut self, name: &str, uri: &str) {
+        self.lines.push(format!("  - [{}]({})", name, uri));
+    }
+
+    fn link(&mut self, name: &str, target: &str) {
+        self.link_with_uri(name, target);
+    }
+
+    fn separator(&mut self) {
+        self.lines.push("---".to_string());
+    }
+
+    fn code_block(&mut self, content: &str, lang: &str) {
+        self.lines.push(format!("```{}", lang));
+        for line in content.lines() {
+            self.lines.push(line.to_string());
+        }
+        self.lines.push("```".to_string());
+    }
+}
+
+impl std::fmt::Display for MarkdownContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.lines.join("\n"))
+    }
 }
 
 pub async fn code_action(

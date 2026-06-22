@@ -222,6 +222,7 @@ fn parse_hubs_block<'a>(
                     name,
                     file,
                     super::ts_range_to_lsp(name_node.range()),
+                    super::ts_range_to_lsp(hub_def.range()),
                     fields,
                     roles,
                 ));
@@ -266,11 +267,11 @@ fn parse_hub_role(item: &tree_sitter::Node, contents: &str) -> HubRoleDef {
         .unwrap_or_default();
 
     let mut allowed_types = Vec::new();
-    if let Some(allows_list) = item.child(7) {
-        let mut list_cursor = allows_list.walk();
-        for type_id in allows_list.children(&mut list_cursor) {
-            if type_id.kind() == "identifier" {
-                allowed_types.push(contents[type_id.byte_range()].to_string());
+    {
+        let mut list_cursor = item.walk();
+        for child in item.children(&mut list_cursor) {
+            if child.kind() == "identifier" && child.id() != id_node.id() {
+                allowed_types.push(contents[child.byte_range()].to_string());
             }
         }
     }
@@ -301,25 +302,13 @@ fn parse_instances<'a>(
                     "Unknown".to_string()
                 };
 
-                let mut description = None;
                 let mut assignments = Vec::new();
                 let mut block_cursor = child.walk();
                 for assignment in child.children(&mut block_cursor) {
                     if assignment.kind() == "instance_assignment" {
                         if let Some(id_node) = assignment.child(0) {
                             let attr_name = contents[id_node.byte_range()].to_string();
-                            if attr_name == "description" {
-                                if let Some(expr_node) = assignment.child(2) {
-                                    if expr_node.kind() == "string" {
-                                        description = Some(
-                                            contents[expr_node.byte_range()]
-                                                .trim_matches('"')
-                                                .trim_matches('\'')
-                                                .to_string(),
-                                        );
-                                    }
-                                }
-                            } else if let Some(expr_node) = assignment.child(2) {
+                            if let Some(expr_node) = assignment.child(2) {
                                 if let Some(val) = node_to_hub_value(expr_node, contents) {
                                     assignments.push(HubAssignment {
                                         name: attr_name,
@@ -332,12 +321,22 @@ fn parse_instances<'a>(
                     }
                 }
 
+                // Extract description from assignments if present
+                let description = assignments
+                    .iter()
+                    .find(|a| a.name == "description")
+                    .and_then(|a| match &a.value {
+                        crate::db::HubValue::String(s) => Some(s.clone()),
+                        _ => None,
+                    });
+
                 instances.push(HubInstance::new(
                     db,
                     name,
                     type_name,
                     file,
                     super::ts_range_to_lsp(ref_node.range()),
+                    super::ts_range_to_lsp(child.range()),
                     description,
                     assignments,
                 ));

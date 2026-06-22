@@ -1,9 +1,9 @@
-mod completion;
-mod documents;
-mod features;
-mod information;
-mod navigation;
-mod symbols;
+pub mod completion;
+pub mod documents;
+pub mod features;
+pub mod information;
+pub mod navigation;
+pub mod symbols;
 
 pub use completion::*;
 pub use documents::*;

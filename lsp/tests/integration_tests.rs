@@ -111,8 +111,33 @@ fn test_completion() {
 fn test_hover_description() {
     let mut db = RootDatabase::default();
 
-    let hubgs_content =
-        "INSTANCES [ aragorn:Person { name = 'Aragorn', description = 'Heir of Isildur' } ]";
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        description: Text,
+        resides_in: Location
+    ],
+    HUBS [
+        Character {
+            name,
+            description,
+            resides_in -> (0..1) ALLOWS [Location]
+        },
+        Location {
+            name
+        }
+    ]
+],
+INSTANCES [
+    workshop:Location { name = 'The Workshop' },
+    tailor:Character {
+        name = 'The Brave Little Tailor',
+        description = 'A nimble and clever tailor who killed seven flies with one blow.',
+        resides_in = [workshop]
+    }
+]
+";
     let hubgs_file = db::SourceFile::new(
         &mut db,
         "fantasy.hubgs".to_string(),
@@ -121,11 +146,71 @@ fn test_hover_description() {
 
     let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
 
+    // 1. Verify instance data exists
     let instances = db::all_hub_instances(&db, workspace);
-    assert_eq!(instances.len(), 1);
+    assert_eq!(instances.len(), 2); // workshop + tailor
+
+    let tailor = instances.iter().find(|i| i.name(&db) == "tailor").unwrap();
     assert_eq!(
-        instances[0].description(&db).as_ref().unwrap(),
-        "Heir of Isildur"
+        tailor.description(&db).as_ref().unwrap(),
+        "A nimble and clever tailor who killed seven flies with one blow."
+    );
+    assert_eq!(tailor.assignments(&db).len(), 3); // name, description, resides_in
+
+    // 2. Verify hover produces correct content for an instance
+    let hover = tauwriter_lsp::handlers::information::hover_impl(
+        &db,
+        workspace,
+        "tailor",
+        &tower_lsp::lsp_types::Url::parse("file:///fantasy.hubgs").unwrap(),
+    )
+    .unwrap()
+    .unwrap();
+
+    // Extract markdown content from MarkupContent
+    let markdown = match hover.contents {
+        tower_lsp::lsp_types::HoverContents::Markup(mc) => mc.value,
+        _ => panic!("Expected Markup hover content"),
+    };
+
+    // Should contain header with type and name
+    assert!(
+        markdown.contains("Character: tailor (Hub)"),
+        "Missing hub header. Markdown:\n{}",
+        markdown
+    );
+    // Should contain description
+    assert!(
+        markdown.contains("A nimble and clever tailor"),
+        "Missing description. Markdown:\n{}",
+        markdown
+    );
+    // Should contain field values
+    assert!(
+        markdown.contains("Fields:"),
+        "Missing fields section. Markdown:\n{}",
+        markdown
+    );
+    assert!(
+        markdown.contains("The Brave Little Tailor"),
+        "Missing name value. Markdown:\n{}",
+        markdown
+    );
+    // Should contain roles with count and link
+    assert!(
+        markdown.contains("Roles:"),
+        "Missing roles section. Markdown:\n{}",
+        markdown
+    );
+    assert!(
+        markdown.contains("resides_in"),
+        "Missing role name. Markdown:\n{}",
+        markdown
+    );
+    assert!(
+        markdown.contains("Count: 1"),
+        "Missing role count. Markdown:\n{}",
+        markdown
     );
 }
 
@@ -568,21 +653,21 @@ DEFINITIONS [
 }
 
 #[test]
-fn test_type_hover() {
+fn test_field_definition_hover() {
     let mut db = RootDatabase::default();
 
     let hubgs_content = "
 DEFINITIONS [
     FIELDS [
         first_name: Text,
-        resides_in: Location,
-        name: Text,
-        unknown_field: Text
+        age: Number,
+        is_active: Boolean
     ],
     HUBS [
         Person {
             first_name,
-            resides_in -> (1) ALLOWS [Location]
+            age,
+            is_active
         }
     ]
 ]
@@ -595,6 +680,72 @@ DEFINITIONS [
 
     let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
 
+    // Hover over a global field definition should return hover content
+    let hover = tauwriter_lsp::handlers::information::hover_impl(
+        &db,
+        workspace,
+        "first_name",
+        &tower_lsp::lsp_types::Url::parse("file:///fantasy.hubgs").unwrap(),
+    )
+    .unwrap()
+    .unwrap();
+
+    let markdown = match hover.contents {
+        tower_lsp::lsp_types::HoverContents::Markup(mc) => mc.value,
+        _ => panic!("Expected Markup hover content (field def)"),
+    };
+
+    // Should contain field header
+    assert!(
+        markdown.contains("Field: first_name"),
+        "Missing field header. Markdown:\n{}",
+        markdown
+    );
+    // Should show type
+    assert!(
+        markdown.contains("Text"),
+        "Missing type info. Markdown:\n{}",
+        markdown
+    );
+    // Should contain source snippet
+    assert!(
+        markdown.contains("```hubgs"),
+        "Missing code block. Markdown:\n{}",
+        markdown
+    );
+}
+
+#[test]
+fn test_type_hover() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        resides_in: Location,
+        name: Text
+    ],
+    HUBS [
+        Person {
+            first_name,
+            resides_in -> (1) ALLOWS [Location]
+        },
+        Location {
+            name
+        }
+    ]
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "fantasy.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // 1. Verify type data exists
     let resolved = db::resolve_type(&db, workspace, hubgs_file, "Person".to_string());
     assert!(resolved.is_some());
     let person_type = resolved.unwrap();
@@ -607,6 +758,66 @@ DEFINITIONS [
         .roles(&db)
         .iter()
         .any(|r| r.name == "resides_in"));
+
+    // 2. Verify allows list is correctly parsed (not empty)
+    let roles = person_type.roles(&db);
+    let resides_role = roles.iter().find(|r| r.name == "resides_in").unwrap();
+    assert!(
+        !resides_role.allowed_types.is_empty(),
+        "Allows list should contain 'Location', but got: {:?}",
+        resides_role.allowed_types
+    );
+    assert_eq!(resides_role.allowed_types, vec!["Location".to_string()]);
+
+    // 3. Verify hover produces correct content for a type
+    let hover = tauwriter_lsp::handlers::information::hover_impl(
+        &db,
+        workspace,
+        "Person",
+        &tower_lsp::lsp_types::Url::parse("file:///fantasy.hubgs").unwrap(),
+    )
+    .unwrap()
+    .unwrap();
+
+    let markdown = match hover.contents {
+        tower_lsp::lsp_types::HoverContents::Markup(mc) => mc.value,
+        _ => panic!("Expected Markup hover content (type def)"),
+    };
+
+    // Should contain type header
+    assert!(
+        markdown.contains("Type: Person"),
+        "Missing type header. Markdown:\n{}",
+        markdown
+    );
+    // Should list fields
+    assert!(
+        markdown.contains("Fields:"),
+        "Missing fields section. Markdown:\n{}",
+        markdown
+    );
+    assert!(
+        markdown.contains("first_name"),
+        "Missing field name. Markdown:\n{}",
+        markdown
+    );
+    // Should show roles with allows list
+    assert!(
+        markdown.contains("Roles:"),
+        "Missing roles section. Markdown:\n{}",
+        markdown
+    );
+    assert!(
+        markdown.contains("ALLOWS [Location]"),
+        "Missing allows list in roles. Markdown:\n{}",
+        markdown
+    );
+    // Should contain source code snippet
+    assert!(
+        markdown.contains("```hubgs"),
+        "Missing code block. Markdown:\n{}",
+        markdown
+    );
 }
 
 #[test]

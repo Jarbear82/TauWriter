@@ -1102,8 +1102,13 @@ async fn test_hover_jsonrpc() {
     let result: Option<Hover> = serde_json::from_value(response.result().unwrap().clone()).unwrap();
 
     assert!(result.is_some());
-    if let HoverContents::Scalar(MarkedString::String(s)) = result.unwrap().contents {
-        assert!(s.contains("Hub: aragorn"));
+    let result = result.unwrap();
+    match result.contents {
+        HoverContents::Markup(mc) => {
+            assert_eq!(mc.kind, MarkupKind::Markdown);
+            assert!(mc.value.contains("Person: aragorn (Hub)"));
+        }
+        _ => {}
     }
 }
 

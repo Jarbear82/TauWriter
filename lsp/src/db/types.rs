@@ -37,6 +37,7 @@ pub struct HubType<'db> {
     pub name: String,
     pub file: SourceFile,
     pub range: super::LspRange,
+    pub block_range: super::LspRange,
     pub fields: Vec<HubFieldDef>,
     pub roles: Vec<HubRoleDef>,
 }
@@ -87,6 +88,7 @@ pub struct HubInstance<'db> {
     pub type_name: String,
     pub file: SourceFile,
     pub range: super::LspRange,
+    pub block_range: super::LspRange,
     pub description: Option<String>,
     pub assignments: Vec<HubAssignment>,
 }

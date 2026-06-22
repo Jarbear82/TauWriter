@@ -1,6 +1,6 @@
 pub mod db;
 pub mod formatter;
-mod handlers;
+pub mod handlers;
 pub mod parser;
 
 use dashmap::DashMap;
