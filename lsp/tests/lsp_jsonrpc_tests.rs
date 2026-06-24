@@ -1565,6 +1565,15 @@ async fn test_publish_diagnostics_jsonrpc() {
         .await
         .unwrap();
 
+    let _ = service
+        .call(
+            Request::build("initialized")
+                .params(json!(InitializedParams {}))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
     let uri = Url::parse("file:///test_diag.hubgs").unwrap();
     let did_open_params = DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
@@ -1586,6 +1595,91 @@ async fn test_publish_diagnostics_jsonrpc() {
 
     rx.recv_timeout(Duration::from_secs(2))
         .expect("Should receive diagnostics");
+}
+
+#[tokio::test]
+async fn test_inlay_hint_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_inlay.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "
+DEFINITIONS [ HUBS [ Person { name }, Location { city } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' }, rivendell:Location { city = 'Rivendell' } ]
+";
+
+    {
+        let mut db_lock = db_arc.lock().await;
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_arc.lock().await;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let params = InlayHintParams {
+        text_document: TextDocumentIdentifier { uri },
+        range: Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: 10,
+                character: 0,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+    };
+
+    let request = Request::build("textDocument/inlayHint")
+        .id(2)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result: Option<Vec<InlayHint>> =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    let hints = result.unwrap();
+    assert_eq!(hints.len(), 2, "expected one inlay hint per instance");
+    assert!(hints.iter().any(|h| match &h.label {
+        InlayHintLabel::String(s) => s.contains("Person"),
+        InlayHintLabel::LabelParts(_) => false,
+    }));
+    assert!(hints.iter().any(|h| match &h.label {
+        InlayHintLabel::String(s) => s.contains("Location"),
+        InlayHintLabel::LabelParts(_) => false,
+    }));
 }
 
 #[tokio::test]
