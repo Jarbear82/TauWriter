@@ -1790,3 +1790,215 @@ INSTANCES [
         assert!(titles.iter().any(|t| t.contains("Mark as Resolved")));
     }
 }
+
+/// Regression test: hover/goto-def on id= inside <hubref> in TWXML files.
+/// Commit dd84883 rewrote get_symbol_at_position to walk the tree-sitter AST
+/// looking for "identifier" nodes, but the TWXML grammar never produces those
+/// — attribute values are parsed as "attribute_value" with anonymous regex content.
+/// This test ensures hover and go-to-definition both resolve through the full LSP stack.
+#[tokio::test]
+async fn test_twxml_hover_and_definition_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let open_files = Arc::new(DashMap::new());
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    // Initialize
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    // Register hubgs file with the tailor instance
+    let hubgs_path = std::env::current_dir().unwrap().join("twtest_types.hubgs");
+    let _hubgs_uri = Url::from_file_path(&hubgs_path).unwrap();
+    let hubgs_content = "\n\
+        DEFINITIONS [\n\
+            FIELDS [ name: Text ],\n\
+            HUBS [ Character { name } ]\n\
+        ],\n\
+        INSTANCES [ tailor:Character { name = 'The Brave Little Tailor' } ]\n\
+    ";
+
+    // Register twxml file that references tailor via hubref id
+    let twxml_path = std::env::current_dir().unwrap().join("twtest_story.twxml");
+    let twxml_uri = Url::from_file_path(&twxml_path).unwrap();
+    let twxml_content = "<document><metadata></metadata><body>\n\
+      <paragraph>\n\
+        <hubref id=\"tailor\" field=\"name\">The Brave Little Tailor</hubref>\n\
+      </paragraph>\n\
+    </body></document>";
+
+    // Index both files into the workspace
+    {
+        let mut db_lock = db_arc.lock().await;
+        let hubgs_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            hubgs_path.to_string_lossy().to_string(),
+            hubgs_content.to_string(),
+        );
+        let twxml_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            twxml_path.to_string_lossy().to_string(),
+            twxml_content.to_string(),
+        );
+        let ws = ws_arc.lock().await;
+        ws.set_files(&mut *db_lock).to(vec![hubgs_file, twxml_file]);
+    }
+
+    // Open the twxml file so get_symbol_at_position can read it
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: twxml_uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: twxml_content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // --- Hover on id="tailor" (line 2, char 16 is inside the value) ---
+    let hover_params = HoverParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier {
+                uri: twxml_uri.clone(),
+            },
+            position: Position {
+                line: 2,
+                character: 16,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+    };
+
+    let hover_request = Request::build("textDocument/hover")
+        .id(10)
+        .params(json!(hover_params))
+        .finish();
+
+    let hover_response = service
+        .call(hover_request)
+        .await
+        .unwrap()
+        .expect("Hover response should be present");
+    let hover_result: Option<Hover> =
+        serde_json::from_value(hover_response.result().unwrap().clone()).unwrap();
+
+    assert!(
+        hover_result.is_some(),
+        "Hover on twxml hubref id should return a result"
+    );
+    let hover_md = match hover_result.unwrap().contents {
+        HoverContents::Markup(mc) => mc.value,
+        _ => panic!("Expected Markup hover content"),
+    };
+    assert!(
+        hover_md.contains("tailor"),
+        "Hover markdown should mention the instance name. Got:\n{}",
+        hover_md
+    );
+
+    // --- Go-to-definition on id="tailor" ---
+    let def_params = GotoDefinitionParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier {
+                uri: twxml_uri.clone(),
+            },
+            position: Position {
+                line: 2,
+                character: 16,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let def_request = Request::build("textDocument/definition")
+        .id(11)
+        .params(json!(def_params))
+        .finish();
+
+    let def_response = service
+        .call(def_request)
+        .await
+        .unwrap()
+        .expect("Definition response should be present");
+    let def_result: Option<GotoDefinitionResponse> =
+        serde_json::from_value(def_response.result().unwrap().clone()).unwrap();
+
+    assert!(
+        def_result.is_some(),
+        "Go-to-definition on twxml hubref id should resolve to the hubgs definition"
+    );
+    if let GotoDefinitionResponse::Scalar(location) = def_result.unwrap() {
+        // Should point to the hubgs file
+        assert!(
+            location
+                .uri
+                .to_file_path()
+                .unwrap()
+                .to_string_lossy()
+                .contains("twtest_types.hubgs"),
+            "Definition should resolve to the .hubgs file, not the .twxml file"
+        );
+    } else {
+        panic!("Expected Scalar GotoDefinitionResponse");
+    }
+
+    // --- Document highlight on id="tailor" (verifies symbol is found) ---
+    let hl_params = DocumentHighlightParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier {
+                uri: twxml_uri.clone(),
+            },
+            position: Position {
+                line: 2,
+                character: 16,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let hl_request = Request::build("textDocument/documentHighlight")
+        .id(12)
+        .params(json!(hl_params))
+        .finish();
+
+    let hl_response = service
+        .call(hl_request)
+        .await
+        .unwrap()
+        .expect("Highlight response should be present");
+    let hl_result: Option<Vec<DocumentHighlight>> =
+        serde_json::from_value(hl_response.result().unwrap().clone()).unwrap();
+
+    assert!(
+        hl_result.is_some() && !hl_result.as_ref().unwrap().is_empty(),
+        "Document highlight on twxml hubref id should return highlights"
+    );
+}
