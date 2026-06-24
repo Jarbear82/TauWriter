@@ -1,3 +1,4 @@
+use super::evaluator::{self};
 use super::types::*;
 
 #[salsa::tracked]
@@ -164,47 +165,20 @@ pub fn compute_field_value(
         return Some(assignment.value.clone());
     }
 
-    // 2. Check if computed or default in type
+    // 2. Check for @computed expression on the type's field definition
     let hub_type = resolve_type(db, workspace, instance.file(db), instance.type_name(db))?;
     if let Some(field_def) = hub_type.fields(db).iter().find(|f| f.name == field_name) {
         if let Some(expr) = &field_def.expression {
-            return evaluate_expression(db, workspace, instance, expr);
+            if field_def.decorator.as_deref() == Some("@computed") {
+                if let Some(ast) = evaluator::parse_expression(expr) {
+                    return evaluator::evaluate_ast(db, workspace, instance, &ast);
+                }
+            }
         }
     }
-    None
-}
 
-fn evaluate_expression(
-    db: &dyn Db,
-    workspace: Workspace,
-    instance: HubInstance<'_>,
-    expr: &str,
-) -> Option<HubValue> {
-    let expr = expr.trim();
-    if expr.starts_with('\'') || expr.starts_with('"') || expr.starts_with('`') {
-        return Some(HubValue::String(
-            expr.trim_matches(|c| c == '\'' || c == '"' || c == '`')
-                .to_string(),
-        ));
-    }
-
-    if expr.parse::<f64>().is_ok() {
-        return Some(HubValue::Number(expr.to_string()));
-    }
-
-    if expr == "true" {
-        return Some(HubValue::Boolean(true));
-    }
-    if expr == "false" {
-        return Some(HubValue::Boolean(false));
-    }
-
-    // Try to resolve as another field in the same instance
-    if let Some(other_val) = compute_field_value(db, workspace, instance, expr.to_string()) {
-        return Some(other_val);
-    }
-
-    None
+    // 3. Check for @default value (only when the instance didn't assign this field)
+    evaluator::get_default_value(db, workspace, instance, &field_name)
 }
 
 #[salsa::tracked]

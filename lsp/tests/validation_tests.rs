@@ -575,3 +575,417 @@ INSTANCES [
         errors
     );
 }
+
+// ============================================================
+// Dynamic Evaluation Engine Tests
+// ============================================================
+
+#[test]
+fn test_computed_arithmetic_addition() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        price: Number,
+        quantity: Number,
+        total: Number
+    ],
+    HUBS [
+        OrderItem {
+            price,
+            quantity,
+            total = @computed(price * quantity)
+        }
+    ]
+],
+INSTANCES [
+    item1:OrderItem { price = 5, quantity = 3 }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "arithmetic.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let instance = instances[0];
+
+    let total_val = db::compute_field_value(&db, workspace, instance, "total".to_string());
+    assert_eq!(total_val, Some(db::HubValue::Number("15".to_string())));
+}
+
+#[test]
+fn test_computed_arithmetic_subtraction_division() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        start: Number,
+        end: Number,
+        diff: Number,
+        half_diff: Number
+    ],
+    HUBS [
+        Range {
+            start,
+            end,
+            diff = @computed(end - start),
+            half_diff = @computed(diff / 2)
+        }
+    ]
+],
+INSTANCES [
+    r1:Range { start = 10, end = 30 }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "arith2.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let instance = instances[0];
+
+    let diff_val = db::compute_field_value(&db, workspace, instance, "diff".to_string());
+    assert_eq!(diff_val, Some(db::HubValue::Number("20".to_string())));
+
+    let half_val = db::compute_field_value(&db, workspace, instance, "half_diff".to_string());
+    assert_eq!(half_val, Some(db::HubValue::Number("10".to_string())));
+}
+
+#[test]
+fn test_computed_string_concatenation() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        last_name: Text,
+        full_name: Text
+    ],
+    HUBS [
+        Person {
+            first_name,
+            last_name,
+            full_name = @computed(first_name + ' ' + last_name)
+        }
+    ]
+],
+INSTANCES [
+    p1:Person { first_name = 'Aragorn', last_name = 'Elessar' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "concat.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let instance = instances[0];
+
+    let full_val = db::compute_field_value(&db, workspace, instance, "full_name".to_string());
+    assert_eq!(
+        full_val,
+        Some(db::HubValue::String("Aragorn Elessar".to_string()))
+    );
+}
+
+#[test]
+fn test_computed_parenthesized_expression() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        a: Number,
+        b: Number,
+        c: Number,
+        result: Number
+    ],
+    HUBS [
+        Calc {
+            a,
+            b,
+            c,
+            result = @computed((a + b) * c)
+        }
+    ]
+],
+INSTANCES [
+    c1:Calc { a = 2, b = 3, c = 4 }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "parens.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let instance = instances[0];
+
+    // (2 + 3) * 4 = 20
+    let result_val = db::compute_field_value(&db, workspace, instance, "result".to_string());
+    assert_eq!(result_val, Some(db::HubValue::Number("20".to_string())));
+}
+
+#[test]
+fn test_computed_unary_negation() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        value: Number,
+        negated: Number
+    ],
+    HUBS [
+        Signed {
+            value,
+            negated = @computed(-value)
+        }
+    ]
+],
+INSTANCES [
+    s1:Signed { value = 42 }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "unary.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let instance = instances[0];
+
+    let neg_val = db::compute_field_value(&db, workspace, instance, "negated".to_string());
+    assert_eq!(neg_val, Some(db::HubValue::Number("-42".to_string())));
+}
+
+#[test]
+fn test_cross_hub_role_access_length() {
+    let mut db = RootDatabase::default();
+
+    // Test this.companions.length where companions is a role
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        companion_count: Number
+    ],
+    HUBS [
+        Character {
+            name,
+            companion_count = @computed(this.associates.length),
+            associates <-> (0..*) ALLOWS [Character]
+        }
+    ]
+],
+INSTANCES [
+    tailor:Character {
+        name = 'The Tailor',
+        associates = [giant1, giant2]
+    },
+    giant1:Character { name = 'First Giant' },
+    giant2:Character { name = 'Second Giant' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "roles.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let tailor = instances[0];
+
+    let count_val = db::compute_field_value(&db, workspace, tailor, "companion_count".to_string());
+    assert_eq!(count_val, Some(db::HubValue::Number("2".to_string())));
+}
+
+#[test]
+fn test_cross_hub_role_access_field() {
+    let mut db = RootDatabase::default();
+
+    // Test cross-Hub field access: owner.name through a role
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        owner_name: Text
+    ],
+    HUBS [
+        Character {
+            name
+        },
+        Item {
+            name,
+            owner -> (0..1) ALLOWS [Character],
+            owner_name = @computed(this.owner.name)
+        }
+    ]
+],
+INSTANCES [
+    tailor:Character { name = 'The Tailor' },
+    jam:Item {
+        name = 'Good Jam',
+        owner = [tailor]
+    }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "crosshub.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let jam = instances[1];
+
+    // owner_name should resolve to 'The Tailor' via the owner role
+    let owner_name_val = db::compute_field_value(&db, workspace, jam, "owner_name".to_string());
+    assert_eq!(
+        owner_name_val,
+        Some(db::HubValue::String("The Tailor".to_string()))
+    );
+}
+
+#[test]
+fn test_default_applied_when_not_overridden() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        status: Text
+    ],
+    HUBS [
+        Person {
+            name,
+            status = @default('Active')
+        }
+    ]
+],
+INSTANCES [
+    p1:Person { name = 'Aragorn' },
+    p2:Person { name = 'Boromir', status = 'Inactive' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "defaults.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let p1 = instances[0];
+    let p2 = instances[1];
+
+    // p1 did not assign status -> should get default 'Active'
+    let p1_status = db::compute_field_value(&db, workspace, p1, "status".to_string());
+    assert_eq!(p1_status, Some(db::HubValue::String("Active".to_string())));
+
+    // p2 explicitly assigned status -> should keep 'Inactive'
+    let p2_status = db::compute_field_value(&db, workspace, p2, "status".to_string());
+    assert_eq!(
+        p2_status,
+        Some(db::HubValue::String("Inactive".to_string()))
+    );
+}
+
+#[test]
+fn test_default_with_expression() {
+    let mut db = RootDatabase::default();
+
+    // @default can reference other fields via expression
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        first_name: Text,
+        last_name: Text,
+        display_name: Text
+    ],
+    HUBS [
+        Person {
+            first_name,
+            last_name = @default('Doe'),
+            display_name = @computed(first_name + ' ' + last_name)
+        }
+    ]
+],
+INSTANCES [
+    p1:Person { first_name = 'John' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "defexpr.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let p1 = instances[0];
+
+    // last_name should get default 'Doe', then display_name computes to 'John Doe'
+    let last_val = db::compute_field_value(&db, workspace, p1, "last_name".to_string());
+    assert_eq!(last_val, Some(db::HubValue::String("Doe".to_string())));
+
+    let display_val = db::compute_field_value(&db, workspace, p1, "display_name".to_string());
+    assert_eq!(
+        display_val,
+        Some(db::HubValue::String("John Doe".to_string()))
+    );
+}
+
+#[test]
+fn test_computed_literal_expression() {
+    let mut db = RootDatabase::default();
+
+    // Test that @computed with a pure literal expression works
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        version: Number
+    ],
+    HUBS [
+        Artifact {
+            name,
+            version = @computed(1)
+        }
+    ]
+],
+INSTANCES [
+    a1:Artifact { name = 'Test' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "literal.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let a1 = instances[0];
+
+    let version_val = db::compute_field_value(&db, workspace, a1, "version".to_string());
+    assert_eq!(version_val, Some(db::HubValue::Number("1".to_string())));
+}

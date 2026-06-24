@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+pub mod evaluator;
 pub mod resolution;
 pub mod types;
 pub mod validation;

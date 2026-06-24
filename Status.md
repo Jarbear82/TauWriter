@@ -14,7 +14,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Refactoring Support** | ✅ | Global renames and structural changes (References/Rename). |
 | **AST Extraction** | ✅ | Tree-Sitter based AST extraction logic structure. |
 | **Structural Awareness**| ✅ | Full index support for HubGS FIELDS, ENUMS, STRUCTS, and TWXML elements. |
-| **Dynamic Evaluation**| 🔄 | In Progress - Engine building. Decorator parsing complete (`@computed`, `@default`). Evolving prototype into a robust computed graph data engine. |
+| **Dynamic Evaluation**| ✅ | Engine building complete. Decorator parsing (`@computed`, `@default`), AST-based expression evaluator (arithmetic, string concatenation, unary ops, parentheses), cross-Hub field access via roles (`this.role.length`, `this.role.field`), and `@default` override enforcement. |
 
 ## Production Roadmap
 
@@ -35,20 +35,20 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 
 ## Current Focus
 
-### 1. Structural Enforcement & Validation Pipeline (In Progress)
+### 1. Structural Enforcement & Validation Pipeline ✅
 Strict schema enforcement for document and graph structures to ensure data integrity.
-- [ ] **TWXML Skeleton Enforcement:** Validate that all TWXML documents strictly adhere to the root `<document>` schema containing exactly one `<metadata>` block (housing `<meta/>` tags) and one `<body>` block.
-- [ ] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
-- [ ] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
+- [x] **TWXML Skeleton Enforcement:** Validate that all TWXML documents strictly adhere to the root <document> schema containing exactly one <metadata> block (housing <meta/> tags) and one <body> block.
+- [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
+- [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
 - [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
 - [x] Implement TWXML Referential Integrity (Unresolved references for `<hubref>`)
 - [x] Implement HubGS Type & Multiplicity Enforcement
 
-### 2. Dynamic Evaluation Engine (In Progress)
-Evolving the prototype evaluator into a robust engine for computed graph data.
-- [ ] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
-- [ ] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
-- [ ] Enforce `@default` override rules during instance instantiation.
+### 2. Dynamic Evaluation Engine ✅
+Robust engine for computed graph data.
+- [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
+- [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
+- [x] Enforce `@default` override rules during instance instantiation.
 
 ### 3. Editor Experience & LSP Capabilities (In Progress)
 Enhancing the writing and data-entry flow natively within the editor.
