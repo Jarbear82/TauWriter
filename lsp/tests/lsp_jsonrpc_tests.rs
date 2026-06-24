@@ -793,7 +793,7 @@ async fn test_did_change_jsonrpc() {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
-        open_files.get(&uri).map(|v| v.clone()),
+        open_files.get(&uri).map(|r| r.to_string()),
         Some("INSTANCES [ gandalf:Person {} ]".to_string())
     );
 }
@@ -1648,7 +1648,7 @@ INSTANCES [
         ws.set_files(&mut *db_lock).to(vec![h_file, t_file]);
     }
 
-    open_files.insert(twxml_uri.clone(), twxml_content.to_string());
+    open_files.insert(twxml_uri.clone(), ropey::Rope::from_str(&twxml_content));
 
     let params = CodeActionParams {
         text_document: TextDocumentIdentifier { uri: twxml_uri },

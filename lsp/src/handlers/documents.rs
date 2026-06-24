@@ -1,3 +1,4 @@
+use ropey::Rope;
 use tower_lsp::lsp_types::*;
 
 use crate::Backend;
@@ -5,21 +6,40 @@ use crate::Backend;
 pub async fn did_open(server: &Backend, params: DidOpenTextDocumentParams) {
     let uri = params.text_document.uri;
     let text = params.text_document.text;
-    server.open_files.insert(uri.clone(), text);
+    server.open_files.insert(uri.clone(), Rope::from_str(&text));
     server.publish_diagnostics(uri).await;
 }
 
 pub async fn did_change(server: &Backend, params: DidChangeTextDocumentParams) {
     let uri = params.text_document.uri;
-    if let Some(change) = params.content_changes.first() {
-        server.open_files.insert(uri.clone(), change.text.clone());
-        server.publish_diagnostics(uri.clone()).await;
 
-        if uri.as_str().ends_with(".twxml") {
-            handle_twxml_change(server, &uri).await;
-        } else if uri.as_str().ends_with(".hubgs") {
-            handle_hubgs_change(server, &uri).await;
+    if let Some(mut rope_ref) = server.open_files.get_mut(&uri) {
+        for change in params.content_changes {
+            if let Some(range) = change.range {
+                // LSP positions are UTF-16 code units; ropey uses Unicode scalar indices.
+                // For ASCII-only hubgs/twxml this is a no-op, but handle it correctly anyway.
+                // ponytail: We assume UTF-8/ASCII text (no surrogate pairs). If multi-byte
+                // chars appear in positions, we'd need utf16_cu_to_char here.
+                let start_char = rope_ref.line_to_char(range.start.line as usize)
+                    + range.start.character as usize;
+                let end_char =
+                    rope_ref.line_to_char(range.end.line as usize) + range.end.character as usize;
+
+                rope_ref.remove(start_char..end_char);
+                rope_ref.insert(start_char, &change.text);
+            } else {
+                // Full document replacement fallback (rare; client opted into full sync)
+                *rope_ref = Rope::from_str(&change.text);
+            }
         }
+    }
+
+    server.publish_diagnostics(uri.clone()).await;
+
+    if uri.as_str().ends_with(".twxml") {
+        handle_twxml_change(server, &uri).await;
+    } else if uri.as_str().ends_with(".hubgs") {
+        handle_hubgs_change(server, &uri).await;
     }
 }
 
@@ -227,7 +247,7 @@ async fn handle_hubgs_change(server: &Backend, _uri: &Url) {
                     let file_uri = Url::from_file_path(&path).unwrap();
                     let content = open_files_clone
                         .get(&file_uri)
-                        .map(|x| x.clone())
+                        .map(|r| r.to_string())
                         .unwrap_or_else(|| file.contents(&*db));
 
                     let refs = crate::db::parse_twxml(&*db, file);

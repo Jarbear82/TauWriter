@@ -4,6 +4,7 @@ pub mod handlers;
 pub mod parser;
 
 use dashmap::DashMap;
+use ropey::Rope;
 use salsa::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -43,12 +44,12 @@ pub struct Backend {
     pub client: Client,
     pub db: Arc<Mutex<RootDatabase>>,
     pub workspace_input: Arc<Mutex<db::Workspace>>,
-    pub open_files: Arc<DashMap<Url, String>>,
+    pub open_files: Arc<DashMap<Url, Rope>>,
 }
 
 impl Backend {
     fn get_symbol_at_position(&self, uri: &Url, position: Position) -> Option<String> {
-        let content = self.open_files.get(uri)?.clone();
+        let content = self.open_files.get(uri).map(|r| r.to_string())?;
 
         // Pick grammar based on file extension
         let language = if uri.as_str().ends_with(".hubgs") {
@@ -133,30 +134,33 @@ impl Backend {
     }
 
     async fn publish_diagnostics(&self, uri: Url) {
-        if let Some(content) = self.open_files.get(&uri) {
-            let path = uri.to_file_path().unwrap().to_string_lossy().to_string();
+        let content = if let Some(rope) = self.open_files.get(&uri) {
+            rope.to_string()
+        } else {
+            return;
+        };
+        let path = uri.to_file_path().unwrap().to_string_lossy().to_string();
 
-            let errors = {
-                let mut db = self.db.lock().await;
-                let ws = *self.workspace_input.lock().await;
-                let source_file = db::SourceFile::new(&mut *db, path, content.clone());
-                db::validate_file(&*db, ws, source_file)
-            };
+        let errors = {
+            let mut db = self.db.lock().await;
+            let ws = *self.workspace_input.lock().await;
+            let source_file = db::SourceFile::new(&mut *db, path, content.clone());
+            db::validate_file(&*db, ws, source_file)
+        };
 
-            let diagnostics = errors
-                .into_iter()
-                .map(|err| Diagnostic {
-                    range: err.range.into(),
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    message: err.message,
-                    ..Default::default()
-                })
-                .collect();
+        let diagnostics = errors
+            .into_iter()
+            .map(|err| Diagnostic {
+                range: err.range.into(),
+                severity: Some(DiagnosticSeverity::ERROR),
+                message: err.message,
+                ..Default::default()
+            })
+            .collect();
 
-            self.client
-                .publish_diagnostics(uri, diagnostics, None)
-                .await;
-        }
+        self.client
+            .publish_diagnostics(uri, diagnostics, None)
+            .await;
     }
 }
 
@@ -235,6 +239,7 @@ impl LanguageServer for Backend {
                         },
                     ),
                 ),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -328,6 +333,10 @@ impl LanguageServer for Backend {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         handlers::semantic_tokens_full(self, params).await
+    }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        handlers::inlay_hints(self, params).await
     }
 
     async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {

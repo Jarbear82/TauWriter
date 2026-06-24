@@ -332,7 +332,7 @@ pub async fn code_action(
     let uri = params.text_document.uri;
     let position = params.range.start;
 
-    if let Some(content) = server.open_files.get(&uri) {
+    if let Some(content) = server.open_files.get(&uri).map(|r| r.to_string()) {
         if let Some((review_range, _hubref_range, id_val, field_val, current_text)) =
             crate::parser::find_review_at_position(&content, position.into())
         {

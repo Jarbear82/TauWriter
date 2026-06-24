@@ -30,7 +30,8 @@ fn semantic_tokens_impl(
     db: &dyn crate::db::Db,
     file: crate::db::SourceFile,
 ) -> Result<Option<SemanticTokensResult>> {
-    let tokens = crate::db::get_semantic_tokens(db, file);
+    let mut tokens = crate::db::get_semantic_tokens(db, file);
+    tokens.sort_by_key(|t| (t.line, t.character));
     let mut last_line: u32 = 0;
     let mut last_char: u32 = 0;
 
@@ -112,7 +113,7 @@ pub async fn formatting(
 ) -> Result<Option<Vec<TextEdit>>> {
     let uri = params.text_document.uri;
 
-    if let Some(content) = server.open_files.get(&uri) {
+    if let Some(content) = server.open_files.get(&uri).map(|r| r.to_string()) {
         let file_type = if uri.as_str().ends_with(".twxml") {
             "twxml"
         } else if uri.as_str().ends_with(".hubgs") {

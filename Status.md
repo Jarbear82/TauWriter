@@ -88,6 +88,7 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `workspace/symbol` | ✅ | ✅ |
 | `textDocument/publishDiagnostics` | ✅ | ✅ |
 | `textDocument/codeAction` | ✅ | ✅ |
+| `textDocument/inlayHint` | ✅ | ⬚ |
 
 ### Unimplemented LSP Methods (No Test)
 
@@ -115,6 +116,5 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/selectionRange` | ❌ |
 | `textDocument/inlineCompletion` | ❌ |
 | `textDocument/moniker` | ❌ |
-| `textDocument/inlayHint` | ❌ |
 
-*20 of ~50 spec methods are implemented and tested. Coverage is 100% of what's shipped.*
+*21 of ~50 spec methods are implemented. Coverage is 100% of what's shipped.*
