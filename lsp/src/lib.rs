@@ -69,11 +69,48 @@ impl Backend {
             column: position.character as usize,
         };
 
-        // Walk up to find an identifier node at the cursor
+        // Walk up to find a symbol node at the cursor.
+        // HubGS uses "identifier" nodes; TWXML uses different node kinds per grammar.
         let mut node = tree
             .root_node()
             .descendant_for_point_range(ts_pos, ts_pos)?;
-        while node.kind() != "identifier" {
+
+        loop {
+            match node.kind() {
+                "identifier" => break,
+                "attribute_value" => {
+                    // TWXML: attribute value content is an anonymous regex inside this node.
+                    // Strip quotes and return the raw value. Only useful inside <hubref> tags.
+                    let attr = node.parent()?;
+                    if attr.kind() != "attribute" {
+                        return None;
+                    }
+                    // Make sure parent tag is a hubref, otherwise this isn't a symbol we track
+                    let parent_tag = attr.parent()?;
+                    if parent_tag.kind() != "start_tag"
+                        && parent_tag.kind() != "self_closing_element"
+                    {
+                        return None;
+                    }
+                    if let Some(name_node) = parent_tag.child_by_field_name("name") {
+                        let tag_name = &content[name_node.byte_range()];
+                        if tag_name != "hubref" {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                    // Extract the attribute name to know which symbol we're on
+                    if let Some(name_child) = attr.child(0) {
+                        let attr_name = &content[name_child.byte_range()];
+                        if attr_name == "id" {
+                            break; // Fall through to extract text below
+                        }
+                    }
+                    return None;
+                }
+                _ => {}
+            }
             if let Some(parent) = node.parent() {
                 node = parent;
             } else {
@@ -81,10 +118,16 @@ impl Backend {
             }
         }
 
-        // Make sure the cursor is actually inside the identifier's range, not just anywhere in its subtree
+        // Make sure the cursor is actually inside the node's range, not just anywhere in its subtree
         let range = node.range();
         if ts_pos.row >= range.start_point.row && ts_pos.row <= range.end_point.row {
-            Some(content[node.byte_range()].to_string())
+            // For attribute_value, strip surrounding quotes
+            let raw = content[node.byte_range()].to_string();
+            if node.kind() == "attribute_value" {
+                Some(raw.trim_matches('"').trim_matches('\'').to_string())
+            } else {
+                Some(raw)
+            }
         } else {
             None
         }
