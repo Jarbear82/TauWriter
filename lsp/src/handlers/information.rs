@@ -62,13 +62,6 @@ fn resolve_global_field<'a>(
         .cloned()
 }
 
-fn extract_source_snippet(db: &dyn crate::db::Db, instance: crate::db::HubInstance<'_>) -> String {
-    let file = instance.file(db);
-    let contents = file.contents(db);
-    let block_range = instance.block_range(db);
-    extract_text_range(&contents, block_range)
-}
-
 fn extract_source_snippet_type(
     db: &dyn crate::db::Db,
     hub_type: &crate::db::HubType<'_>,
@@ -76,54 +69,13 @@ fn extract_source_snippet_type(
     let file = hub_type.file(db);
     let contents = file.contents(db);
     let block_range = hub_type.block_range(db);
-    extract_text_range(&contents, block_range)
-}
-
-fn extract_text_range(contents: &str, range: crate::db::LspRange) -> String {
-    let lines: Vec<&str> = contents.lines().collect();
-    let start_line = range.start.line as usize;
-    let end_line = range.end.line as usize;
-
-    if start_line >= lines.len() || end_line >= lines.len() {
-        return String::new();
-    }
-
-    let mut result = String::new();
-    for i in start_line..=end_line {
-        let line = lines[i];
-        if i == start_line && i == end_line {
-            let start_ch = (range.start.character as usize).min(line.len());
-            let end_ch = (range.end.character as usize).min(line.len());
-            if start_ch < line.len() {
-                result.push_str(&line[start_ch..end_ch]);
-            }
-        } else if i == start_line {
-            let start_ch = (range.start.character as usize).min(line.len());
-            if start_ch < line.len() {
-                result.push_str(&line[start_ch..]);
-            }
-        } else if i == end_line {
-            let end_ch = (range.end.character as usize).min(line.len());
-            result.push_str(&line[..end_ch]);
-        } else {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    result
+    super::documents::get_range_text(&contents, block_range.into())
 }
 
 fn format_hub_value(val: &crate::db::HubValue) -> String {
     match val {
         crate::db::HubValue::String(s) => format!("\"{}\"", s),
-        crate::db::HubValue::Number(n) => n.clone(),
-        crate::db::HubValue::Boolean(b) => b.to_string(),
-        crate::db::HubValue::Identifier(i) => i.clone(),
-        crate::db::HubValue::Array(arr) => {
-            let items: Vec<String> = arr.iter().map(format_hub_value).collect();
-            format!("[{}]", items.join(", "))
-        }
+        other => other.to_string(),
     }
 }
 
@@ -304,7 +256,7 @@ fn hover_global_field(
     // Source snippet
     let file = global_field.file(db);
     let contents = file.contents(db);
-    let snippet = extract_text_range(&contents, global_field.range(db));
+    let snippet = super::documents::get_range_text(&contents, global_field.range(db).into());
     if !snippet.is_empty() {
         md.separator();
         md.code_block(&snippet, "hubgs");
@@ -354,10 +306,6 @@ impl MarkdownContent {
         self.lines.push(format!("  - [{}]({})", name, uri));
     }
 
-    fn link(&mut self, name: &str, target: &str) {
-        self.link_with_uri(name, target);
-    }
-
     fn separator(&mut self) {
         self.lines.push("---".to_string());
     }
@@ -396,7 +344,7 @@ pub async fn code_action(
                 {
                     return code_action_impl(
                         &uri,
-                        review_range,
+                        review_range.into(),
                         &id_val,
                         &field_val,
                         &current_text,
@@ -412,19 +360,13 @@ pub async fn code_action(
 
 fn code_action_impl(
     uri: &Url,
-    review_range: crate::db::LspRange,
+    review_range: lsp_types::Range,
     id_val: &str,
     field_val: &str,
     current_text: &str,
     eval_val: crate::db::HubValue,
 ) -> Result<Option<CodeActionResponse>> {
-    let canonical_str = match eval_val {
-        crate::db::HubValue::String(s) => s,
-        crate::db::HubValue::Number(n) => n,
-        crate::db::HubValue::Boolean(b) => b.to_string(),
-        crate::db::HubValue::Identifier(i) => i,
-        crate::db::HubValue::Array(_) => "".to_string(),
-    };
+    let canonical_str = eval_val.to_string();
 
     let mut actions = Vec::new();
 

@@ -87,5 +87,34 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/semanticTokens/full` | ✅ | ✅ |
 | `workspace/symbol` | ✅ | ✅ |
 | `textDocument/publishDiagnostics` | ✅ | ✅ |
+| `textDocument/codeAction` | ✅ | ✅ |
 
-*Note: Many other optional LSP features from the specification are currently not implemented.*
+### Unimplemented LSP Methods (No Test)
+
+| LSP Operation | Status |
+|:---|:---:|
+| `exit` | ❌ |
+| `$progress` | ❌ |
+| `workspace/didChangeConfiguration` | ❌ |
+| `workspace/configuration` | ❌ |
+| `workspace/executeCommand` | ❌ |
+| File operation notifications | ❌ |
+| `textDocument/willSave` | ❌ |
+| `textDocument/willSaveNotify` | ❌ |
+| `textDocument/signatureHelp` | ❌ |
+| `codeAction/resolve` | ❌ |
+| `textDocument/codeLens` | ❌ |
+| `codeLens/resolve` | ❌ |
+| `textDocument/rangeFormatting` | ❌ |
+| `textDocument/onTypeFormatting` | ❌ |
+| Call hierarchy (`prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`) | ❌ |
+| `textDocument/documentLink` | ❌ |
+| `documentLink/resolve` | ❌ |
+| `textDocument/documentColor` | ❌ |
+| `textDocument/colorPresentation` | ❌ |
+| `textDocument/selectionRange` | ❌ |
+| `textDocument/inlineCompletion` | ❌ |
+| `textDocument/moniker` | ❌ |
+| `textDocument/inlayHint` | ❌ |
+
+*20 of ~50 spec methods are implemented and tested. Coverage is 100% of what's shipped.*

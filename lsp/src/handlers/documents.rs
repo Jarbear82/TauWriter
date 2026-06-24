@@ -178,13 +178,7 @@ async fn handle_twxml_change(server: &Backend, uri: &Url) {
                                     instance,
                                     field_name.clone(),
                                 ) {
-                                    let canonical_str = match eval_val {
-                                        crate::db::HubValue::String(s) => s,
-                                        crate::db::HubValue::Number(n) => n,
-                                        crate::db::HubValue::Boolean(b) => b.to_string(),
-                                        crate::db::HubValue::Identifier(i) => i,
-                                        crate::db::HubValue::Array(_) => "".to_string(),
-                                    };
+                                    let canonical_str = eval_val.to_string();
                                     if canonical_str == *text_val {
                                         let review_range = r.tag_range(&*db);
                                         let keep_text = format!(
@@ -255,16 +249,11 @@ async fn handle_hubgs_change(server: &Backend, _uri: &Url) {
                                     instance,
                                     field_name.clone(),
                                 ) {
-                                    let canonical_str = match eval_val {
-                                        crate::db::HubValue::String(s) => s,
-                                        crate::db::HubValue::Number(n) => n,
-                                        crate::db::HubValue::Boolean(b) => b.to_string(),
-                                        crate::db::HubValue::Identifier(i) => i,
-                                        crate::db::HubValue::Array(_) => "".to_string(),
-                                    };
+                                    let canonical_str = eval_val.to_string();
                                     if canonical_str != *text_val {
                                         let tag_range = r.tag_range(&*db);
-                                        let original_text = get_range_text(&content, tag_range);
+                                        let original_text =
+                                            get_range_text(&content, tag_range.into());
                                         if !original_text.is_empty() {
                                             let new_text =
                                                 format!("<review>{}</review>", original_text);
@@ -294,7 +283,7 @@ async fn handle_hubgs_change(server: &Backend, _uri: &Url) {
     });
 }
 
-pub fn get_range_text(contents: &str, range: crate::db::LspRange) -> String {
+pub fn get_range_text(contents: &str, range: lsp_types::Range) -> String {
     let lines: Vec<&str> = contents.lines().collect();
     let start_line = range.start.line as usize;
     let end_line = range.end.line as usize;

@@ -1,6 +1,6 @@
 use crate::db::{
     Db, HubAssignment, HubFieldDef, HubImport, HubInstance, HubRoleDef, HubType, HubgsParseResult,
-    LspPosition, SourceFile,
+    SourceFile,
 };
 use tree_sitter::Parser;
 
@@ -388,7 +388,11 @@ fn node_to_hub_value(node: tree_sitter::Node, contents: &str) -> Option<crate::d
     }
 }
 
-pub fn get_hub_type_at_position(db: &dyn Db, file: SourceFile, pos: LspPosition) -> Option<String> {
+pub fn get_hub_type_at_position(
+    db: &dyn Db,
+    file: SourceFile,
+    pos: lsp_types::Position,
+) -> Option<String> {
     let contents = file.contents(db);
     let language = unsafe { super::tree_sitter_hubgs() };
     let mut parser = Parser::new();
@@ -419,7 +423,7 @@ pub fn get_hub_type_at_position(db: &dyn Db, file: SourceFile, pos: LspPosition)
     None
 }
 
-pub fn is_in_hub_definition(db: &dyn Db, file: SourceFile, pos: LspPosition) -> bool {
+pub fn is_in_hub_definition(db: &dyn Db, file: SourceFile, pos: lsp_types::Position) -> bool {
     let contents = file.contents(db);
     let language = unsafe { super::tree_sitter_hubgs() };
     let mut parser = Parser::new();
@@ -446,7 +450,10 @@ pub fn is_in_hub_definition(db: &dyn Db, file: SourceFile, pos: LspPosition) -> 
     true
 }
 
-pub fn get_hubgs_completion_context(contents: &str, pos: LspPosition) -> HubgsCompletionContext {
+pub fn get_hubgs_completion_context(
+    contents: &str,
+    pos: lsp_types::Position,
+) -> HubgsCompletionContext {
     let language = unsafe { super::tree_sitter_hubgs() };
     let mut parser = Parser::new();
     parser.set_language(language).ok();

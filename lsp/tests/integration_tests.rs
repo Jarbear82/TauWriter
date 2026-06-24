@@ -283,7 +283,7 @@ fn test_twxml_completion_contexts() {
         line: 2,
         character: 17,
     };
-    let ctx_id = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_id);
+    let ctx_id = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_id.into());
     assert!(matches!(
         ctx_id,
         tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId
@@ -293,7 +293,7 @@ fn test_twxml_completion_contexts() {
         line: 2,
         character: 32,
     };
-    let ctx_field = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_field);
+    let ctx_field = tauwriter_lsp::parser::get_twxml_completion_context(content, pos_field.into());
     if let tauwriter_lsp::parser::TwxmlCompletionContext::HubrefField { id_val } = ctx_field {
         assert_eq!(id_val, "aragorn");
     } else {
@@ -323,7 +323,8 @@ INSTANCES [
         line: 5,
         character: 32,
     };
-    let ctx_allows = tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_allows);
+    let ctx_allows =
+        tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_allows.into());
     assert!(matches!(
         ctx_allows,
         tauwriter_lsp::parser::HubgsCompletionContext::AllowsList
@@ -333,7 +334,8 @@ INSTANCES [
         line: 11,
         character: 16,
     };
-    let ctx_assign = tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_assign);
+    let ctx_assign =
+        tauwriter_lsp::parser::get_hubgs_completion_context(content, pos_assign.into());
     if let tauwriter_lsp::parser::HubgsCompletionContext::InstanceAssignment {
         type_name,
         role_name,
@@ -889,14 +891,15 @@ fn test_snapshot_fixture_testing() {
     };
 
     let (id_clean, id_pos) = parse_fixture(id_fixture);
-    let id_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&id_clean, id_pos);
+    let id_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&id_clean, id_pos.into());
     assert!(matches!(
         id_ctx,
         tauwriter_lsp::parser::TwxmlCompletionContext::HubrefId
     ));
 
     let (field_clean, field_pos) = parse_fixture(field_fixture);
-    let field_ctx = tauwriter_lsp::parser::get_twxml_completion_context(&field_clean, field_pos);
+    let field_ctx =
+        tauwriter_lsp::parser::get_twxml_completion_context(&field_clean, field_pos.into());
     if let tauwriter_lsp::parser::TwxmlCompletionContext::HubrefField { id_val } = field_ctx {
         assert_eq!(id_val, "aragorn");
     } else {

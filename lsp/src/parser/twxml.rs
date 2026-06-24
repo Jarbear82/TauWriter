@@ -320,7 +320,10 @@ pub enum TwxmlCompletionContext {
     None,
 }
 
-pub fn get_twxml_completion_context(contents: &str, pos: LspPosition) -> TwxmlCompletionContext {
+pub fn get_twxml_completion_context(
+    contents: &str,
+    pos: lsp_types::Position,
+) -> TwxmlCompletionContext {
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
     parser.set_language(language).ok();

@@ -21,12 +21,12 @@ pub fn get_hub_type_at_position(
     file: SourceFile,
     position: super::LspPosition,
 ) -> Option<String> {
-    crate::parser::get_hub_type_at_position(db, file, position)
+    crate::parser::get_hub_type_at_position(db, file, position.into())
 }
 
 #[salsa::tracked]
 pub fn is_in_hub_definition(db: &dyn Db, file: SourceFile, position: super::LspPosition) -> bool {
-    crate::parser::is_in_hub_definition(db, file, position)
+    crate::parser::is_in_hub_definition(db, file, position.into())
 }
 
 #[salsa::tracked]
@@ -37,6 +37,9 @@ pub fn get_semantic_tokens(db: &dyn Db, file: SourceFile) -> Vec<super::Semantic
 #[salsa::tracked]
 pub fn get_folding_ranges(db: &dyn Db, file: SourceFile) -> Vec<super::LspRange> {
     crate::parser::compute_folding_ranges(db, file)
+        .into_iter()
+        .map(|r| r.into())
+        .collect()
 }
 
 #[salsa::tracked]

@@ -75,6 +75,18 @@ pub enum HubValue {
     Array(Vec<HubValue>),
 }
 
+impl std::fmt::Display for HubValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HubValue::String(s) => write!(f, "{}", s),
+            HubValue::Number(n) => write!(f, "{}", n),
+            HubValue::Boolean(b) => write!(f, "{}", b),
+            HubValue::Identifier(i) => write!(f, "{}", i),
+            HubValue::Array(_) => Ok(()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HubAssignment {
     pub name: String,

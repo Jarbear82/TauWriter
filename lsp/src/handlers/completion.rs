@@ -10,7 +10,7 @@ fn try_completion_context(
     content: &str,
     position: Position,
 ) -> Option<Result<Option<CompletionResponse>>> {
-    let ctx = crate::parser::get_hubgs_completion_context(content, position.into());
+    let ctx = crate::parser::get_hubgs_completion_context(content, position);
 
     match ctx {
         crate::parser::HubgsCompletionContext::AllowsList => Some(complete_allows_list(db, ws)),
@@ -75,7 +75,7 @@ fn handle_twxml_completion(
     content: &str,
     position: Position,
 ) -> Result<Option<CompletionResponse>> {
-    let ctx = crate::parser::get_twxml_completion_context(content, position.into());
+    let ctx = crate::parser::get_twxml_completion_context(content, position);
 
     match ctx {
         crate::parser::TwxmlCompletionContext::HubrefId => {

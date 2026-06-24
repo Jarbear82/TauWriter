@@ -48,29 +48,45 @@ pub struct Backend {
 
 impl Backend {
     fn get_symbol_at_position(&self, uri: &Url, position: Position) -> Option<String> {
-        if let Some(content) = self.open_files.get(uri) {
-            let lines: Vec<&str> = content.lines().collect();
-            let line = lines.get(position.line as usize)?;
+        let content = self.open_files.get(uri)?.clone();
 
-            let start = position.character as usize;
-            let mut end = start;
-            let chars: Vec<char> = line.chars().collect();
+        // Pick grammar based on file extension
+        let language = if uri.as_str().ends_with(".hubgs") {
+            unsafe { parser::tree_sitter_hubgs() }
+        } else if uri.as_str().ends_with(".twxml") {
+            unsafe { parser::tree_sitter_twxml() }
+        } else {
+            return None;
+        };
 
-            while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
-                end += 1;
-            }
-            let mut start_idx = start;
-            while start_idx > 0
-                && (chars[start_idx - 1].is_alphanumeric() || chars[start_idx - 1] == '_')
-            {
-                start_idx -= 1;
-            }
+        let mut ts_parser = tree_sitter::Parser::new();
+        ts_parser.set_language(language).ok()?;
+        let tree = ts_parser.parse(&content, None)?;
 
-            if start_idx < end {
-                return Some(chars[start_idx..end].iter().collect());
+        let ts_pos = tree_sitter::Point {
+            row: position.line as usize,
+            column: position.character as usize,
+        };
+
+        // Walk up to find an identifier node at the cursor
+        let mut node = tree
+            .root_node()
+            .descendant_for_point_range(ts_pos, ts_pos)?;
+        while node.kind() != "identifier" {
+            if let Some(parent) = node.parent() {
+                node = parent;
+            } else {
+                return None;
             }
         }
-        None
+
+        // Make sure the cursor is actually inside the identifier's range, not just anywhere in its subtree
+        let range = node.range();
+        if ts_pos.row >= range.start_point.row && ts_pos.row <= range.end_point.row {
+            Some(content[node.byte_range()].to_string())
+        } else {
+            None
+        }
     }
 
     async fn lock_db(
@@ -140,7 +156,6 @@ impl Backend {
             self.client
                 .publish_diagnostics(uri, diagnostics, None)
                 .await;
-            tokio::task::yield_now().await;
         }
     }
 }
