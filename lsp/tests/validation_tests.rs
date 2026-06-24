@@ -449,3 +449,129 @@ INSTANCES [ hero:Person { name = 'Hero' } ]
     let errors = db::validate_file(&db, workspace, story_file);
     assert!(errors.is_empty(), "Expected no errors, found: {:?}", errors);
 }
+
+#[test]
+fn test_twxml_skeleton_missing_metadata() {
+    let mut db = RootDatabase::default();
+
+    // Document with <body> but no <metadata>
+    let twxml_content = "<document><body><paragraph>Hello</paragraph></body></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "no_meta.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Document missing required <metadata> block"));
+}
+
+#[test]
+fn test_twxml_skeleton_missing_body() {
+    let mut db = RootDatabase::default();
+
+    // Document with <metadata> but no <body>
+    let twxml_content = "<document><metadata></metadata></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "no_body.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Document missing required <body> block"));
+}
+
+#[test]
+fn test_twxml_skeleton_valid() {
+    let mut db = RootDatabase::default();
+
+    // Valid document with both blocks
+    let twxml_content =
+        "<document><metadata></metadata><body><paragraph>Hello</paragraph></body></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "valid.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(
+        !errors
+            .iter()
+            .any(|e| e.message.contains("missing required") || e.message.contains("Duplicate")),
+        "Expected no skeleton errors, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_hubgs_unknown_instance_type() {
+    let mut db = RootDatabase::default();
+
+    // Instance references a type that doesn't exist anywhere
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Character { name } ]
+],
+INSTANCES [
+    hero:NonExistentType { name = 'Hero' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "unknown_type.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Unknown Hub type 'NonExistentType'"));
+}
+
+#[test]
+fn test_hubgs_dependency_validation_imports_satisfy() {
+    let mut db = RootDatabase::default();
+
+    // File A defines types
+    let defs_content = "
+DEFINITIONS [
+    FIELDS [ name: Text ],
+    HUBS [ Character { name } ]
+]
+";
+    let defs_file =
+        db::SourceFile::new(&mut db, "defs.hubgs".to_string(), defs_content.to_string());
+
+    // File B imports types and uses them in INSTANCES — should be valid
+    let inst_content = "
+IMPORTS [ [Character] FROM 'defs.hubgs' ],
+INSTANCES [
+    hero:Character { name = 'Hero' }
+]
+";
+    let inst_file = db::SourceFile::new(
+        &mut db,
+        "instances.hubgs".to_string(),
+        inst_content.to_string(),
+    );
+
+    let workspace = db::Workspace::new(&mut db, vec![defs_file, inst_file]);
+
+    let errors = db::validate_file(&db, workspace, inst_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no errors when imports satisfy instance types, found: {:?}",
+        errors
+    );
+}

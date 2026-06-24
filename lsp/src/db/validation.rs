@@ -111,19 +111,71 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
 
 fn validate_twxml(
     db: &dyn Db,
-    workspace: Workspace,
+    _workspace: Workspace,
     file: SourceFile,
     errors: &mut Vec<ValidationError>,
 ) {
+    // 0. Validate document skeleton: exactly one <metadata> and one <body>
+    let tags = all_twxml_tags(db, file);
+    let metadata_count = tags.iter().filter(|t| t.name(db) == "metadata").count();
+    let body_count = tags.iter().filter(|t| t.name(db) == "body").count();
+
+    if metadata_count == 0 {
+        errors.push(ValidationError {
+            range: super::LspRange {
+                start: super::LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: super::LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            message: "Document missing required <metadata> block".to_string(),
+        });
+    } else if metadata_count > 1 {
+        for tag in tags.iter().filter(|t| t.name(db) == "metadata") {
+            errors.push(ValidationError {
+                range: tag.range(db),
+                message: "Duplicate <metadata> block — document must contain exactly one"
+                    .to_string(),
+            });
+        }
+    }
+
+    if body_count == 0 {
+        errors.push(ValidationError {
+            range: super::LspRange {
+                start: super::LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: super::LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            message: "Document missing required <body> block".to_string(),
+        });
+    } else if body_count > 1 {
+        for tag in tags.iter().filter(|t| t.name(db) == "body") {
+            errors.push(ValidationError {
+                range: tag.range(db),
+                message: "Duplicate <body> block — document must contain exactly one".to_string(),
+            });
+        }
+    }
+
     // 1. Validate Hub References
     let refs = parse_twxml(db, file);
     for r in refs {
         let name = r.name(db);
-        if let Some(instance) = resolve_reference(db, workspace, name.clone()) {
+        if let Some(instance) = resolve_reference(db, _workspace, name.clone()) {
             if let Some(ref field_name) = r.field(db) {
                 let type_name = instance.type_name(db);
                 if let Some(hub_type) =
-                    resolve_type(db, workspace, instance.file(db), type_name.clone())
+                    resolve_type(db, _workspace, instance.file(db), type_name.clone())
                 {
                     let is_field = hub_type.fields(db).iter().any(|f| &f.name == field_name);
                     let is_role = hub_type.roles(db).iter().any(|r| &r.name == field_name);
@@ -137,7 +189,7 @@ fn validate_twxml(
                         });
                     } else if let Some(ref text_val) = r.text(db) {
                         if let Some(eval_val) =
-                            compute_field_value(db, workspace, instance, field_name.clone())
+                            compute_field_value(db, _workspace, instance, field_name.clone())
                         {
                             let canonical_str = value_to_canonical(eval_val);
                             if canonical_str != *text_val {
@@ -162,7 +214,6 @@ fn validate_twxml(
     }
 
     // 2. Validate Tag Names
-    let tags = all_twxml_tags(db, file);
     for tag in tags.iter() {
         if !VALID_TWXML_TAGS.contains(&tag.name(db).as_str()) {
             errors.push(ValidationError {
@@ -436,11 +487,5 @@ fn validate_value_type(
 }
 
 fn value_to_canonical(val: HubValue) -> String {
-    match val {
-        HubValue::String(s) => s,
-        HubValue::Number(n) => n,
-        HubValue::Boolean(b) => b.to_string(),
-        HubValue::Identifier(i) => i,
-        HubValue::Array(_) => "".to_string(),
-    }
+    val.to_string()
 }
