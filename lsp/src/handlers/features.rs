@@ -146,3 +146,108 @@ pub async fn formatting(
 
     Ok(None)
 }
+
+/// Auto-close TWXML tags when the user types `>`.
+pub async fn on_type_formatting(
+    server: &Backend,
+    params: DocumentOnTypeFormattingParams,
+) -> Result<Option<Vec<TextEdit>>> {
+    if params.ch != ">" {
+        return Ok(None);
+    }
+
+    let uri = params.text_document_position.text_document.uri;
+    if !uri.as_str().ends_with(".twxml") {
+        return Ok(None);
+    }
+
+    let position = params.text_document_position.position;
+
+    let content = match server.open_files.get(&uri) {
+        Some(rope) => rope.to_string(),
+        None => return Ok(None),
+    };
+
+    let lines: Vec<&str> = content.lines().collect();
+    let line_idx = position.line as usize;
+    if line_idx >= lines.len() {
+        return Ok(None);
+    }
+
+    let line = lines[line_idx];
+
+    let Some(tag_name) = extract_opening_tag_name(&line, position.character as usize) else {
+        return Ok(None);
+    };
+
+    let closing = format!("</{}>", tag_name);
+
+    let edit = TextEdit {
+        range: Range {
+            start: position,
+            end: position,
+        },
+        new_text: closing,
+    };
+
+    Ok(Some(vec![edit]))
+}
+
+/// Extract the tag name from an opening tag at the end of `text`.
+/// Returns `None` for closing tags, self-closing tags, comments,
+/// or already-balanced tags on the same line.
+fn extract_opening_tag_name(text: &str, cursor: usize) -> Option<String> {
+    let text = if cursor <= text.len() {
+        &text[..cursor]
+    } else {
+        text
+    };
+
+    let trimmed = text.trim_end();
+    if !trimmed.ends_with('>') {
+        return None;
+    }
+
+    let after_last_lt = trimmed.rfind('<')?;
+    let between = &trimmed[after_last_lt..];
+
+    // Skip comments: <!--
+    if between.starts_with("<!--") {
+        return None;
+    }
+
+    // Skip closing tags: </
+    if between.starts_with("</") {
+        return None;
+    }
+
+    // Skip self-closing: <.../>
+    if between.ends_with("/>") {
+        return None;
+    }
+
+    // Skip if line already has a matching closing tag after this opening tag
+    let rest = &text[(after_last_lt + between.len())..];
+    let tag_name_candidate = extract_name_from_tag(between)?;
+    let closing_pattern = format!("</{}>", tag_name_candidate);
+    if rest.starts_with(&closing_pattern) {
+        return None;
+    }
+
+    Some(tag_name_candidate)
+}
+
+/// Extract just the tag name from a start tag string like `<section id="1">`.
+fn extract_name_from_tag(tag: &str) -> Option<String> {
+    let inner = tag.strip_prefix('<')?.strip_suffix('>')?;
+    let name = inner
+        .split(|c: char| c.is_whitespace() || c == '/' || c == '>')
+        .next()?
+        .to_string();
+
+    if name.is_empty() {
+        return None;
+    }
+
+    Some(name)
+}

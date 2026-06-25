@@ -94,8 +94,92 @@ fn handle_twxml_completion(
         crate::parser::TwxmlCompletionContext::HubrefField { id_val } => {
             complete_hub_fields(db, ws, &id_val)
         }
+        crate::parser::TwxmlCompletionContext::Tag { parent } => {
+            complete_twxml_tags(parent.as_deref())
+        }
         crate::parser::TwxmlCompletionContext::None => Ok(None),
     }
+}
+
+/// Suggest TWXML structural tags based on the current parent context.
+fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse>> {
+    // ponytail: full nesting rules not yet implemented — suggest all known tags.
+    // Upgrade path: build a parent->allowed_children map from validation rules.
+    let all_tags: [(&str, CompletionItemKind, &str); 39] = [
+        // Structural
+        ("document", CompletionItemKind::CLASS, "TWXML Document"),
+        ("metadata", CompletionItemKind::CLASS, "Metadata Block"),
+        ("body", CompletionItemKind::CLASS, "Body Block"),
+        ("meta", CompletionItemKind::CLASS, "Meta Tag"),
+        // Content blocks
+        ("section", CompletionItemKind::CLASS, "Section"),
+        ("heading", CompletionItemKind::CLASS, "Heading"),
+        ("paragraph", CompletionItemKind::CLASS, "Paragraph"),
+        ("aside", CompletionItemKind::CLASS, "Aside"),
+        ("blockquote", CompletionItemKind::CLASS, "Blockquote"),
+        ("codeblock", CompletionItemKind::CLASS, "Code Block"),
+        // Lists
+        ("ul", CompletionItemKind::CLASS, "Unordered List"),
+        ("ol", CompletionItemKind::CLASS, "Ordered List"),
+        ("li", CompletionItemKind::CLASS, "List Item"),
+        ("dl", CompletionItemKind::CLASS, "Definition List"),
+        ("dt", CompletionItemKind::CLASS, "Definition Term"),
+        ("dd", CompletionItemKind::CLASS, "Definition Description"),
+        // Interactive
+        ("details", CompletionItemKind::CLASS, "Details"),
+        ("summary", CompletionItemKind::CLASS, "Summary"),
+        // Tables
+        ("table", CompletionItemKind::CLASS, "Table"),
+        ("tr", CompletionItemKind::CLASS, "Table Row"),
+        ("th", CompletionItemKind::CLASS, "Table Header"),
+        ("td", CompletionItemKind::CLASS, "Table Cell"),
+        // Inline
+        ("hubref", CompletionItemKind::REFERENCE, "Hub Reference"),
+        ("link", CompletionItemKind::REFERENCE, "Link"),
+        ("image", CompletionItemKind::VALUE, "Image"),
+        ("audio", CompletionItemKind::VALUE, "Audio"),
+        ("video", CompletionItemKind::VALUE, "Video"),
+        ("code", CompletionItemKind::VALUE, "Inline Code"),
+        ("bold", CompletionItemKind::VALUE, "Bold"),
+        ("italic", CompletionItemKind::VALUE, "Italic"),
+        ("underline", CompletionItemKind::VALUE, "Underline"),
+        ("strikethrough", CompletionItemKind::VALUE, "Strikethrough"),
+        ("super", CompletionItemKind::VALUE, "Superscript"),
+        ("sub", CompletionItemKind::VALUE, "Subscript"),
+        // Special
+        ("br", CompletionItemKind::VALUE, "Line Break"),
+        ("hr", CompletionItemKind::VALUE, "Horizontal Rule"),
+        ("fr", CompletionItemKind::REFERENCE, "Footnote Reference"),
+        ("footnote", CompletionItemKind::CLASS, "Footnote"),
+        ("review", CompletionItemKind::CLASS, "Review"),
+    ];
+
+    let items: Vec<CompletionItem> = all_tags
+        .into_iter()
+        .filter(|(name, _, _)| {
+            // Don't suggest document inside nested content
+            if parent.is_some() && *name == "document" {
+                return false;
+            }
+            // Don't suggest metadata/body inside body
+            if parent == Some("body") && (*name == "metadata" || *name == "body") {
+                return false;
+            }
+            // Don't suggest metadata/body inside metadata
+            if parent == Some("metadata") && (*name == "metadata" || *name == "body") {
+                return false;
+            }
+            true
+        })
+        .map(|(name, kind, detail)| CompletionItem {
+            label: name.to_string(),
+            kind: Some(kind),
+            detail: Some(detail.to_string()),
+            ..Default::default()
+        })
+        .collect();
+
+    Ok(Some(CompletionResponse::Array(items)))
 }
 
 fn complete_hub_fields(

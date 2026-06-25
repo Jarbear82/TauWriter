@@ -31,7 +31,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Testing Suite** | ✅ | Broad integration test coverage for LSP handlers, Salsa queries, and validation pipeline. Some handlers have minimal tests (e.g., didSave). |
 | **CI/CD** | ✅ | Automated GitHub Actions for multi-platform binary distribution. |
 | **Zed Extension** | ⚠️  | Functional skeleton with grammars, language configs, and pre-built binaries in `extension/bin/`. Auto-downloading and one-click install require Zed marketplace verification. |
-| **Editor QoL** | 🔄 | Tag auto-closing, snippet generation, and structural autocomplete for TWXML. |
+| **Editor QoL** | ✅ | Tag auto-closing via `onTypeFormatting`. Snippet generation and structural autocomplete for TWXML still pending. |
 | **Advanced LSP Ops** | 🔜 | Implementation of CodeLens, Signature Help, Document Links, and Call Hierarchy mappings. |
 | **Graph Expansion** | 🔜 | Traits (Abstract Hubs), `EXTENDS` syntax, Role Metadata, and complex data types (UUID, structs). |
 | **AI Integration** | 🔜 | RAG pipeline for Hub summaries and 'AI Provocations' for collaborative critique. |
@@ -62,11 +62,11 @@ Tree-sitter based formatter for both TWXML and HubGS. Not a separate crate — l
 
 ### 4. Editor Experience & LSP Capabilities (In Progress)
 Enhancing the writing and data-entry flow natively within the editor.
-- [ ] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). *Not started — completion handler only covers `<hubref>` attribute completion; no `<` trigger character, no tag-name suggestion logic.*
-- [ ] **TWXML Tag Auto-closing:** Automatically generate closing tags (e.g., typing `<metadata>` inserts `</metadata>`). *Not started — `onTypeFormatting` is unregistered, no snippet insertion in completions.*
+- [x] **TWXML Tag Auto-closing:** Automatically generate closing tags (e.g., typing `<metadata>` inserts `</metadata>`). Implemented via `textDocument/onTypeFormatting`, triggered on `>`. Self-closing, closing, and comment tags are excluded. JSON-RPC tested.
+- [x] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). Triggered on `<`, filters out structurally invalid tags based on parent context.
 - [ ] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
 - [ ] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
-- [ ] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting` and `textDocument/onTypeFormatting`.
+- [ ] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting`.
 - [x] Context-aware autocomplete for Hub IDs, fields, and roles.
 - [x] Inlay hints for HubGS instance types (`: TypeName`). Implemented, no test yet.
 - [x] Code actions for resolving `<review>` tags to `<hubref>`. Two quickfix actions implemented.
@@ -105,6 +105,7 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/publishDiagnostics` | ✅ | ✅ |
 | `textDocument/codeAction` | ✅ | ✅ |
 | `textDocument/inlayHint` | ✅ | ✅ |
+| `textDocument/onTypeFormatting` | ✅ | ✅ |
 
 ### Unimplemented LSP Methods (No Test)
 
@@ -123,7 +124,6 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/codeLens` | ❌ |
 | `codeLens/resolve` | ❌ |
 | `textDocument/rangeFormatting` | ❌ |
-| `textDocument/onTypeFormatting` | ❌ |
 | Call hierarchy (`prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`) | ❌ |
 | `textDocument/documentLink` | ❌ |
 | `documentLink/resolve` | ❌ |
@@ -133,4 +133,4 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/inlineCompletion` | ❌ |
 | `textDocument/moniker` | ❌ |
 
-*21 of ~50 spec methods are implemented. Coverage is 100% of what's shipped.*
+*22 of ~50 spec methods are implemented. Coverage is 100% of what's shipped.*

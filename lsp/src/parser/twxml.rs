@@ -316,7 +316,14 @@ fn find_review_and_hubref<'a>(
 
 pub enum TwxmlCompletionContext {
     HubrefId,
-    HubrefField { id_val: String },
+    HubrefField {
+        id_val: String,
+    },
+    /// User just typed `<` and is about to type a tag name.
+    /// `parent` is the current parent tag name, if any.
+    Tag {
+        parent: Option<String>,
+    },
     None,
 }
 
@@ -336,6 +343,35 @@ pub fn get_twxml_completion_context(
         row: pos.line as usize,
         column: pos.character as usize,
     };
+
+    // Check for tag name completion — cursor just after `<` (but not `</` or `<!--`)
+    if let Some(line) = contents.lines().nth(pos.line as usize) {
+        let col = pos.character as usize;
+        if col <= line.len() {
+            let before = &line[..col];
+            if let Some(lt_pos) = before.rfind('<') {
+                let after_lt = &before[lt_pos..];
+                // Match `<` followed by zero or more alphanumeric/underscore chars (partial tag name)
+                // Exclude closing tags and comments
+                if !after_lt.ends_with("/") && !after_lt.ends_with("!--") {
+                    let partial = after_lt.strip_prefix("<").unwrap_or("");
+                    let is_tag_name = partial.is_empty()
+                        || partial.chars().all(|c| c.is_alphanumeric() || c == '_');
+                    if is_tag_name {
+                        // Find current parent tag by walking the AST
+                        let parent = if let Some(node) =
+                            tree.root_node().descendant_for_point_range(ts_pos, ts_pos)
+                        {
+                            find_parent_tag_name(&node, contents)
+                        } else {
+                            None
+                        };
+                        return TwxmlCompletionContext::Tag { parent };
+                    }
+                }
+            }
+        }
+    }
 
     let node = match tree.root_node().descendant_for_point_range(ts_pos, ts_pos) {
         Some(n) => n,
@@ -388,4 +424,30 @@ pub fn get_twxml_completion_context(
     }
 
     TwxmlCompletionContext::None
+}
+
+/// Walk up from `node` to find the nearest enclosing element's tag name.
+fn find_parent_tag_name(node: &tree_sitter::Node, contents: &str) -> Option<String> {
+    let mut current = *node;
+    loop {
+        if let Some(parent) = current.parent() {
+            match parent.kind() {
+                "element" => {
+                    if let Some(start_tag) = parent.child(0) {
+                        if let Some(name_node) = start_tag.child_by_field_name("name") {
+                            return Some(contents[name_node.byte_range()].to_string());
+                        }
+                    }
+                }
+                "body_block" => return Some("body".to_string()),
+                "metadata_block" => return Some("metadata".to_string()),
+                "document_block" => return Some("document".to_string()),
+                _ => {}
+            }
+            current = parent;
+        } else {
+            break;
+        }
+    }
+    None
 }

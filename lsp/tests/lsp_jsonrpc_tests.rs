@@ -2002,3 +2002,170 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
         "Document highlight on twxml hubref id should return highlights"
     );
 }
+
+#[tokio::test]
+async fn test_on_type_formatting_autoclose_tag() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let open_files = Arc::new(DashMap::new());
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("test_autoclose.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "<section>";
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Simulate typing `>` at the end of the line (cursor after `>`)
+    let params = DocumentOnTypeFormattingParams {
+        ch: ">".to_string(),
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 0,
+                character: 9, // After `<section>`
+            },
+        },
+        options: FormattingOptions::default(),
+    };
+
+    let request = Request::build("textDocument/onTypeFormatting")
+        .id(7)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+
+    let result: Option<Vec<TextEdit>> =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    assert!(result.is_some(), "Should return edits for opening tag");
+    let edits = result.unwrap();
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].new_text, "</section>");
+}
+
+#[tokio::test]
+async fn test_on_type_formatting_no_autoclose_self_closing() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let open_files = Arc::new(DashMap::new());
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: Arc::new(Mutex::new(db)),
+        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("test_self_close.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    // Self-closing tag should NOT get auto-closed
+    let content = "<meta/>";
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let params = DocumentOnTypeFormattingParams {
+        ch: ">".to_string(),
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 0,
+                character: 6,
+            },
+        },
+        options: FormattingOptions::default(),
+    };
+
+    let request = Request::build("textDocument/onTypeFormatting")
+        .id(8)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+
+    let result: Option<Vec<TextEdit>> =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    assert!(result.is_none(), "Should not auto-close self-closing tags");
+}

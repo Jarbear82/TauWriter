@@ -240,12 +240,17 @@ impl LanguageServer for Backend {
                         "\"".to_string(),
                         "'".to_string(),
                         ":".to_string(),
+                        "<".to_string(),
                     ]),
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                document_on_type_formatting_provider: Some(DocumentOnTypeFormattingOptions {
+                    first_trigger_character: ">".to_string(),
+                    more_trigger_character: None,
+                }),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 document_highlight_provider: Some(OneOf::Left(true)),
@@ -388,6 +393,13 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         handlers::formatting(self, params).await
+    }
+
+    async fn on_type_formatting(
+        &self,
+        params: DocumentOnTypeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        handlers::on_type_formatting(self, params).await
     }
 
     async fn symbol(
