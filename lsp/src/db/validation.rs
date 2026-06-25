@@ -115,8 +115,10 @@ fn validate_twxml(
     file: SourceFile,
     errors: &mut Vec<ValidationError>,
 ) {
-    // 0. Validate document skeleton: exactly one <metadata> and one <body>
     let tags = all_twxml_tags(db, file);
+    let contents = file.contents(db);
+
+    // 0. Validate document skeleton: exactly one <metadata> and one <body>
     let metadata_count = tags.iter().filter(|t| t.name(db) == "metadata").count();
     let body_count = tags.iter().filter(|t| t.name(db) == "body").count();
 
@@ -234,6 +236,50 @@ fn validate_twxml(
                         ),
                     });
                 }
+            }
+        }
+    }
+
+    // 3. Validate matching start/end tags via AST
+    let language = unsafe { crate::parser::tree_sitter_twxml() };
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(language).ok();
+
+    if let Some(tree) = parser.parse(&contents, None) {
+        let mut stack = vec![tree.root_node()];
+
+        while let Some(node) = stack.pop() {
+            if node.kind() == "element" {
+                // Child 0 is start_tag, the last child is end_tag
+                if let (Some(start_tag), Some(end_tag)) =
+                    (node.child(0), node.child(node.child_count() - 1))
+                {
+                    if start_tag.kind() == "start_tag" && end_tag.kind() == "end_tag" {
+                        if let (Some(start_name_node), Some(end_name_node)) = (
+                            start_tag.child_by_field_name("name"),
+                            end_tag.child_by_field_name("name"),
+                        ) {
+                            let start_name = &contents[start_name_node.byte_range()];
+                            let end_name = &contents[end_name_node.byte_range()];
+
+                            if start_name != end_name {
+                                errors.push(ValidationError {
+                                    range: crate::parser::ts_range_to_lsp(end_tag.range()),
+                                    message: format!(
+                                        "Mismatched closing tag. Expected `</{}>`",
+                                        start_name
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Continue walking the tree
+            let mut child_cursor = node.walk();
+            for child in node.children(&mut child_cursor) {
+                stack.push(child);
             }
         }
     }
