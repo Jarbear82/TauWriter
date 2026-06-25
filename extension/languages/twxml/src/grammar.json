@@ -245,8 +245,11 @@
               "value": "\""
             },
             {
-              "type": "PATTERN",
-              "value": "[^\"]*"
+              "type": "IMMEDIATE_TOKEN",
+              "content": {
+                "type": "PATTERN",
+                "value": "[^\"]*"
+              }
             },
             {
               "type": "STRING",
@@ -262,8 +265,11 @@
               "value": "'"
             },
             {
-              "type": "PATTERN",
-              "value": "[^']*"
+              "type": "IMMEDIATE_TOKEN",
+              "content": {
+                "type": "PATTERN",
+                "value": "[^']*"
+              }
             },
             {
               "type": "STRING",
@@ -275,7 +281,7 @@
     },
     "text": {
       "type": "PATTERN",
-      "value": "[^<]+"
+      "value": "[^<>\\s]([^<>]*[^<>\\s])?"
     },
     "comment": {
       "type": "SEQ",
@@ -311,7 +317,10 @@
   "conflicts": [],
   "precedences": [],
   "externals": [],
-  "inline": [],
+  "inline": [
+    "_inner_node",
+    "_node_content"
+  ],
   "supertypes": [],
   "reserved": {}
 }

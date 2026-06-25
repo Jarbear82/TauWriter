@@ -474,7 +474,7 @@ pub fn get_hubgs_completion_context(
 
     // Check if cursor is after ALLOWS keyword in a hub_role
     let mut current = node;
-    while current.kind() != "document" {
+    while current.kind() != "source_file" {
         if current.kind() == "hub_role" {
             let mut allows_node = None;
             let mut cursor = current.walk();
@@ -501,7 +501,7 @@ pub fn get_hubgs_completion_context(
     // Check for instance assignment context
     let mut current = node;
     let mut assignment_node = None;
-    while current.kind() != "document" {
+    while current.kind() != "source_file" {
         if current.kind() == "instance_assignment" {
             assignment_node = Some(current);
             break;
@@ -518,7 +518,7 @@ pub fn get_hubgs_completion_context(
             let role_name = contents[id_node.byte_range()].trim().to_string();
 
             let mut inst_block = assign;
-            while inst_block.kind() != "instance_block" && inst_block.kind() != "document" {
+            while inst_block.kind() != "instance_block" && inst_block.kind() != "source_file" {
                 if let Some(p) = inst_block.parent() {
                     inst_block = p;
                 } else {

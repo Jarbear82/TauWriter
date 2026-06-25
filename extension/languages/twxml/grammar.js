@@ -9,6 +9,9 @@
 module.exports = grammar({
   name: "twxml",
   extras: ($) => [/\s+/, $.comment],
+
+  inline: ($) => [$._inner_node, $._node_content],
+
   rules: {
     // ------------------------------------------------------------------------
     // Root & Structural Blocks
@@ -60,13 +63,17 @@ module.exports = grammar({
     tag_name: (_) => /[a-zA-Z0-9_-]+/,
     attribute_name: (_) => /[a-zA-Z0-9_-]+/,
     attribute_value: ($) =>
-      choice(seq('"', /[^"]*/, '"'), seq("'", /[^']*/, "'")),
+      choice(
+        seq('"', token.immediate(/[^"]*/), '"'),
+        seq("'", token.immediate(/[^']*/), "'"),
+      ),
 
     // ------------------------------------------------------------------------
     // Text & Comments
     // ------------------------------------------------------------------------
 
-    text: (_) => /[^<]+/,
+    // ponytail: Only matches text containing at least one non-whitespace, non-bracket char. Pure whitespace is absorbed by extras.
+    text: (_) => /[^<>\s]([^<>]*[^<>\s])?/,
     comment: (_) => seq("<!--", repeat(/[^-]|-[^-]/), "-->"),
   },
 });

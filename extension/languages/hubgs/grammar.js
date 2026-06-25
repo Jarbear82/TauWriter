@@ -1,5 +1,6 @@
 /**
  * @file HubGS grammar for tree-sitter
+ * @author Jarbear82
  * @author Gemini CLI
  * @license MIT
  */
@@ -21,31 +22,19 @@ module.exports = grammar({
 
   extras: ($) => [/\s/, $.comment],
 
+  supertypes: ($) => [$._expression],
+  word: ($) => $.identifier,
+
   rules: {
     // ------------------------------------------------------------------------
     // Top-Level Structure (Strict Ordering: IMPORTS -> DEFINITIONS -> INSTANCES)
     // ------------------------------------------------------------------------
 
-    source_file: ($) => $.document,
-
-    document: ($) =>
-      choice(
-        // At least one section must be present, in correct order
-        seq(
-          $.imports_section,
-          optional(seq(optional(","), $.definitions_section)),
-          optional(seq(optional(","), $.instances_section)),
-        ),
-        seq(
-          optional($.imports_section),
-          $.definitions_section,
-          optional(seq(optional(","), $.instances_section)),
-        ),
-        seq(
-          optional($.imports_section),
-          optional(seq(optional(","), $.definitions_section)),
-          $.instances_section,
-        ),
+    source_file: ($) =>
+      seq(
+        optional($.imports_section),
+        optional($.definitions_section),
+        optional($.instances_section),
       ),
 
     // ------------------------------------------------------------------------
