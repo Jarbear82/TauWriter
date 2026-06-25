@@ -1,7 +1,10 @@
-; Structural blocks
-(document_block) @keyword.control
-(metadata_block) @keyword.control
-(body_block) @keyword.control
+; Structural block boundaries (match the literal string tokens)
+"<document>" @keyword.control
+"</document>" @keyword.control
+"<metadata>" @keyword.control
+"</metadata>" @keyword.control
+"<body>" @keyword.control
+"</body>" @keyword.control
 
 ; Tags (generic elements inside body/metadata)
 (tag_name) @tag
@@ -10,7 +13,7 @@
 (attribute_name) @attribute
 (attribute_value) @string
 
-; Brackets
+; Brackets (for generic inner elements)
 ["<" ">" "</" "/>"] @punctuation.bracket
 
 ; Comments
