@@ -32,7 +32,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **CI/CD** | ✅ | Automated GitHub Actions for multi-platform binary distribution. |
 | **Zed Extension** | ⚠️  | Functional skeleton with grammars, language configs, and pre-built binaries in `extension/bin/`. Auto-downloading and one-click install require Zed marketplace verification. |
 | **Editor QoL** | ✅ | Tag auto-closing via `onTypeFormatting`. Snippet generation and structural autocomplete for TWXML still pending. |
-| **Advanced LSP Ops** | 🔜 | Implementation of CodeLens, Signature Help, Document Links, and Call Hierarchy mappings. |
+| **Advanced LSP Ops** | ⚠️  | CodeLens implemented. Signature Help, Document Links, and Call Hierarchy mappings pending. |
 | **Graph Expansion** | 🔜 | Traits (Abstract Hubs), `EXTENDS` syntax, Role Metadata, and complex data types (UUID, structs). |
 | **AI Integration** | 🔜 | RAG pipeline for Hub summaries and 'AI Provocations' for collaborative critique. |
 
@@ -64,7 +64,7 @@ Tree-sitter based formatter for both TWXML and HubGS. Not a separate crate — l
 Enhancing the writing and data-entry flow natively within the editor.
 - [x] **TWXML Tag Auto-closing:** Automatically generate closing tags (e.g., typing `<metadata>` inserts `</metadata>`). Implemented via `textDocument/onTypeFormatting`, triggered on `>`. Self-closing, closing, and comment tags are excluded. JSON-RPC tested.
 - [x] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). Triggered on `<`, filters out structurally invalid tags based on parent context.
-- [ ] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
+- [x] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
 - [ ] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
 - [ ] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting`.
 - [x] Context-aware autocomplete for Hub IDs, fields, and roles.
@@ -106,6 +106,7 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/codeAction` | ✅ | ✅ |
 | `textDocument/inlayHint` | ✅ | ✅ |
 | `textDocument/onTypeFormatting` | ✅ | ✅ |
+| `textDocument/codeLens` | ✅ | ✅ |
 
 ### Unimplemented LSP Methods (No Test)
 
@@ -121,7 +122,6 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/willSaveNotify` | ❌ |
 | `textDocument/signatureHelp` | ❌ |
 | `codeAction/resolve` | ❌ |
-| `textDocument/codeLens` | ❌ |
 | `codeLens/resolve` | ❌ |
 | `textDocument/rangeFormatting` | ❌ |
 | Call hierarchy (`prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`) | ❌ |
@@ -133,4 +133,4 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/inlineCompletion` | ❌ |
 | `textDocument/moniker` | ❌ |
 
-*22 of ~50 spec methods are implemented. Coverage is 100% of what's shipped.*
+*23 of ~50 spec methods are implemented. Coverage is 100% of what's shipped.*
