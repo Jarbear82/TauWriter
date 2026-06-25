@@ -287,6 +287,9 @@ impl LanguageServer for Backend {
                         },
                     ),
                 ),
+                code_lens_provider: Some(CodeLensOptions {
+                    resolve_provider: None,
+                }),
                 inlay_hint_provider: Some(OneOf::Left(true)),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
@@ -385,6 +388,10 @@ impl LanguageServer for Backend {
 
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         handlers::inlay_hints(self, params).await
+    }
+
+    async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
+        handlers::code_lens(self, params).await
     }
 
     async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {

@@ -2169,3 +2169,226 @@ async fn test_on_type_formatting_no_autoclose_self_closing() {
 
     assert!(result.is_none(), "Should not auto-close self-closing tags");
 }
+
+#[tokio::test]
+async fn test_code_lens_hubgs_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_codelens.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r#"DEFINITIONS [
+        HUBS [
+            Character {
+                name,
+            }
+        ]
+    ],
+    INSTANCES [
+        aragorn:Character {
+            name = "Aragorn"
+        }
+    ]"#;
+
+    {
+        let mut db_lock = db_arc.lock().await;
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_arc.lock().await;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "hubgs".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = CodeLensParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let request = Request::build("textDocument/codeLens")
+        .id(3)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result: Option<Vec<CodeLens>> =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    // Should have lenses for the Hub type ("1 instance") and the instance ("0 references")
+    assert!(result.is_some());
+    let lenses = result.unwrap();
+    assert!(
+        lenses.len() >= 2,
+        "Should have at least a type lens and an instance lens"
+    );
+
+    // Verify at least one lens has a title mentioning "instance" or "reference"
+    let has_instance_lens = lenses.iter().any(|l| {
+        l.command
+            .as_ref()
+            .map(|c| c.title.contains("instance"))
+            .unwrap_or(false)
+    });
+    let has_ref_lens = lenses.iter().any(|l| {
+        l.command
+            .as_ref()
+            .map(|c| c.title.contains("reference"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_instance_lens,
+        "Should have a lens showing instance count"
+    );
+    assert!(has_ref_lens, "Should have a lens showing reference count");
+}
+
+#[tokio::test]
+async fn test_code_lens_twxml_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_codelens.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r#"<document>
+  <metadata>
+  </metadata>
+  <body>
+    <section>
+      <paragraph>
+        <hubref id="aragorn">Aragorn</hubref> went to <hubref id="mordor">Mordor</hubref>.
+      </paragraph>
+    </section>
+  </body>
+</document>"#;
+
+    {
+        let mut db_lock = db_arc.lock().await;
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_arc.lock().await;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = CodeLensParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let request = Request::build("textDocument/codeLens")
+        .id(3)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result: Option<Vec<CodeLens>> =
+        serde_json::from_value(response.result().unwrap().clone()).unwrap();
+
+    // Should have lenses for each hubref ("Go to definition")
+    assert!(result.is_some());
+    let lenses = result.unwrap();
+    assert!(lenses.len() >= 2, "Should have lenses for both hubref tags");
+
+    for lens in &lenses {
+        assert!(
+            lens.command
+                .as_ref()
+                .map(|c| c.title == "Go to definition")
+                .unwrap_or(false),
+            "TWXML CodeLens should say 'Go to definition'"
+        );
+    }
+}

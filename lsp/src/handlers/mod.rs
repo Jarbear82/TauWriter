@@ -1,3 +1,4 @@
+pub mod code_lens;
 pub mod completion;
 pub mod documents;
 pub mod features;
@@ -6,6 +7,7 @@ pub mod inlay_hints;
 pub mod navigation;
 pub mod symbols;
 
+pub use code_lens::*;
 pub use completion::*;
 pub use documents::*;
 pub use features::*;
