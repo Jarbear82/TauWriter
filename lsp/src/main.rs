@@ -1,6 +1,7 @@
 use dashmap::DashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauwriter_lsp::{Backend, RootDatabase};
+use tokio::sync::Mutex;
 use tower_lsp::{LspService, Server};
 
 #[tokio::main]

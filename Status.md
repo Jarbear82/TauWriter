@@ -14,7 +14,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Refactoring Support** | ✅ | Global renames and structural changes (References/Rename). |
 | **AST Extraction** | ✅ | Tree-Sitter based AST extraction logic structure. |
 | **Structural Awareness**| ✅ | Full index support for HubGS FIELDS, ENUMS, STRUCTS, and TWXML elements. |
-| **Dynamic Evaluation**| 🔄 | In Progress - Engine building. Decorator parsing complete (`@computed`, `@default`). Evolving prototype into a robust computed graph data engine. |
+| **Dynamic Evaluation**| ✅ | Engine building complete. Decorator parsing (`@computed`, `@default`), AST-based expression evaluator (arithmetic, string concatenation, unary ops, parentheses), cross-Hub field access via roles (`this.role.length`, `this.role.field`), and `@default` override enforcement. |
 
 ## Production Roadmap
 
@@ -29,37 +29,53 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Folding Ranges** | ✅ | Support for collapsing blocks, sections, and definitions. |
 | **Workspace Symbol** | ✅ | Searching for Hubs and Types across the entire project. |
 | **Testing Suite** | ✅ | Broad integration test coverage for LSP handlers, Salsa queries, and validation pipeline. Some handlers have minimal tests (e.g., didSave). |
-| **CI/CD** | ✅ | Automated GitHub Actions for multi-platform binary distribution.
+| **CI/CD** | ✅ | Automated GitHub Actions for multi-platform binary distribution. |
 | **Zed Extension** | ⚠️  | Functional skeleton with grammars, language configs, and pre-built binaries in `extension/bin/`. Auto-downloading and one-click install require Zed marketplace verification. |
-| **Editor QoL** | 🔄 | Tag auto-closing, snippet generation, and structural autocomplete for TWXML. |
+| **Editor QoL** | ✅ | Tag auto-closing via `onTypeFormatting`. Snippet generation and structural autocomplete for TWXML still pending. |
+| **Advanced LSP Ops** | 🔜 | Implementation of CodeLens, Signature Help, Document Links, and Call Hierarchy mappings. |
+| **Graph Expansion** | 🔜 | Traits (Abstract Hubs), `EXTENDS` syntax, Role Metadata, and complex data types (UUID, structs). |
+| **AI Integration** | 🔜 | RAG pipeline for Hub summaries and 'AI Provocations' for collaborative critique. |
 
 ## Current Focus
 
-### 1. Structural Enforcement & Validation Pipeline (In Progress)
+### 1. Structural Enforcement & Validation Pipeline ✅
 Strict schema enforcement for document and graph structures to ensure data integrity.
-- [ ] **TWXML Skeleton Enforcement:** Validate that all TWXML documents strictly adhere to the root `<document>` schema containing exactly one `<metadata>` block (housing `<meta/>` tags) and one `<body>` block.
-- [ ] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
-- [ ] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
+- [x] **TWXML Skeleton Enforcement:** Validate that all TWXML documents strictly adhere to the root <document> schema containing exactly one <metadata> block (housing <meta/> tags) and one <body> block.
+- [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
+- [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
 - [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
 - [x] Implement TWXML Referential Integrity (Unresolved references for `<hubref>`)
 - [x] Implement HubGS Type & Multiplicity Enforcement
 
-### 2. Dynamic Evaluation Engine (In Progress)
-Evolving the prototype evaluator into a robust engine for computed graph data.
-- [ ] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
-- [ ] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
-- [ ] Enforce `@default` override rules during instance instantiation.
+### 2. Dynamic Evaluation Engine ✅
+Robust engine for computed graph data.
+- [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
+- [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
+- [x] Enforce `@default` override rules during instance instantiation.
 
-### 3. Editor Experience & LSP Capabilities (In Progress)
+### 3. Formatter Module (`lsp/src/formatter/`) ✅
+Tree-sitter based formatter for both TWXML and HubGS. Not a separate crate — lives inline in the LSP crate.
+- [x] Native support for TWXML `<document>`, `<metadata>`, and `<body>` skeleton. Dedicated formatters (`format_document_block`, `format_metadata_block`, `format_body_block`) with proper recursion.
+- [x] Standardized indentation (2-space) and line-breaking rules for nested TWXML blocks. Block-level elements indent children at `indent_level + 1`, self-closing tags respect indentation, inline content stays compact.
+- [x] Full block tag coverage — 26 TWXML block tags known to the formatter (`section`, `heading`, `paragraph`, `table`, etc.).
+- [x] LSP `textDocument/formatting` handler wired up and JSON-RPC tested.
+
+### 4. Editor Experience & LSP Capabilities (In Progress)
 Enhancing the writing and data-entry flow natively within the editor.
-- [ ] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`).
-- [ ] **TWXML Tag Auto-closing:** Automatically generate closing tags (e.g., typing `<metadata>` inserts `</metadata>`).
+- [x] **TWXML Tag Auto-closing:** Automatically generate closing tags (e.g., typing `<metadata>` inserts `</metadata>`). Implemented via `textDocument/onTypeFormatting`, triggered on `>`. Self-closing, closing, and comment tags are excluded. JSON-RPC tested.
+- [x] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). Triggered on `<`, filters out structurally invalid tags based on parent context.
+- [ ] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
+- [ ] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
+- [ ] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting`.
 - [x] Context-aware autocomplete for Hub IDs, fields, and roles.
+- [x] Inlay hints for HubGS instance types (`: TypeName`). Implemented, no test yet.
+- [x] Code actions for resolving `<review>` tags to `<hubref>`. Two quickfix actions implemented.
 
-### 4. Formatter Module (`tauwriter-fmt`) (In Progress)
-- [ ] Refactor formatting engine to natively support the new TWXML `<metadata>` and `<body>` skeleton.
-- [ ] Standardize indentation and line-breaking rules for nested TWXML blocks.
-- [x] Integrate LSP `textDocument/formatting` handler.
+### 5. HubGS Language & Graph Capabilities (Planned)
+- [ ] **Traits & EXTENDS Syntax:** Add support for "Abstract Hubs" and composite inheritance to share behavior patterns without deep inheritance chains.
+- [ ] **Role Metadata:** Support weighted edges and edge-properties (e.g., temporal bounds on a role like `owns { start: Date, end: Date }`).
+- [ ] **Expanded Data Types:** Introduce `UUID`, structured records (`struct`), and string templates ("expressive strings").
+- [ ] **Circular Import Resolution:** Define a robust two-pass merge strategy for `.hubgs` files with cyclic dependencies.
 
 ## JSON-RPC Testing Progress
 
@@ -87,5 +103,34 @@ Enhancing the writing and data-entry flow natively within the editor.
 | `textDocument/semanticTokens/full` | ✅ | ✅ |
 | `workspace/symbol` | ✅ | ✅ |
 | `textDocument/publishDiagnostics` | ✅ | ✅ |
+| `textDocument/codeAction` | ✅ | ✅ |
+| `textDocument/inlayHint` | ✅ | ✅ |
+| `textDocument/onTypeFormatting` | ✅ | ✅ |
 
-*Note: Many other optional LSP features from the specification are currently not implemented.*
+### Unimplemented LSP Methods (No Test)
+
+| LSP Operation | Status |
+|:---|:---:|
+| `exit` | ❌ |
+| `$progress` | ❌ |
+| `workspace/didChangeConfiguration` | ❌ |
+| `workspace/configuration` | ❌ |
+| `workspace/executeCommand` | ❌ |
+| File operation notifications | ❌ |
+| `textDocument/willSave` | ❌ |
+| `textDocument/willSaveNotify` | ❌ |
+| `textDocument/signatureHelp` | ❌ |
+| `codeAction/resolve` | ❌ |
+| `textDocument/codeLens` | ❌ |
+| `codeLens/resolve` | ❌ |
+| `textDocument/rangeFormatting` | ❌ |
+| Call hierarchy (`prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`) | ❌ |
+| `textDocument/documentLink` | ❌ |
+| `documentLink/resolve` | ❌ |
+| `textDocument/documentColor` | ❌ |
+| `textDocument/colorPresentation` | ❌ |
+| `textDocument/selectionRange` | ❌ |
+| `textDocument/inlineCompletion` | ❌ |
+| `textDocument/moniker` | ❌ |
+
+*22 of ~50 spec methods are implemented. Coverage is 100% of what's shipped.*
