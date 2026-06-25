@@ -49,14 +49,27 @@ fn is_block_tag(name: &str) -> bool {
 fn contains_block_tag(node: tree_sitter::Node, contents: &str) -> bool {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "element" || child.kind() == "self_closing_element" {
-            if let Some(nm) = child.child_by_field_name("name") {
-                let name = &contents[nm.byte_range()];
-                if is_block_tag(name) {
-                    return true;
-                }
+        // Check the child's tag name if it's an element or self_closing_element.
+        // element nodes carry their name inside start_tag,
+        // self_closing_element carries it directly.
+        let name = match child.kind() {
+            "element" => child
+                .child(0)
+                .and_then(|st| st.child_by_field_name("name"))
+                .map(|nm| &contents[nm.byte_range()]),
+            "self_closing_element" => child
+                .child_by_field_name("name")
+                .map(|nm| &contents[nm.byte_range()]),
+            _ => None,
+        };
+
+        if let Some(n) = name {
+            if is_block_tag(n) {
+                return true;
             }
         }
+
+        // Recurse into children to find deeply nested block tags.
         if contains_block_tag(child, contents) {
             return true;
         }
@@ -96,13 +109,22 @@ fn format_twxml_node(
 }
 
 fn format_text(contents: &str, node: tree_sitter::Node, indent: String, start: bool) -> String {
-    let txt = contents[node.byte_range()].trim();
-    if txt.is_empty() {
-        String::new()
-    } else if start {
-        format!("{}{}", indent, txt)
+    let raw = &contents[node.byte_range()];
+    if start {
+        let txt = raw.trim();
+        if txt.is_empty() {
+            String::new()
+        } else {
+            format!("{}{}", indent, txt)
+        }
     } else {
-        txt.to_string()
+        // Inline text: preserve spaces around inline tags, just collapse newlines
+        let collapsed = raw.replace('\n', " ");
+        if collapsed.trim().is_empty() {
+            String::new()
+        } else {
+            collapsed
+        }
     }
 }
 
@@ -275,5 +297,60 @@ fn format_body_block(
         format!("{}<body></body>", indent)
     } else {
         format!("{}<body>\n{}\n{}</body>", indent, content, indent)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_elements_with_nested_blocks_expand_multiline() {
+        let input = r#"<document>
+  <metadata></metadata>
+  <body><section><paragraph>Hello</paragraph></section></body>
+</document>"#;
+        let output = format_twxml(input);
+        // <section> contains <paragraph>, so it should expand to multiline
+        assert!(
+            output.contains("<section>\n"),
+            "section should have newline after opening tag, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("</section>"),
+            "closing tag should exist, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn block_with_only_inline_content_stays_single_line() {
+        let input = r#"<document>
+  <metadata></metadata>
+  <body><heading>Just text</heading></body>
+</document>"#;
+        let output = format_twxml(input);
+        // <heading> has no nested block children, so stays on one line
+        assert!(
+            output.contains("<heading>Just text</heading>"),
+            "heading with only text should stay inline, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn inline_text_preserves_spaces_around_tags() {
+        let input = r#"<document>
+  <metadata></metadata>
+  <body><paragraph>Hello <b>world</b>!</paragraph></body>
+</document>"#;
+        let output = format_twxml(input);
+        // Spaces around <b> should be preserved
+        assert!(
+            output.contains("Hello ") || output.contains("Hello\n"),
+            "space before inline tag should be preserved, got:\n{}",
+            output
+        );
     }
 }
