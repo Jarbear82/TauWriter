@@ -10,28 +10,28 @@
     <section alias="Chapter 1">
       <heading>The Seven at One Blow</heading>
       <paragraph>
-        One summer morning, a little <bold><italic>tailor</italic></bold> sat on his bench by the door, working with <underline>remarkable cheerfulness</underline>. Along came a country woman selling jam cakes. <br/>
-        "Come, <hubref id="tailor">little tailor</hubref>, try some!"
+        One summer morning, a little <bold><italic>tailor</italic></bold> sat on his bench by the door,
+        working with <underline>remarkable cheerfulness</underline>. Along came a country woman selling jam
+        cakes. "Come, <hubref id="tailor">little tailor</hubref>, try some!"
       </paragraph>
       <paragraph>
-        The tailor ate heartily. Flies came, and he struck seven down. He was proud, so he stitched a belt and wrote on it: <strikethrough>"Three at one blow"</strikethrough> <bold>"Seven at one blow"</bold>. Thus his E <super>x</super> cellence <sub>1</sub> began.
+        The tailor ate heartily. Flies came, and he struck seven down. He was proud, so he stitched a belt
+        and wrote on it: <strikethrough>"Three at one blow"</strikethrough> <bold>"Seven at one blow"</bold>
+        . Thus his E <super>x</super> cellence <sub>1</sub> began.
       </paragraph>
       <aside>
         This belt would get the tailor into all sorts of trouble. Pride goes before the fall, as they say.
       </aside>
       <blockquote>
-        "Seven at one blow." <br/>
-        - <italic>The Brave Little Tailor</italic>
+        "Seven at one blow." - <italic>The Brave Little Tailor</italic>
       </blockquote>
       <hr/>
       <paragraph>
-        His tools included a simple <code>needle.push(stitch)</code> loop and a good pair of scissors. See the algorithm below:
+        His tools included a simple <code>needle.push(stitch)</code> loop and a good pair of scissors. See
+        the algorithm below:
       </paragraph>
       <codeblock language="rust">
                 fn sew(garment: &amp;str) -&gt; String { format!("A fine {} is ready!", garment) }
-
-
-      
       </codeblock>
       <details open="false">
         <summary>Tailor's Hidden Motives</summary>
@@ -79,16 +79,19 @@
       </table>
       <hr/>
       <paragraph>
-        For more on the original tal <link href="https://en.wikipedia.org/wiki/The_Story_of_the_Brave_Little_Tailor">Wikipedia</link>. <br/>
+        For more on the original tale
+        <link href="https://en.wikipedia.org/wiki/The_Story_of_the_Brave_Little_Tailor">Wikipedia</link>.
         Images and media of the story are scattered across <link href="#chapter1">Chapter 1 above</link>.
       </paragraph>
       <image src="images/tailor-belt.png" alt="The tailor's belt reading Seven at One Blow"/>
       <audio src="audio/nursery-rhyme.mp3" alt="Nursery rhyme narration of the tailor's tale"/>
       <video src="video/puppet-tale.webm" alt="Puppet show adaptation of the story"/>
-      <paragraph>Footnotes help keep the main text clean. <fr id="1"/></paragraph>
+      <paragraph>
+        Footnotes help keep the main text clean. <fr id="1"/>
+      </paragraph>
     </section>
     <footnote id="1">
-      Not to be confused with the more famous E=mc <super>2</super>.
+      <super>2</super>
     </footnote>
   </body>
 </document>
