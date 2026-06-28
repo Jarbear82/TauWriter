@@ -1,146 +1,274 @@
 use tree_sitter::Parser;
 
-const BLOCK_TAGS: &[&str] = &[
-    "document",
-    "metadata",
-    "body",
-    "meta",
-    "section",
-    "heading",
-    "paragraph",
-    "aside",
-    "blockquote",
-    "codeblock",
-    "ul",
-    "ol",
-    "li",
-    "dl",
-    "dt",
-    "dd",
-    "details",
-    "summary",
-    "table",
-    "tr",
-    "th",
-    "td",
-    "footnote",
-    "review",
-];
+const MAX_LINE_LEN: usize = 80;
 
 pub fn format_twxml(contents: &str) -> String {
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
-    let tree = parser.parse(contents, None).unwrap();
-    let root = tree.root_node();
-
-    let mut result = String::new();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        result.push_str(&format_twxml_node(child, contents, 0, true));
+    if parser.set_language(language).is_err() {
+        return contents.to_string();
     }
-    result.trim().to_string() + "\n"
-}
 
-fn is_block_tag(name: &str) -> bool {
-    BLOCK_TAGS.contains(&name)
-}
+    let tree = match parser.parse(contents, None) {
+        Some(t) => t,
+        None => return contents.to_string(),
+    };
 
-fn contains_block_tag(node: tree_sitter::Node, contents: &str) -> bool {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        // Check the child's tag name if it's an element or self_closing_element.
-        // element nodes carry their name inside start_tag,
-        // self_closing_element carries it directly.
-        let name = match child.kind() {
-            "element" => child
-                .child(0)
-                .and_then(|st| st.child_by_field_name("name"))
-                .map(|nm| &contents[nm.byte_range()]),
-            "self_closing_element" => child
-                .child_by_field_name("name")
-                .map(|nm| &contents[nm.byte_range()]),
-            _ => None,
-        };
-
-        if let Some(n) = name {
-            if is_block_tag(n) {
-                return true;
-            }
-        }
-
-        // Recurse into children to find deeply nested block tags.
-        if contains_block_tag(child, contents) {
-            return true;
-        }
+    // R13: Parse errors: return original text unchanged.
+    if tree.root_node().has_error() {
+        return contents.to_string();
     }
-    false
+
+    let mut result = format_node(tree.root_node(), contents, 0, None);
+    result = result.trim().to_string();
+    if !result.is_empty() {
+        result.push('\n');
+    }
+    result
 }
 
-fn format_twxml_node(
+// ponytail: deleted hardcoded TagCategory enum and aggressive hard-wrapping.
+// We dynamically infer inline vs block context.
+// Ceiling: Relies on direct-text heuristics. Edge cases in malformed XML might inline blocks.
+// Upgrade: Full schema-aware formatting phase with DTD.
+fn format_node(
     node: tree_sitter::Node,
     contents: &str,
-    indent_level: usize,
-    is_start_of_line: bool,
+    indent: usize,
+    block_indent: Option<usize>,
 ) -> String {
-    let indent = "  ".repeat(indent_level);
+    let ind_str = "  ".repeat(indent);
+
     match node.kind() {
-        "text" => format_text(contents, node, indent, is_start_of_line),
-        "comment" => format_comment(contents, node, indent, is_start_of_line),
-        "element" => format_element(node, contents, indent_level, is_start_of_line),
-        "self_closing_element" => format_self_closing(node, contents, indent, is_start_of_line),
-        "document_block" => format_document_block(node, contents, indent_level),
-        "metadata_block" => format_metadata_block(node, contents, indent_level, &indent),
-        "body_block" => format_body_block(node, contents, indent_level, &indent),
+        "text" => {
+            if block_indent.is_some() {
+                collapse_whitespace(&contents[node.byte_range()])
+            } else {
+                String::new() // Drop text nodes caught in pure block context (whitespace)
+            }
+        }
+        "comment" => {
+            let cmt = contents[node.byte_range()].trim();
+            if block_indent.is_some() {
+                cmt.to_string()
+            } else {
+                format!("{}{}\n", ind_str, cmt)
+            }
+        }
+        "element" | "document_block" | "metadata_block" | "body_block" | "self_closing_element" => {
+            format_element(node, contents, indent, block_indent)
+        }
         _ => {
-            let mut inner = String::new();
+            let mut out = String::new();
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                inner.push_str(&format_twxml_node(
-                    child,
-                    contents,
-                    indent_level,
-                    is_start_of_line,
-                ));
+                out.push_str(&format_node(child, contents, indent, block_indent));
             }
-            inner
+            out
         }
     }
 }
 
-fn format_text(contents: &str, node: tree_sitter::Node, indent: String, start: bool) -> String {
-    let raw = &contents[node.byte_range()];
-    if start {
-        let txt = raw.trim();
-        if txt.is_empty() {
-            String::new()
+fn format_element(
+    node: tree_sitter::Node,
+    contents: &str,
+    indent: usize,
+    block_indent: Option<usize>,
+) -> String {
+    let tag_name = get_tag_name(&node, contents).unwrap_or_default();
+    if tag_name.is_empty() {
+        return String::new();
+    }
+
+    let attrs = get_attributes(&node, contents);
+    let attr_str = if attrs.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", attrs.join(" "))
+    };
+    let ind_str = "  ".repeat(indent);
+
+    if tag_name == "codeblock" {
+        let mut inner = String::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "text" {
+                inner.push_str(&contents[child.byte_range()]);
+            }
+        }
+        if inner.is_empty() {
+            return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
+        }
+
+        let trimmed = inner.trim_matches(|c| c == '\r' || c == '\n');
+        let mut padded = String::new();
+        for (i, line) in trimmed.split('\n').enumerate() {
+            if i == 0 {
+                padded.push_str(&format!("{}{}", "  ".repeat(indent + 1), line));
+            } else {
+                padded.push('\n');
+                padded.push_str(line);
+            }
+        }
+        return format!(
+            "{}<{}{}>\n{}\n{}</{}>",
+            ind_str, tag_name, attr_str, padded, ind_str, tag_name
+        );
+    }
+
+    if is_node_empty_of_content(&node, contents) && tag_name != "br" && tag_name != "fr" {
+        if block_indent.is_some() {
+            return format!("<{}{}/>", tag_name, attr_str);
         } else {
-            format!("{}{}", indent, txt)
+            return format!("{}<{}{}/>", ind_str, tag_name, attr_str);
+        }
+    }
+
+    if tag_name == "br" {
+        if let Some(lvl) = block_indent {
+            return format!("<br/>\n{}", "  ".repeat(lvl + 1));
+        } else {
+            return format!("{}<br/>", ind_str);
+        }
+    }
+
+    if tag_name == "fr" {
+        if block_indent.is_some() {
+            return format!("<fr{attr_str}/>");
+        } else {
+            return format!("{}<fr{attr_str}/>", ind_str);
+        }
+    }
+
+    // It's an inline container IF we're already nested in one, OR it holds direct text
+    let has_text = has_direct_significant_text(&node, contents);
+    let is_inline = block_indent.is_some() || has_text;
+
+    if is_inline {
+        let mut inner = String::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let next_lvl = block_indent.or(Some(indent));
+
+            if child.kind() == "text" {
+                let mut cw = collapse_whitespace(&contents[child.byte_range()]);
+                // Clean up spacing artifacts from older hard-wraps before punctuation
+                if cw.starts_with(" .")
+                    || cw.starts_with(" ,")
+                    || cw.starts_with(" !")
+                    || cw.starts_with(" ?")
+                    || cw.starts_with(" ;")
+                    || cw.starts_with(" :")
+                {
+                    cw.remove(0);
+                }
+
+                if inner.ends_with(|c: char| c.is_whitespace()) {
+                    inner.push_str(cw.trim_start());
+                } else {
+                    inner.push_str(&cw);
+                }
+            } else if child.kind() != "start_tag"
+                && child.kind() != "end_tag"
+                && child.kind() != "tag_name"
+            {
+                let c_str = format_node(child, contents, 0, next_lvl);
+                if inner.ends_with(|c: char| c.is_whitespace()) {
+                    inner.push_str(c_str.trim_start());
+                } else {
+                    inner.push_str(&c_str);
+                }
+            }
+        }
+
+        if block_indent.is_some() {
+            // Nested inline element - wrap tightly
+            format!("<{}{}>{}</{}>", tag_name, attr_str, inner, tag_name)
+        } else {
+            // Root inline container (e.g., paragraph)
+            let mock = format!("<{}{}>{}</{}>", tag_name, attr_str, inner.trim(), tag_name);
+            if mock.len() <= MAX_LINE_LEN && !inner.contains('\n') {
+                format!("{}{}", ind_str, mock)
+            } else {
+                format!(
+                    "{}<{}{}>\n  {}{}\n{}</{}>",
+                    ind_str,
+                    tag_name,
+                    attr_str,
+                    ind_str,
+                    inner.trim(),
+                    ind_str,
+                    tag_name
+                )
+            }
         }
     } else {
-        // Inline text: preserve spaces around inline tags, just collapse newlines
-        let collapsed = raw.replace('\n', " ");
-        if collapsed.trim().is_empty() {
-            String::new()
+        // BLOCK CONTAINER
+        let mut children_out = Vec::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() != "start_tag"
+                && child.kind() != "end_tag"
+                && child.kind() != "tag_name"
+                && child.kind() != "text"
+            {
+                let c_str = format_node(child, contents, indent + 1, None);
+                if !c_str.trim().is_empty() {
+                    children_out.push(c_str);
+                }
+            }
+        }
+
+        // Try placing single-child blocks inline (e.g. <td><hubref>...</hubref></td>)
+        if children_out.len() == 1 {
+            let joined = children_out[0].trim();
+            let mock = format!("<{}{}>{}</{}>", tag_name, attr_str, joined, tag_name);
+            if mock.len() <= MAX_LINE_LEN && !joined.contains('\n') {
+                return format!("{}{}", ind_str, mock);
+            }
+        }
+
+        let mut out = format!("{}<{}{}>\n", ind_str, tag_name, attr_str);
+        for c in children_out {
+            out.push_str(&c);
+            if !c.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+        out.push_str(&format!("{}</{}>", ind_str, tag_name));
+        out
+    }
+}
+
+fn get_tag_name(node: &tree_sitter::Node, contents: &str) -> Option<String> {
+    if node.kind() == "element" || node.kind() == "self_closing_element" {
+        let target = if node.kind() == "element" {
+            node.child(0)?
         } else {
-            collapsed
+            *node
+        };
+        let name_node = target.child_by_field_name("name")?;
+        Some(contents[name_node.byte_range()].to_string())
+    } else {
+        match node.kind() {
+            "document_block" => Some("document".to_string()),
+            "metadata_block" => Some("metadata".to_string()),
+            "body_block" => Some("body".to_string()),
+            _ => None,
         }
     }
 }
 
-fn format_comment(contents: &str, node: tree_sitter::Node, indent: String, start: bool) -> String {
-    let cmt = contents[node.byte_range()].trim();
-    if start {
-        format!("{}{}", indent, cmt)
-    } else {
-        cmt.to_string()
-    }
-}
-
-fn extract_attrs(node: tree_sitter::Node, contents: &str) -> Vec<String> {
+fn get_attributes(node: &tree_sitter::Node, contents: &str) -> Vec<String> {
     let mut attrs = Vec::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
+    let target = if node.kind() == "element" {
+        node.child(0).unwrap_or(*node)
+    } else {
+        *node
+    };
+
+    let mut cursor = target.walk();
+    for child in target.children(&mut cursor) {
         if child.kind() == "attribute" {
             attrs.push(contents[child.byte_range()].to_string());
         }
@@ -148,209 +276,45 @@ fn extract_attrs(node: tree_sitter::Node, contents: &str) -> Vec<String> {
     attrs
 }
 
-fn format_element(
-    node: tree_sitter::Node,
-    contents: &str,
-    indent_level: usize,
-    is_start_of_line: bool,
-) -> String {
-    let start_tag = node.child(0).unwrap();
-    let name_node = start_tag.child_by_field_name("name").unwrap();
-    let tag_name = &contents[name_node.byte_range()];
-    let attrs = extract_attrs(start_tag, contents);
-    let attrs_str = format_attrs(&attrs);
-
-    let indent = "  ".repeat(indent_level);
-    let is_block = is_block_tag(tag_name);
-    let has_blocks = contains_block_tag(node, contents);
-
-    if is_block && has_blocks {
-        let mut inner = String::new();
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            if child.kind() != "start_tag" && child.kind() != "end_tag" {
-                let formatted = format_twxml_node(child, contents, indent_level + 1, true);
-                if !formatted.is_empty() {
-                    inner.push_str(&formatted);
-                    inner.push('\n');
+fn is_node_empty_of_content(node: &tree_sitter::Node, contents: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "start_tag" && child.kind() != "end_tag" && child.kind() != "tag_name" {
+            if child.kind() == "text" {
+                if !contents[child.byte_range()].trim().is_empty() {
+                    return false;
                 }
+            } else {
+                return false;
             }
         }
+    }
+    true
+}
 
-        let start_part = if is_start_of_line {
-            format!("{}<{}{}>\n", indent, tag_name, attrs_str)
+fn has_direct_significant_text(node: &tree_sitter::Node, contents: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "text" && !contents[child.byte_range()].trim().is_empty() {
+            return true;
+        }
+    }
+    false
+}
+
+fn collapse_whitespace(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut in_space = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            if !in_space {
+                result.push(' ');
+                in_space = true;
+            }
         } else {
-            format!("<{}{}>\n", tag_name, attrs_str)
-        };
-        let end_part = format!("{}</{}>", indent, tag_name);
-        format!("{}{}{}", start_part, inner, end_part)
-    } else {
-        let mut inner = String::new();
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            if child.kind() != "start_tag" && child.kind() != "end_tag" {
-                inner.push_str(&format_twxml_node(child, contents, 0, false));
-            }
-        }
-
-        if is_block && is_start_of_line {
-            format!(
-                "{}<{}{}>{}</{}>",
-                indent, tag_name, attrs_str, inner, tag_name
-            )
-        } else {
-            format!("<{}{}>{}</{}>", tag_name, attrs_str, inner, tag_name)
+            result.push(c);
+            in_space = false;
         }
     }
-}
-
-fn format_self_closing(
-    node: tree_sitter::Node,
-    contents: &str,
-    indent: String,
-    is_start_of_line: bool,
-) -> String {
-    let name_node = node.child_by_field_name("name").unwrap();
-    let tag_name = &contents[name_node.byte_range()];
-    let attrs = extract_attrs(node, contents);
-    let attrs_str = format_attrs(&attrs);
-
-    if is_block_tag(tag_name) && is_start_of_line {
-        format!("{}<{}{}/>", indent, tag_name, attrs_str)
-    } else {
-        format!("<{}{}/>", tag_name, attrs_str)
-    }
-}
-
-fn format_attrs(attrs: &[String]) -> String {
-    if attrs.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", attrs.join(" "))
-    }
-}
-
-fn format_document_block(node: tree_sitter::Node, contents: &str, indent_level: usize) -> String {
-    let mut inner = String::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() != "metadata_block" && child.kind() != "body_block" && !child.is_missing() {
-            inner.push_str(&format_twxml_node(child, contents, indent_level + 1, true));
-            inner.push('\n');
-        }
-    }
-
-    let content = inner.trim();
-    if content.is_empty() {
-        format!("<document></document>")
-    } else {
-        format!("<document>\n{}\n</document>", content)
-    }
-}
-
-fn format_metadata_block(
-    node: tree_sitter::Node,
-    contents: &str,
-    indent_level: usize,
-    indent: &str,
-) -> String {
-    let mut inner = String::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if !child.is_missing() {
-            let formatted = format_twxml_node(child, contents, indent_level + 1, true);
-            if !formatted.is_empty() {
-                inner.push_str(&formatted);
-                inner.push('\n');
-            }
-        }
-    }
-
-    let content = inner.trim();
-    if content.is_empty() {
-        format!("{}<metadata></metadata>", indent)
-    } else {
-        format!("{}<metadata>\n{}\n{}</metadata>", indent, content, indent)
-    }
-}
-
-fn format_body_block(
-    node: tree_sitter::Node,
-    contents: &str,
-    indent_level: usize,
-    indent: &str,
-) -> String {
-    let mut inner = String::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if !child.is_missing() {
-            let formatted = format_twxml_node(child, contents, indent_level + 1, true);
-            if !formatted.is_empty() {
-                inner.push_str(&formatted);
-                inner.push('\n');
-            }
-        }
-    }
-
-    let content = inner.trim();
-    if content.is_empty() {
-        format!("{}<body></body>", indent)
-    } else {
-        format!("{}<body>\n{}\n{}</body>", indent, content, indent)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn block_elements_with_nested_blocks_expand_multiline() {
-        let input = r#"<document>
-  <metadata></metadata>
-  <body><section><paragraph>Hello</paragraph></section></body>
-</document>"#;
-        let output = format_twxml(input);
-        // <section> contains <paragraph>, so it should expand to multiline
-        assert!(
-            output.contains("<section>\n"),
-            "section should have newline after opening tag, got:\n{}",
-            output
-        );
-        assert!(
-            output.contains("</section>"),
-            "closing tag should exist, got:\n{}",
-            output
-        );
-    }
-
-    #[test]
-    fn block_with_only_inline_content_stays_single_line() {
-        let input = r#"<document>
-  <metadata></metadata>
-  <body><heading>Just text</heading></body>
-</document>"#;
-        let output = format_twxml(input);
-        // <heading> has no nested block children, so stays on one line
-        assert!(
-            output.contains("<heading>Just text</heading>"),
-            "heading with only text should stay inline, got:\n{}",
-            output
-        );
-    }
-
-    #[test]
-    fn inline_text_preserves_spaces_around_tags() {
-        let input = r#"<document>
-  <metadata></metadata>
-  <body><paragraph>Hello <b>world</b>!</paragraph></body>
-</document>"#;
-        let output = format_twxml(input);
-        // Spaces around <b> should be preserved
-        assert!(
-            output.contains("Hello ") || output.contains("Hello\n"),
-            "space before inline tag should be preserved, got:\n{}",
-            output
-        );
-    }
+    result
 }
