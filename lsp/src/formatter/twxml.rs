@@ -24,6 +24,10 @@ enum TagBehavior {
     Fr,
 }
 
+fn leading_spaces(s: &str) -> usize {
+    s.len() - s.trim_start_matches(' ').len()
+}
+
 fn tag_behavior(tag: &str) -> TagBehavior {
     match tag {
         "br" => TagBehavior::Br,
@@ -113,6 +117,7 @@ fn format_element(
 
     match tag_behavior(&tag_name) {
         // ── R12: verbatim codeblock ──────────────────────────────────────────
+        // ── R12: verbatim codeblock ──────────────────────────────────────────
         TagBehavior::CodeBlock => {
             let mut inner = String::new();
             let mut cursor = node.walk();
@@ -124,17 +129,40 @@ fn format_element(
             if inner.trim().is_empty() {
                 return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
             }
-            let trimmed = inner.trim_matches(|c| c == '\r' || c == '\n');
-            // Only the first line gets indentation padding; subsequent lines are preserved verbatim.
+
+            // Strip the surrounding blank lines produced by the format string
+            // ("\n" after the opening tag, and "\n{ind_str}" before the closing tag).
+            // Whatever non-empty lines remain are the raw code content.
+            let all_lines: Vec<&str> = inner.split('\n').collect();
+            let start = all_lines
+                .iter()
+                .position(|l| !l.trim().is_empty())
+                .unwrap_or(0);
+            let end = all_lines
+                .iter()
+                .rposition(|l| !l.trim().is_empty())
+                .unwrap_or(start);
+            let content_lines = &all_lines[start..=end];
+
+            // Compute signed shift: how many spaces to add (positive) or remove (negative)
+            // from every line so that line 0 lands exactly at indent+1.
+            let target_indent = "  ".repeat(indent + 1);
+            let first_leading = leading_spaces(content_lines[0]);
+            let shift: i64 = target_indent.len() as i64 - first_leading as i64;
+
             let mut padded = String::new();
-            for (i, line) in trimmed.split('\n').enumerate() {
-                if i == 0 {
-                    padded.push_str(&format!("{}{}", "  ".repeat(indent + 1), line));
-                } else {
+            for (i, line) in content_lines.iter().enumerate() {
+                if i > 0 {
                     padded.push('\n');
-                    padded.push_str(line);
                 }
+                if !line.trim().is_empty() {
+                    let new_spaces = (leading_spaces(line) as i64 + shift).max(0) as usize;
+                    padded.push_str(&" ".repeat(new_spaces));
+                    padded.push_str(line.trim_start_matches(' '));
+                }
+                // Blank interior lines: emit nothing — the '\n' above is enough.
             }
+
             format!(
                 "{}<{}{}>\n{}\n{}</{}>",
                 ind_str, tag_name, attr_str, padded, ind_str, tag_name

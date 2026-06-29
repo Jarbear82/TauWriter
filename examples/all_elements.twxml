@@ -31,7 +31,9 @@
         the algorithm below:
       </paragraph>
       <codeblock language="rust">
-                fn sew(garment: &amp;str) -&gt; String { format!("A fine {} is ready!", garment) }
+        fn sew(garment: &amp;str) -&gt; String {
+          format!("A fine {} is ready!", garment)
+        }
       </codeblock>
       <details open="false">
         <summary>Tailor's Hidden Motives</summary>
