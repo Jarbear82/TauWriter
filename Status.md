@@ -157,6 +157,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `hard_tabs` | ⬜ Not set | Default (false) |
 | `first_line_patterns` | ⬜ Not set | No regex patterns for file type detection beyond suffix |
 | `debuggers` | ❌ Not implemented | — |
+| `injections` | ⚠️ Planned | Requires `queries/twxml/injections.scm` targeting `<codeblock>` elements (grammar already exposes `(tag_name)`, `attribute → (attribute_name)/(attribute_value)`, and `(text)` as injectable content).
 
 ##### Grammar
 | Property | Status | Value |
@@ -214,7 +215,22 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 ###### Code Injections
 | Status | Notes |
 |:---|:---|
-| ⬜ Not needed | — |
+| ⚠️ Planned | Targets `<codeblock>` elements with a `language` attribute. Grammar already exposes `(tag_name)`, `attribute → (attribute_name)/(attribute_value)`, and inner `(text)` — ready for an `injections.scm` file. |
+
+**Required query (`queries/twxml/injections.scm`):**
+```scm
+(element
+  (tag_name) @tag (#eq? @tag "codeblock")
+  (attribute
+    (attribute_name) @attr (#eq? @attr "language")
+    (attribute_value) @injection.language)
+  (text) @injection.content)
+```
+
+**Notes:**
+- Zed extracts the string from `@injection.language` and loads the matching sub-parser.
+- If `attribute_value` includes surrounding quotes in the AST, replace `(attribute_value) @injection.language` with `(attribute_value (attribute_value_text) @injection.language)` or use an extraction directive to strip them.
+- This enables embedding Rust, Python, JSON, etc. inside TWXML prose with dynamic highlighting.
 
 ###### Syntax Overrides (`overrides.scm`)
 | Property | Status | Notes |
