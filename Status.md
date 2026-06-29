@@ -33,36 +33,38 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Zed Extension** | ⚠️  | Functional skeleton with grammars, language configs, and pre-built binaries in `extension/bin/`. Auto-downloading and one-click install require Zed marketplace verification. |
 | **Editor QoL** | ✅ | Tag auto-closing via `onTypeFormatting`. Snippet generation and structural autocomplete for TWXML still pending. |
 | **Advanced LSP Ops** | ⚠️  | CodeLens implemented. Signature Help, Document Links, and Call Hierarchy mappings pending. |
-| **Graph Expansion** | 🔜 | Traits (Abstract Hubs), `EXTENDS` syntax, Role Metadata, and complex data types (UUID, structs). |
+| **Graph Expansion** | ⚠️ | Traits (Abstract Hubs), `EXTENDS` syntax (In Progress), Role Metadata, and complex data types (UUID, structs). |
 | **AI Integration** | 🔜 | RAG pipeline for Hub summaries and 'AI Provocations' for collaborative critique. |
 
 ## Current Focus
 
-### 1. Structural Enforcement & Validation Pipeline ✅
+### 1. Structural Enforcement & Validation Pipeline ⚠️
 Strict schema enforcement for document and graph structures to ensure data integrity.
-- [x] **TWXML Skeleton Enforcement:** Validate that all TWXML documents strictly adhere to the root <document> schema containing exactly one <metadata> block (housing <meta/> tags) and one <body> block.
+- [ ] **TWXML Skeleton Enforcement (Update Pending):** Update validation to enforce that all TWXML documents strictly adhere to the root `<document>` schema containing zero or more `<meta/>` tags directly, followed by exactly one `<body>` block (removing the deprecated `<metadata>` wrapper).
 - [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
 - [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
 - [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
 - [x] Implement TWXML Referential Integrity (Unresolved references for `<hubref>`)
 - [x] Implement HubGS Type & Multiplicity Enforcement
 
-### 2. Dynamic Evaluation Engine ✅
+### 2. Dynamic Evaluation Engine ⚠️
 Robust engine for computed graph data.
 - [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
 - [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
+- [ ] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
 - [x] Enforce `@default` override rules during instance instantiation.
 
-### 3. Formatter Module (`lsp/src/formatter/`) ✅
+### 3. Formatter Module (`lsp/src/formatter/`) ⚠️
 Tree-sitter based formatter for both TWXML and HubGS. Not a separate crate — lives inline in the LSP crate.
-- [x] Native support for TWXML `<document>`, `<metadata>`, and `<body>` skeleton. Dedicated formatters (`format_document_block`, `format_metadata_block`, `format_body_block`) with proper recursion.
+- [ ] Update TWXML formatter to drop `format_metadata_block` and natively format `<meta />` tags directly under `<document>`.
 - [x] Standardized indentation (2-space) and line-breaking rules for nested TWXML blocks. Block-level elements indent children at `indent_level + 1`, self-closing tags respect indentation, inline content stays compact.
+- [ ] Add HubGS formatting support for the `EXTENDS` block, chained method calls, and arrow functions.
 - [x] Full block tag coverage — 26 TWXML block tags known to the formatter (`section`, `heading`, `paragraph`, `table`, etc.).
 - [x] LSP `textDocument/formatting` handler wired up and JSON-RPC tested.
 
 ### 4. Editor Experience & LSP Capabilities (In Progress)
 Enhancing the writing and data-entry flow natively within the editor.
-- [x] **TWXML Tag Auto-closing:** Automatically generate closing tags (e.g., typing `<metadata>` inserts `</metadata>`). Implemented via `textDocument/onTypeFormatting`, triggered on `>`. Self-closing, closing, and comment tags are excluded. JSON-RPC tested.
+- [ ] **TWXML Tag Auto-closing:** Update existing `onTypeFormatting` to stop inserting `</metadata>` and adjust autocomplete context to suggest `<meta />` at the root level.
 - [x] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). Triggered on `<`, filters out structurally invalid tags based on parent context.
 - [x] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
 - [ ] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
@@ -71,8 +73,13 @@ Enhancing the writing and data-entry flow natively within the editor.
 - [x] Inlay hints for HubGS instance types (`: TypeName`). Implemented, no test yet.
 - [x] Code actions for resolving `<review>` tags to `<hubref>`. Two quickfix actions implemented.
 
-### 5. HubGS Language & Graph Capabilities (Planned)
-- [ ] **Traits & EXTENDS Syntax:** Add support for "Abstract Hubs" and composite inheritance to share behavior patterns without deep inheritance chains.
+### 5. HubGS Inheritance & Extensibility (In Progress)
+- [ ] **EXTENDS AST Parsing:** Update AST extraction to support composite inheritance definitions.
+- [ ] **Set-Union Compilation:** Ensure child hubs correctly inherit all `FIELDS` and roles from `EXTENDS` parents.
+- [ ] **Polymorphism Rules:** Update type-checking so instances of a child type are valid targets for roles that `ALLOWS` the parent type.
+- [ ] **Decorator Precedence:** Enforce validation rules where a child type can override a parent's `@default()`, but cannot override a parent's `@computed()` field.
+
+### 6. HubGS Language & Graph Capabilities (Planned)
 - [ ] **Role Metadata:** Support weighted edges and edge-properties (e.g., temporal bounds on a role like `owns { start: Date, end: Date }`).
 - [ ] **Expanded Data Types:** Introduce `UUID`, structured records (`struct`), and string templates ("expressive strings").
 - [ ] **Circular Import Resolution:** Define a robust two-pass merge strategy for `.hubgs` files with cyclic dependencies.
