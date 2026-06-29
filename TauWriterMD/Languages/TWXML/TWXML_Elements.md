@@ -5,12 +5,9 @@ TWXML uses an **enforced tree hierarchy** where structural meaning is derived fr
 
 ### File Structure
 Every `*.twxml` file follows this top-level structure:
-
 ```xml
 <document>
-  <metadata>
-    <meta />
-  </metadata>
+  <meta />
   <body>
     <section></section>
   </body>
@@ -27,23 +24,18 @@ Every `*.twxml` file follows this top-level structure:
 This means you never need to specify heading levels manually. The tree structure itself defines the outline.
 
 ### Document
-The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document. Direct children are `<metadata>` and `<body>`.  
-Tags: `<document></document>`  
-
-### Metadata
-A container for document-level metadata. Placed at the top of the document, before `<body>`. Only `<meta />` tags are allowed inside. Not rendered in the primary prose view but indexed by the LSP.  
-Equivalent to Markdown Frontmatter (YAML).  
-Tags: `<metadata></metadata>`  
+The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document. Direct children are zero or more `<meta />` tags followed by exactly one `<body>`.  
+Tags: `<document></document>` 
 
 ### Meta
-A single key-value metadata entry. Must be placed inside `<metadata>`.  
+A single key-value metadata entry.  
 Tags: `<meta />`  
 Tag Attributes:  
 - name: The metadata key.  
 - content: The metadata value.
 
 ### Body
-The container for all document content. Placed after `<metadata>` inside `<document>`. Contains `<section>`, `<heading>`, `<footnote>`, and other block-level elements.  
+The container for all document content. Placed after all `<meta/>` tags inside `<document>`. Contains `<section>`, `<heading>`, `<footnote>`, and other block-level elements.  
 Tags: `<body></body>`
 
 ### Section
@@ -81,17 +73,22 @@ Tag Attributes:
 
 ### Horizontal Rule
 Represents a thematic break between paragraph-level elements. Equivalent to Markdown's `---`.  
-Tags: `<hr />`  
+Tags: `<hr/>`  
 
 ### Line Break
 Forces a hard line break within a block element without creating a new paragraph.  
-Tags: `<br />`
+Tags: `<br/>`
 
 ---
 
 ## Lists
 Containers for bulleted or numbered lists.  
 Tags: `<ul></ul>` (Unordered), `<ol></ol>` (Ordered)  
+
+### Ordered List
+* **Attributes**: 
+  * `type`: Selects marker taxonomy (`1 | a | A | i | I`).
+  * `start`: An integer value establishing the numerical root of the list.
 
 ### List Item
 Represents an individual item within a `<ul>` or `<ol>`.  
@@ -124,11 +121,18 @@ Tags: `<summary></summary>`
 ---
 
 ## Inline Elements
+
+### Include
+A self-closing structural compilation directive that stitches a separate file fragment inline into the current document branch at runtime.
+* **Tags**: `<include />`
+* **Attributes**: `src` (Relative path to targeted file)
+
 ### HubRef
-The tag that wraps text to link it to its HubGS graph reference.
-Tags: `<hubref></hubref>`
-Tag Attributes:
-- id: The unique identifier for that hub. (ex: `<hubref id="aragorn">Aragorn</hubref>`)
+Connects written text directly to its HubGS schema properties.
+* **Wrapping Variant**: Wraps arbitrary textual prose. Subject to tracking updates via the `<review>` engine.
+  * *Example*: `<hubref id="aragorn" field="first_name">The Ranger</hubref>`
+* **Self-Closing Variant**: Instructs the WYSIWYG and compilation engines to fetch and drop active values straight from the graph execution pass.
+  * *Example*: `<hubref id="aragorn" field="full_name" />`
 
 ### Link
 Creates a standard hyperlink to an external URL or an internal heading/file anchor.
@@ -163,7 +167,7 @@ Tags: `<code></code>`
 
 ### Footnote Reference
 Places a superscript footnote marker in the text.
-Tags: `<fr />`
+Tags: `<fr/>`
 Tag Attributes:
 - id: Matches the ID of the defined footnote.
 
@@ -189,6 +193,9 @@ Elements used to create and structure tabular data, directly mapping to Markdown
 - `<th></th>`: A table header cell (typically used in the first row).
 - `<td></td>`: A standard table data cell.
 
+### Table Cell Data / Header
+* **Attributes**: `colspan` and `rowspan` parameters are universally unlocked on `<td>` and `<th>` tags to map structured tables flawlessly.
+
 ---
 
 ## Footnote Definitions
@@ -212,9 +219,7 @@ Tags: `<review></review>`
 
 ```xml
 <document>
-  <metadata>
     <meta name="author" content="J.R.R. Tolkien" />
-  </metadata>
   <body>
     <section alias="A Shadow of the Past">
       <heading>Departure</heading>

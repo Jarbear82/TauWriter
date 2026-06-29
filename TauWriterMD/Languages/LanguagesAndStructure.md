@@ -2,7 +2,7 @@
 - twxml
 - hubgs
 
-## Directory Structure
+## Directory Structure (not set in stone)
 ```
 KnowledgeBaseDirectoryName
 |-DocumentDirectory        // Contains all twxml files
