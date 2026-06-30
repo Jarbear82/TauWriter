@@ -40,6 +40,8 @@ pub struct HubType<'db> {
     pub block_range: super::LspRange,
     pub fields: Vec<HubFieldDef>,
     pub roles: Vec<HubRoleDef>,
+    /// Parent type names from EXTENDS clause for polymorphic resolution.
+    pub extends_parents: Vec<String>,
 }
 
 #[salsa::tracked]

@@ -33,10 +33,14 @@ fn tag_behavior(tag: &str) -> TagBehavior {
         "br" => TagBehavior::Br,
         "fr" => TagBehavior::Fr,
         "codeblock" => TagBehavior::CodeBlock,
-        "hr" | "image" | "audio" | "video" => TagBehavior::SelfClosingBlock,
+        "hr" | "image" | "audio" | "video" | "meta" => TagBehavior::SelfClosingBlock,
         "paragraph" | "aside" | "blockquote" => TagBehavior::ForcedExpandInline,
-        "document" | "metadata" | "body" | "section" | "ul" | "ol" | "dl" | "details" | "table"
-        | "tr" | "footnote" | "review" => TagBehavior::ForcedExpandBlock,
+        "document" | "body" | "section" | "ul" | "ol" | "dl" | "details" | "table" | "tr"
+        | "footnote" | "review" => TagBehavior::ForcedExpandBlock,
+        // ponytail: These tags were missing from the original tag_behavior map.
+        // They were falling through to LeafBlock (correct behavior) but undocumented.
+        "heading" | "li" | "dt" | "dd" | "summary" | "bold" | "italic" | "underline"
+        | "strikethrough" | "super" | "sub" | "link" | "code" => TagBehavior::LeafBlock,
         _ => TagBehavior::LeafBlock,
     }
 }
@@ -86,7 +90,7 @@ fn format_node(
             // R11: always own indented line, regardless of context.
             format!("{}{}\n", ind_str, contents[node.byte_range()].trim())
         }
-        "element" | "document_block" | "metadata_block" | "body_block" | "self_closing_element" => {
+        "element" | "document_block" | "body_block" | "self_closing_element" => {
             format_element(node, contents, indent, block_indent)
         }
         _ => {
@@ -321,7 +325,6 @@ fn build_inline_atoms(
             "element"
             | "self_closing_element"
             | "document_block"
-            | "metadata_block"
             | "body_block" => {
                 let tag = get_tag_name(&child, contents).unwrap_or_default();
                 match tag.as_str() {
@@ -457,7 +460,7 @@ fn get_tag_name(node: &tree_sitter::Node, contents: &str) -> Option<String> {
     } else {
         match node.kind() {
             "document_block" => Some("document".to_string()),
-            "metadata_block" => Some("metadata".to_string()),
+            "meta_tag" => Some("meta".to_string()),
             "body_block" => Some("body".to_string()),
             _ => None,
         }

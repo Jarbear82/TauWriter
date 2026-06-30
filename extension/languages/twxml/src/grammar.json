@@ -14,28 +14,15 @@
           "value": "<document>"
         },
         {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "SYMBOL",
-              "name": "metadata_block"
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "meta_tag"
+          }
         },
         {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "SYMBOL",
-              "name": "body_block"
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
+          "type": "SYMBOL",
+          "name": "body_block"
         },
         {
           "type": "STRING",
@@ -43,23 +30,31 @@
         }
       ]
     },
-    "metadata_block": {
+    "meta_tag": {
       "type": "SEQ",
       "members": [
         {
           "type": "STRING",
-          "value": "<metadata>"
+          "value": "<"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "tag_name"
+          }
         },
         {
           "type": "REPEAT",
           "content": {
             "type": "SYMBOL",
-            "name": "_inner_node"
+            "name": "attribute"
           }
         },
         {
           "type": "STRING",
-          "value": "</metadata>"
+          "value": "/>"
         }
       ]
     },

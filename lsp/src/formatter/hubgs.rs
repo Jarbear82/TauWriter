@@ -163,6 +163,27 @@ fn parse_hubs(block: tree_sitter::Node, contents: &str) -> Vec<String> {
     for hub_def in block.children(&mut cursor) {
         if hub_def.kind() == "hub_definition" {
             if let Some(name_node) = hub_def.child(0) {
+                // ponytail: Extract parent types from optional EXTENDS clause
+                let mut extends_parts: Vec<String> = Vec::new();
+                let ext_clauses: Vec<_> = hub_def
+                    .children(&mut hub_def.walk())
+                    .filter(|c| c.kind() == "extension_clause")
+                    .collect();
+                for ext in &ext_clauses {
+                    let mut child_cur = ext.walk();
+                    for child in ext.children(&mut child_cur) {
+                        if child.kind() == "identifier" {
+                            extends_parts.push(contents[child.byte_range()].to_string());
+                        }
+                    }
+                }
+                let extends_str = extends_parts.join(", ");
+                let extends_part = if extends_str.is_empty() {
+                    String::new()
+                } else {
+                    format!(" EXTENDS [{}]", extends_str)
+                };
+
                 let mut items = Vec::new();
                 let mut item_cursor = hub_def.walk();
                 for child in hub_def.children(&mut item_cursor) {
@@ -174,8 +195,9 @@ fn parse_hubs(block: tree_sitter::Node, contents: &str) -> Vec<String> {
                     }
                 }
                 hubs.push(format!(
-                    "        {} {{\n{}\n        }}",
+                    "        {}{} {{\n{}\n        }}",
                     &contents[name_node.byte_range()],
+                    extends_part,
                     items.join(",\n")
                 ));
             }

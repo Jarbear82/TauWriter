@@ -105,10 +105,9 @@ fn handle_twxml_completion(
 fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse>> {
     // ponytail: full nesting rules not yet implemented — suggest all known tags.
     // Upgrade path: build a parent->allowed_children map from validation rules.
-    let all_tags: [(&str, CompletionItemKind, &str); 39] = [
+    let all_tags: [(&str, CompletionItemKind, &str); 38] = [
         // Structural
         ("document", CompletionItemKind::CLASS, "TWXML Document"),
-        ("metadata", CompletionItemKind::CLASS, "Metadata Block"),
         ("body", CompletionItemKind::CLASS, "Body Block"),
         ("meta", CompletionItemKind::CLASS, "Meta Tag"),
         // Content blocks
@@ -161,12 +160,8 @@ fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse
             if parent.is_some() && *name == "document" {
                 return false;
             }
-            // Don't suggest metadata/body inside body
-            if parent == Some("body") && (*name == "metadata" || *name == "body") {
-                return false;
-            }
-            // Don't suggest metadata/body inside metadata
-            if parent == Some("metadata") && (*name == "metadata" || *name == "body") {
+            // Don't suggest body inside another body
+            if parent == Some("body") && *name == "body" {
                 return false;
             }
             true
@@ -191,7 +186,10 @@ fn complete_hub_fields(
         let type_name = instance.type_name(db);
         if let Some(hub_type) = crate::db::resolve_type(db, ws, instance.file(db), type_name) {
             let mut items = Vec::new();
-            for field in hub_type.fields(db) {
+            // ponytail: Use polymorphic field/role lookups to respect EXTENDS inheritance
+            let all_fields = crate::db::polymorphic::hub_type_all_fields(db, ws, &hub_type);
+            let all_roles = crate::db::polymorphic::hub_type_all_roles(db, ws, &hub_type);
+            for field in all_fields {
                 items.push(CompletionItem {
                     label: field.name.clone(),
                     kind: Some(CompletionItemKind::FIELD),
@@ -199,7 +197,7 @@ fn complete_hub_fields(
                     ..Default::default()
                 });
             }
-            for role in hub_type.roles(db) {
+            for role in all_roles {
                 items.push(CompletionItem {
                     label: role.name.clone(),
                     kind: Some(CompletionItemKind::INTERFACE),
@@ -227,7 +225,7 @@ fn handle_hubgs_completion(
     // Try field/role completion on current type at position
     if let Some(type_name) = crate::db::get_hub_type_at_position(db, file, position.into()) {
         if let Some(hub_type) = crate::db::resolve_type(db, ws, file, type_name) {
-            let items = complete_fields_and_roles(db, &hub_type);
+            let items = complete_fields_and_roles(db, ws, &hub_type);
             return Ok(Some(CompletionResponse::Array(items)));
         }
     }
@@ -268,9 +266,19 @@ fn complete_role_instances(
     if let Some(hub_type) = crate::db::resolve_type(db, ws, file, type_name.to_string()) {
         if let Some(role) = hub_type.roles(db).iter().find(|r| r.name == role_name) {
             let instances = crate::db::all_hub_instances(db, ws);
+            // ponytail: Polymorphic completion - child instances satisfy parent roles
+            use crate::db::polymorphic::hub_type_allows;
             let items: Vec<CompletionItem> = instances
                 .into_iter()
-                .filter(|i| role.allowed_types.contains(&i.type_name(db)))
+                .filter(|i| {
+                    if let Some(inst_type) =
+                        crate::db::resolve_type(db, ws, i.file(db), i.type_name(db).clone())
+                    {
+                        hub_type_allows(db, ws, &inst_type, &role.allowed_types)
+                    } else {
+                        role.allowed_types.contains(&i.type_name(db))
+                    }
+                })
                 .map(|i| CompletionItem {
                     label: i.name(db),
                     kind: Some(CompletionItemKind::REFERENCE),
@@ -286,10 +294,14 @@ fn complete_role_instances(
 
 fn complete_fields_and_roles(
     db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
     hub_type: &crate::db::HubType<'_>,
 ) -> Vec<CompletionItem> {
     let mut items = Vec::new();
-    for field in hub_type.fields(db) {
+    // ponytail: Use polymorphic field/role lookups to respect EXTENDS inheritance
+    let all_fields = crate::db::polymorphic::hub_type_all_fields(db, ws, &hub_type);
+    let all_roles = crate::db::polymorphic::hub_type_all_roles(db, ws, &hub_type);
+    for field in all_fields {
         items.push(CompletionItem {
             label: field.name.clone(),
             kind: Some(CompletionItemKind::FIELD),
@@ -297,7 +309,7 @@ fn complete_fields_and_roles(
             ..Default::default()
         });
     }
-    for role in hub_type.roles(db) {
+    for role in all_roles {
         items.push(CompletionItem {
             label: role.name.clone(),
             kind: Some(CompletionItemKind::INTERFACE),

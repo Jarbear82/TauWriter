@@ -86,12 +86,22 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
     let tree = parser.parse(&contents, None).unwrap();
 
     let root = tree.root_node();
-    for child in root.children(&mut root.walk()) {
+    // ponytail: Root is source_file → document_block; body/meta live under document_block
+    let container = if root.kind() == "source_file" {
+        root.child(0)
+    } else {
+        Some(root)
+    };
+    let children: Vec<_> = match container {
+        Some(node) => node.children(&mut node.walk()).collect(),
+        None => vec![],
+    };
+    for child in children {
         match child.kind() {
-            "metadata_block" => {
+            "meta_tag" => {
                 tags.push(crate::db::TwxmlTag::new(
                     db,
-                    "metadata".to_string(),
+                    "meta".to_string(),
                     file,
                     super::ts_range_to_lsp(child.range()),
                     Some("document".to_string()),
@@ -156,7 +166,7 @@ fn resolve_parent_tag(element_node: &tree_sitter::Node, contents: &str) -> Optio
                 }
             }
             "body_block" => return Some("body".to_string()),
-            "metadata_block" => return Some("metadata".to_string()),
+            "meta_tag" => return Some("meta".to_string()),
             _ => {}
         }
     }
@@ -440,7 +450,7 @@ fn find_parent_tag_name(node: &tree_sitter::Node, contents: &str) -> Option<Stri
                     }
                 }
                 "body_block" => return Some("body".to_string()),
-                "metadata_block" => return Some("metadata".to_string()),
+                "meta_tag" => return Some("meta".to_string()),
                 "document_block" => return Some("document".to_string()),
                 _ => {}
             }

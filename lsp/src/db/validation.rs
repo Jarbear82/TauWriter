@@ -1,3 +1,4 @@
+use super::polymorphic::{hub_type_all_fields, hub_type_all_roles, hub_type_allows};
 use super::resolution::*;
 use super::types::*;
 
@@ -56,7 +57,6 @@ impl Multiplicity {
 
 const VALID_TWXML_TAGS: &[&str] = &[
     "document",
-    "metadata",
     "body",
     "meta",
     "section",
@@ -118,33 +118,8 @@ fn validate_twxml(
     let tags = all_twxml_tags(db, file);
     let contents = file.contents(db);
 
-    // 0. Validate document skeleton: exactly one <metadata> and one <body>
-    let metadata_count = tags.iter().filter(|t| t.name(db) == "metadata").count();
+    // 0. Validate document skeleton: <meta /> tags are optional; exactly one <body> required
     let body_count = tags.iter().filter(|t| t.name(db) == "body").count();
-
-    if metadata_count == 0 {
-        errors.push(ValidationError {
-            range: super::LspRange {
-                start: super::LspPosition {
-                    line: 0,
-                    character: 0,
-                },
-                end: super::LspPosition {
-                    line: 0,
-                    character: 0,
-                },
-            },
-            message: "Document missing required <metadata> block".to_string(),
-        });
-    } else if metadata_count > 1 {
-        for tag in tags.iter().filter(|t| t.name(db) == "metadata") {
-            errors.push(ValidationError {
-                range: tag.range(db),
-                message: "Duplicate <metadata> block — document must contain exactly one"
-                    .to_string(),
-            });
-        }
-    }
 
     if body_count == 0 {
         errors.push(ValidationError {
@@ -168,7 +143,6 @@ fn validate_twxml(
             });
         }
     }
-
     // 1. Validate Hub References
     let refs = parse_twxml(db, file);
     for r in refs {
@@ -342,7 +316,14 @@ fn validate_hubgs(
             );
 
             // 3. Missing required roles (minimum multiplicity > 0)
-            check_missing_roles(db, &instance, hub_type, type_name.clone(), errors);
+            check_missing_roles(
+                db,
+                workspace,
+                &instance,
+                hub_type,
+                type_name.clone(),
+                errors,
+            );
         } else {
             errors.push(ValidationError {
                 range: instance.range(db),
@@ -362,10 +343,11 @@ fn validate_instance_assignments(
 ) {
     for assignment in instance.assignments(db) {
         let name = &assignment.name;
-        let fields = hub_type.fields(db);
-        let roles = hub_type.roles(db);
-        let is_field = fields.iter().any(|f| &f.name == name);
-        let role_def = roles.iter().find(|r| &r.name == name);
+        // ponytail: Use polymorphic field/role lookup to respect EXTENDS inheritance
+        let all_fields = hub_type_all_fields(db, workspace, &hub_type);
+        let all_roles = hub_type_all_roles(db, workspace, &hub_type);
+        let is_field = all_fields.iter().any(|f| f.name.as_str() == name.as_str());
+        let role_def = all_roles.iter().find(|r| r.name.as_str() == name.as_str());
 
         if !is_field && role_def.is_none() {
             errors.push(ValidationError {
@@ -416,16 +398,26 @@ fn validate_role_assignment(
 ) {
     let refs = get_refs_from_value(value);
 
-    // 1. Type mismatch validation
+    // 1. Type mismatch validation (polymorphic: checks extends_parents chain)
     for ref_name in &refs {
         if let Some(target_inst) = resolve_reference(db, workspace, ref_name.clone()) {
-            let target_type = target_inst.type_name(db);
-            if !role_def.allowed_types.contains(&target_type) {
+            let target_type_name = target_inst.type_name(db);
+            let hub_type = match resolve_type(
+                db,
+                workspace,
+                target_inst.file(db),
+                target_type_name.clone(),
+            ) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            if !hub_type_allows(db, workspace, &hub_type, &role_def.allowed_types) {
                 errors.push(ValidationError {
                     range: assignment_range,
                     message: format!(
                         "Type mismatch: Role '{}' does not allow type '{}'",
-                        role_def.name, target_type
+                        role_def.name, target_type_name
                     ),
                 });
             }
@@ -454,12 +446,15 @@ fn validate_role_assignment(
 
 fn check_missing_roles(
     db: &dyn Db,
+    workspace: Workspace,
     instance: &HubInstance<'_>,
     hub_type: HubType<'_>,
     type_name: String,
     errors: &mut Vec<ValidationError>,
 ) {
-    for role_def in hub_type.roles(db) {
+    // ponytail: Use polymorphic role lookup to respect EXTENDS inheritance
+    let all_roles = hub_type_all_roles(db, workspace, &hub_type);
+    for role_def in all_roles {
         let mult = Multiplicity::parse(&role_def.multiplicity);
         let min_required = match mult {
             Multiplicity::Range(min, _) => min > 0,

@@ -9,6 +9,7 @@
 // @ts-check
 
 const OP_PREC = {
+  ARROW: 0,
   LOGICAL: 1,
   EQUALITY: 2,
   ADD: 3,
@@ -77,8 +78,18 @@ module.exports = grammar({
 
     hubs_block: ($) => seq("HUBS", "[", commaSep($.hub_definition), "]"),
 
+    extension_clause: ($) => seq("EXTENDS", "[", commaSep1($.identifier), "]"),
+
     hub_definition: ($) =>
-      seq($.identifier, "{", commaSep(choice($.hub_field, $.hub_role)), "}"),
+      seq(
+        $.identifier,
+        optional($._extension),
+        "{",
+        commaSep(choice($.hub_field, $.hub_role)),
+        "}",
+      ),
+
+    _extension: ($) => $.extension_clause,
 
     hub_field: ($) => seq($.identifier, optional(seq("=", $.decorator))),
 
@@ -148,6 +159,8 @@ module.exports = grammar({
         $.binary_expression,
         $.unary_expression,
         $.member_expression,
+        $.call_expression,
+        $.arrow_function,
         $.identifier,
         $.number,
         $.string,
@@ -169,6 +182,27 @@ module.exports = grammar({
           ".",
           field("property", $.identifier),
         ),
+      ),
+
+    call_expression: ($) =>
+      prec(
+        OP_PREC.MEMBER,
+        seq(
+          field("function", $._expression),
+          "(",
+          commaSep($._expression),
+          ")"
+        )
+      ),
+
+    arrow_function: ($) =>
+      prec(
+        OP_PREC.ARROW,
+        seq(
+          field("parameter", $.identifier),
+          "=>",
+          field("body", $._expression)
+        )
       ),
 
     unary_expression: ($) =>

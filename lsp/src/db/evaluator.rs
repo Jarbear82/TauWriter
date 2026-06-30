@@ -25,6 +25,16 @@ pub enum Expr {
     },
     /// Parenthesized sub-expression
     Group(Box<Expr>),
+    /// Call expression (for collection operators)
+    Call {
+        target: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    /// Arrow function / lambda expression
+    Arrow {
+        param: String,
+        body: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,6 +100,13 @@ impl<'a> Tokenizer<'a> {
         // Number (digits only, since "." is handled above)
         if ch.is_ascii_digit() {
             return self.read_number();
+        }
+
+        if ch == b'=' {
+            if self.pos + 1 < self.src.len() && self.src.as_bytes()[self.pos + 1] == b'>' {
+                self.pos += 2;
+                return Tok::Op("=>".to_string());
+            }
         }
 
         // Operators and punctuation
@@ -169,7 +186,7 @@ pub fn parse_expression(src: &str) -> Option<Expr> {
         tokens.push(tok);
     }
     let mut parser = Parser { tokens, pos: 0 };
-    parser.parse_add()
+    parser.parse_arrow()
 }
 
 struct Parser {
@@ -186,6 +203,23 @@ impl Parser {
         let tok = self.tokens[self.pos].clone();
         self.pos += 1;
         tok
+    }
+
+    fn parse_arrow(&mut self) -> Option<Expr> {
+        if self.pos + 1 < self.tokens.len() {
+            if let (Tok::Ident(param), Tok::Op(ref op)) = (&self.tokens[self.pos], &self.tokens[self.pos + 1]) {
+                if op == "=>" {
+                    let param = param.clone();
+                    self.pos += 2; // consume param and =>
+                    let body = self.parse_arrow()?;
+                    return Some(Expr::Arrow {
+                        param,
+                        body: Box::new(body),
+                    });
+                }
+            }
+        }
+        self.parse_add()
     }
 
     fn parse_add(&mut self) -> Option<Expr> {
@@ -239,14 +273,43 @@ impl Parser {
 
     fn parse_member(&mut self) -> Option<Expr> {
         let mut target = self.parse_primary()?;
-        while matches!(self.peek(), Tok::Dot) {
-            self.eat(); // consume dot
+        loop {
             match self.peek().clone() {
-                Tok::Ident(member) => {
-                    self.eat();
-                    target = Expr::DotAccess {
+                Tok::Dot => {
+                    self.eat(); // consume dot
+                    match self.peek().clone() {
+                        Tok::Ident(member) => {
+                            self.eat();
+                            target = Expr::DotAccess {
+                                target: Box::new(target),
+                                member: member.to_string(),
+                            };
+                        }
+                        _ => return None,
+                    }
+                }
+                Tok::LParen => {
+                    self.eat(); // consume LParen
+                    let mut args = Vec::new();
+                    if !matches!(self.peek(), Tok::RParen) {
+                        loop {
+                            let arg = self.parse_arrow()?;
+                            args.push(arg);
+                            if matches!(self.peek(), Tok::Op(ref o) if o == ",") {
+                                self.eat(); // consume comma
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if matches!(self.peek(), Tok::RParen) {
+                        self.eat(); // consume RParen
+                    } else {
+                        return None;
+                    }
+                    target = Expr::Call {
                         target: Box::new(target),
-                        member: member.to_string(),
+                        args,
                     };
                 }
                 _ => break,
@@ -275,7 +338,7 @@ impl Parser {
             }
             Tok::LParen => {
                 self.eat();
-                let inner = self.parse_add()?;
+                let inner = self.parse_arrow()?;
                 if matches!(self.peek(), Tok::RParen) {
                     self.eat();
                 }
@@ -293,37 +356,114 @@ pub fn evaluate_ast(
     instance: HubInstance<'_>,
     expr: &Expr,
 ) -> Option<HubValue> {
+    evaluate_ast_impl(db, workspace, instance, expr, None)
+}
+
+fn evaluate_ast_impl(
+    db: &dyn Db,
+    workspace: Workspace,
+    instance: HubInstance<'_>,
+    expr: &Expr,
+    lambda_ctx: Option<(&str, &HubValue)>,
+) -> Option<HubValue> {
     match expr {
         Expr::Literal(ExprValue::Number(n)) => Some(HubValue::Number(format!("{}", n))),
         Expr::Literal(ExprValue::String(s)) => Some(HubValue::String(s.clone())),
         Expr::Literal(ExprValue::Boolean(b)) => Some(HubValue::Boolean(*b)),
 
-        Expr::Ident(name) => resolve_field_or_this(db, workspace, instance, name),
+        Expr::Ident(name) => {
+            if let Some((param_name, param_val)) = lambda_ctx {
+                if name == param_name {
+                    return Some(param_val.clone());
+                }
+            }
+            resolve_field_or_this(db, workspace, instance, name)
+        }
 
         Expr::Binary { op, left, right } => {
-            let lval = evaluate_ast(db, workspace, instance, left)?;
-            let rval = evaluate_ast(db, workspace, instance, right)?;
+            let lval = evaluate_ast_impl(db, workspace, instance, left, lambda_ctx)?;
+            let rval = evaluate_ast_impl(db, workspace, instance, right, lambda_ctx)?;
             apply_binary(op, &lval, &rval)
         }
 
         Expr::Unary { op, operand } => {
-            let oval = evaluate_ast(db, workspace, instance, operand)?;
+            let oval = evaluate_ast_impl(db, workspace, instance, operand, lambda_ctx)?;
             apply_unary(op, &oval)
         }
 
-        Expr::Group(inner) => evaluate_ast(db, workspace, instance, inner),
+        Expr::Group(inner) => evaluate_ast_impl(db, workspace, instance, inner, lambda_ctx),
 
         Expr::DotAccess { target, member } => {
-            // Special case: "this.member" resolves roles on the current instance directly.
             if let Expr::Ident(ref id) = **target {
                 if id == "this" {
                     return resolve_this_member(db, workspace, instance, member);
                 }
+                if let Some((param_name, param_val)) = lambda_ctx {
+                    if id == param_name {
+                        return resolve_dot_member(db, workspace, instance, param_val, member);
+                    }
+                }
             }
-            let target_val = evaluate_ast(db, workspace, instance, target)?;
+            let target_val = evaluate_ast_impl(db, workspace, instance, target, lambda_ctx)?;
             resolve_dot_member(db, workspace, instance, &target_val, member)
         }
+
+        Expr::Call { target, args } => {
+            if let Expr::DotAccess { target: ref sub_target, ref member } = **target {
+                let target_val = evaluate_ast_impl(db, workspace, instance, sub_target, lambda_ctx)?;
+                match member.as_str() {
+                    "len" => {
+                        if let HubValue::Array(vals) = target_val {
+                            return Some(HubValue::Number(format!("{}", vals.len())));
+                        }
+                    }
+                    "map" => {
+                        if let HubValue::Array(vals) = target_val {
+                            if let Some(Expr::Arrow { ref param, ref body }) = args.first() {
+                                let mut mapped_vals = Vec::new();
+                                for val in vals {
+                                    if let Some(res) = evaluate_lambda(db, workspace, instance, body, param, &val) {
+                                        mapped_vals.push(res);
+                                    }
+                                }
+                                return Some(HubValue::Array(mapped_vals));
+                            }
+                        }
+                    }
+                    "join" => {
+                        if let HubValue::Array(vals) = target_val {
+                            if let Some(arg_expr) = args.first() {
+                                if let Some(HubValue::String(delim)) = evaluate_ast_impl(db, workspace, instance, arg_expr, lambda_ctx) {
+                                    let mut string_parts = Vec::new();
+                                    for val in vals {
+                                        if let Some(s) = hub_value_to_string(&val) {
+                                            string_parts.push(s);
+                                        }
+                                    }
+                                    return Some(HubValue::String(string_parts.join(&delim)));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        Expr::Arrow { .. } => None,
     }
+}
+
+fn evaluate_lambda(
+    db: &dyn Db,
+    workspace: Workspace,
+    instance: HubInstance<'_>,
+    body: &Expr,
+    param: &str,
+    val: &HubValue,
+) -> Option<HubValue> {
+    evaluate_ast_impl(db, workspace, instance, body, Some((param, val)))
 }
 
 /// Resolve a member access on "this" (the current instance).
@@ -423,7 +563,26 @@ fn resolve_role_targets(
     let mut targets = Vec::new();
     for ref_name in refs {
         if let Some(target_inst) = resolve_reference(db, workspace, ref_name.clone()) {
-            if role_def.allowed_types.contains(&target_inst.type_name(db)) {
+            // ponytail: Polymorphic filtering - child types satisfy parent roles
+            let target_type_name = target_inst.type_name(db);
+            let allowed = if role_def.allowed_types.contains(&target_type_name) {
+                true
+            } else if let Some(parent_type) = resolve_type(
+                db,
+                workspace,
+                target_inst.file(db),
+                target_type_name.clone(),
+            ) {
+                crate::db::polymorphic::hub_type_allows(
+                    db,
+                    workspace,
+                    &parent_type,
+                    &role_def.allowed_types,
+                )
+            } else {
+                false
+            };
+            if allowed {
                 targets.push(HubValue::Identifier(ref_name));
             }
         }

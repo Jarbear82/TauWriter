@@ -8,11 +8,19 @@
         "named": true
       },
       {
+        "type": "arrow_function",
+        "named": true
+      },
+      {
         "type": "binary_expression",
         "named": true
       },
       {
         "type": "boolean",
+        "named": true
+      },
+      {
+        "type": "call_expression",
         "named": true
       },
       {
@@ -58,6 +66,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "arrow_function",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "_expression",
+            "named": true
+          }
+        ]
+      },
+      "parameter": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -128,6 +162,32 @@
     "type": "boolean",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "call_expression",
+    "named": true,
+    "fields": {
+      "function": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "_expression",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "_expression",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "decorator",
@@ -202,6 +262,21 @@
     }
   },
   {
+    "type": "extension_clause",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "field_definition",
     "named": true,
     "fields": {},
@@ -262,6 +337,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "extension_clause",
+          "named": true
+        },
         {
           "type": "hub_field",
           "named": true
@@ -748,6 +827,10 @@
     "named": false
   },
   {
+    "type": "=>",
+    "named": false
+  },
+  {
     "type": ">",
     "named": false
   },
@@ -773,6 +856,10 @@
   },
   {
     "type": "ENUMS",
+    "named": false
+  },
+  {
+    "type": "EXTENDS",
     "named": false
   },
   {

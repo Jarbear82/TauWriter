@@ -1,13 +1,10 @@
 use tauwriter_lsp::db;
 use tauwriter_lsp::RootDatabase;
 
-/// Wrap TWXML content in the required skeleton: <document><metadata></metadata><body>...</body></document>
+/// Wrap TWXML content in the required skeleton: <document><body>...</body></document>
 macro_rules! twxml {
     ($content:expr) => {
-        format!(
-            "<document><metadata></metadata><body>{}</body></document>",
-            $content
-        )
+        format!("<document><body>{}</body></document>", $content)
     };
 }
 
@@ -454,7 +451,7 @@ INSTANCES [ hero:Person { name = 'Hero' } ]
 fn test_twxml_skeleton_missing_metadata() {
     let mut db = RootDatabase::default();
 
-    // Document with <body> but no <metadata>
+    // Document with <body> but no <meta /> — still valid (meta tags are optional)
     let twxml_content = "<document><body><paragraph>Hello</paragraph></body></document>";
     let twxml_file = db::SourceFile::new(
         &mut db,
@@ -464,17 +461,19 @@ fn test_twxml_skeleton_missing_metadata() {
     let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
 
     let errors = db::validate_file(&db, workspace, twxml_file);
-    assert!(errors
-        .iter()
-        .any(|e| e.message == "Document missing required <metadata> block"));
+    assert!(
+        errors.is_empty(),
+        "Expected no errors for valid document without meta tags, found: {:?}",
+        errors
+    );
 }
 
 #[test]
 fn test_twxml_skeleton_missing_body() {
     let mut db = RootDatabase::default();
 
-    // Document with <metadata> but no <body>
-    let twxml_content = "<document><metadata></metadata></document>";
+    // Document with <meta /> but no <body>
+    let twxml_content = "<document><meta /></document>";
     let twxml_file = db::SourceFile::new(
         &mut db,
         "no_body.twxml".to_string(),
@@ -492,9 +491,8 @@ fn test_twxml_skeleton_missing_body() {
 fn test_twxml_skeleton_valid() {
     let mut db = RootDatabase::default();
 
-    // Valid document with both blocks
-    let twxml_content =
-        "<document><metadata></metadata><body><paragraph>Hello</paragraph></body></document>";
+    // Valid document without <metadata> — meta tags are optional
+    let twxml_content = "<document><body><paragraph>Hello</paragraph></body></document>";
     let twxml_file = db::SourceFile::new(
         &mut db,
         "valid.twxml".to_string(),
@@ -989,3 +987,355 @@ INSTANCES [
     let version_val = db::compute_field_value(&db, workspace, a1, "version".to_string());
     assert_eq!(version_val, Some(db::HubValue::Number("1".to_string())));
 }
+
+// ============================================================
+// Polymorphic Type Resolution Tests (P2/P3)
+// ============================================================
+
+#[test]
+fn test_polymorphic_validation_child_satisfies_parent_role() {
+    // P3: Child type extending parent should validate when role accepts parent
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name
+        },
+        Dog EXTENDS [Animal] {
+            name,
+            role -> (1) ALLOWS [Animal]
+        }
+    ]
+],
+INSTANCES [
+    buddy:Dog { name = 'Buddy', role = [rex] },
+    rex:Animal { name = 'Rex' }
+]
+";
+    let hubgs_file =
+        db::SourceFile::new(&mut db, "poly.hubgs".to_string(), hubgs_content.to_string());
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // buddy.role references rex (type Animal), which is in Dog's allowed_types [Animal]
+    // This should validate successfully since Buddy is a Dog and Dog extends Animal
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for polymorphic assignment, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_no_extends_fails() {
+    // Robot does NOT extend Animal -> should fail role assignment when role expects [Animal]
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name
+        },
+        Robot {
+            name,
+            serve -> (1) ALLOWS [Animal]
+        }
+    ]
+],
+INSTANCES [
+    robby:Robot { name = 'Robby', serve = [robby] }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_fail.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // whiskers.serve role accepts [Animal], robby is Robot (does NOT extend Animal)
+    // This should produce a type mismatch error
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        !errors.is_empty(),
+        "Expected type mismatch error for non-extended type"
+    );
+    assert!(
+        errors.iter().any(|e| e.message.contains("Type mismatch")),
+        "Expected type mismatch error, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_multi_extends_satisfies_any_parent() {
+    // P2: Multi-parent EXTENDS - child should satisfy any parent's role
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name
+        },
+        Mammal {
+            name
+        },
+        Dragon EXTENDS [Animal, Mammal] {
+            name,
+            roar_to -> (1) ALLOWS [Mammal],
+            fly_to -> (1) ALLOWS [Animal]
+        }
+    ]
+],
+INSTANCES [
+    draco:Dragon { name = 'Draco', roar_to = [spike], fly_to = [sparky] },
+    spike:Mammal { name = 'Spike' },
+    sparky:Animal { name = 'Sparky' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_multi.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // Dragon extends both Animal and Mammal - should satisfy either parent's role
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for multi-extends polymorphic assignment, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_transitive_extends() {
+    // Role accepts [LivingThing], instance is Animal (extends LivingThing) -> valid
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        LivingThing {
+            name,
+            keeper -> (0..1) ALLOWS [LivingThing]
+        },
+        Animal EXTENDS [LivingThing] {
+            name
+        }
+    ]
+],
+INSTANCES [
+    leo:Animal { name = 'Leo', keeper = [keeper_inst] },
+    keeper_inst:LivingThing { name = 'Keeper' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_transitive.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // keeper role accepts [LivingThing], leo's keeper is LivingThing - exact match works
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for transitive extends with direct grandparent instance, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_grandchild_role_match() {
+    // When role accepts [LivingThing], an Animal instance (extends LivingThing) should satisfy it
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        LivingThing {
+            name,
+            keeper -> (0..1) ALLOWS [LivingThing]
+        },
+        Animal EXTENDS [LivingThing] {
+            name,
+            parent -> (0..1) ALLOWS [LivingThing]
+        }
+    ]
+],
+INSTANCES [
+    leo:Animal { name = 'Leo', keeper = [grandparent] },
+    grandparent:LivingThing { name = 'Grandparent' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_grandchild.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // keeper role accepts [LivingThing], grandparent is LivingThing - exact match works
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for grandchild-instance filling grandparent-role, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_child_as_parent_instance() {
+    // True polymorphism: role accepts [Animal], instance is Dog (extends Animal)
+    // This validates the extends_parents traversal works correctly
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name,
+            keeper -> (0..1) ALLOWS [Animal]
+        },
+        Dog EXTENDS [Animal] {
+            name
+        }
+    ]
+],
+INSTANCES [
+    buddy:Dog { name = 'Buddy' },
+    whiskers:Animal { name = 'Whiskers', keeper = [buddy] }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_child_as_parent.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // whiskers.keeper role accepts [Animal], buddy is Dog which extends Animal
+    // This should pass via polymorphism (no exact 'Animal' instance needed)
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for child-instance filling parent-role, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_grandchild_as_grandparent_instance() {
+    // Grandchild fills grandparent role (two levels of inheritance)
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        LivingThing {
+            name,
+            caretaker -> (0..1) ALLOWS [LivingThing]
+        },
+        Animal EXTENDS [LivingThing] {
+            name
+        },
+        Dog EXTENDS [Animal] {
+            name
+        }
+    ]
+],
+INSTANCES [
+    buddy:Dog { name = 'Buddy' },
+    guardian:LivingThing { name = 'Guardian', caretaker = [buddy] }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_grandchild_as_gp.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // caretaker role accepts [LivingThing], buddy is Dog which extends Animal which extends LivingThing
+    // This validates the full chain traversal works
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for grandchild-instance filling grandparent-role, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_computed_collection_operators() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        companions_count: Number,
+        companions_joined: Text
+    ],
+    HUBS [
+        Person {
+            name,
+            companions <-> (0..*) ALLOWS [Person],
+            companions_count = @computed(this.companions.len()),
+            companions_joined = @computed(this.companions.map(c => c.name).join(', '))
+        }
+    ]
+],
+INSTANCES [
+    aragorn:Person { name = 'Aragorn', companions = [gandalf, legolas] },
+    gandalf:Person { name = 'Gandalf' },
+    legolas:Person { name = 'Legolas' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "collections.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let aragorn_inst = instances.iter().find(|i| i.name(&db) == "aragorn").cloned().unwrap();
+
+    let count_val = db::compute_field_value(&db, workspace, aragorn_inst, "companions_count".to_string());
+    let joined_val = db::compute_field_value(&db, workspace, aragorn_inst, "companions_joined".to_string());
+
+    assert_eq!(count_val, Some(db::HubValue::Number("2".to_string())));
+    assert_eq!(
+        joined_val,
+        Some(db::HubValue::String("Gandalf, Legolas".to_string()))
+    );
+}
+

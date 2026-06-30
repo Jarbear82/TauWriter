@@ -1,6 +1,6 @@
 /**
  * @file TWXML grammar for tree-sitter
- * Strict structural enforcement: <document><metadata></metadata><body>...</body></document>
+ * Strict structural enforcement: <document><meta /><body>...</body></document>
  */
 
 /// <reference types="tree-sitter-cli/dsl" />
@@ -22,18 +22,18 @@ module.exports = grammar({
     document_block: ($) =>
       seq(
         "<document>",
-        optional($.metadata_block),
-        optional($.body_block),
+        repeat($.meta_tag), // zero or more <meta /> before body
+        $.body_block, // exactly one <body> (required)
         "</document>",
       ),
 
-    metadata_block: ($) =>
-      seq("<metadata>", repeat($._inner_node), "</metadata>"),
+    meta_tag: ($) =>
+      seq("<", field("name", $.tag_name), repeat($.attribute), "/>"),
 
     body_block: ($) => seq("<body>", repeat($._inner_node), "</body>"),
 
     // ------------------------------------------------------------------------
-    // Inner nodes (shared between metadata and body)
+    // Inner nodes (shared between document body and meta context)
     // ------------------------------------------------------------------------
 
     _inner_node: ($) => choice($.element, $.self_closing_element, $.text),

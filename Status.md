@@ -57,13 +57,13 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | Feature | Status | Notes |
 |:---|:---:|:---|
 | **TWXML Formatting** | ✅ | 26 block tags known; 2-space indentation; block-level children indent at `+1`; self-closing tags respect indentation; inline content stays compact. |
-| **HubGS Formatting** | ⚠️ Partial | Basic support via `formatter/hubgs.rs`. Missing: `EXTENDS` block, chained method calls, arrow functions. |
+| **HubGS Formatting** | ⚠️ Partial | Basic support via `formatter/hubgs.rs`. Missing: chained method calls, arrow functions (EXTENDS block is implemented). |
 | **`textDocument/formatting` handler** | ✅ | JSON-RPC tested and wired up. |
-| **TWXML `<meta />` formatting** | ⚠️ Pending | Update to drop `format_metadata_block` and natively format `<meta />` under `<document>`. |
+| **TWXML `<meta />` formatting** | ✅ | `<meta>` handled as `SelfClosingBlock` in `tag_behavior()`; listed in `VALID_TWXML_TAGS`. |
 
 #### Current Focus: Formatter
-- Add HubGS formatting support for the `EXTENDS` block, chained method calls, and arrow functions.
-- Update TWXML formatter for post-`<metadata>`-deprecation structure.
+- Add HubGS formatting support for chained method calls and arrow functions (EXTENDS block is implemented).
+- TWXML formatter fully updated for post-`<metadata>`-deprecation structure. All tests pass.
 
 ### JSON-RPC API
 
@@ -107,7 +107,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `handlers/information.rs` | hover (Hub details with documentation) |
 | `handlers/features.rs` | semanticTokens/full, codeAction, inlayHint |
 | `handlers/code_lens.rs` | codeLens (inline "X references" hints above Hub instances) |
-| `handlers/inlay_hints.rs` | inlayHints (`: TypeName` type annotations) — implemented, no dedicated test yet |
+| `handlers/inlay_hints.rs` | inlayHints (`: TypeName` type annotations) — implemented, tested in `lsp_jsonrpc_tests.rs` |
 | `handlers/documents.rs` | didOpen, didChange, didClose, didSave (stub), formatting, onTypeFormatting, foldingRange |
 
 #### Unimplemented LSP Methods (No Test)
@@ -165,6 +165,13 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `repository` (extension.toml) | ✅ | `"https://github.com/Jarbear82/TauWriter"` |
 | `rev` (extension.toml) | ✅ | `"main"` |
 | `path` (extension.toml) | ✅ | `"extension/languages/twxml"` |
+##### Grammar Structure
+| Rule | Status | Notes |
+|:---|:---:|:---|
+| `source_file` → `document_block` | ✅ | Root node |
+| `meta_tag` (self-closing) | ✅ | Replaces deprecated `<metadata>` wrapper; optional, zero or more |
+| `body_block` (required) | ✅ | Exactly one required between `<document>` and `</document>` |
+| C parser (`parser.c`) | ✅ | ABI 14, regenerated via `tree-sitter generate` |
 
 ##### Queries
 
@@ -173,7 +180,8 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 |:---|:---:|:---|
 | `<document>`, `</document>` | ✅ | `@keyword.control` (structural boundaries) |
 | `<body>`, `</body>` | ✅ | `@keyword.control` |
-| `<metadata>`, `</metadata>` | ✅ | `@keyword.control` (deprecated, kept for backwards compat) |
+| `<meta />` | ✅ | `@keyword.control` (new format, replaces deprecated <metadata>) |
+| `<metadata>`, `</metadata>` | ⬜ Removed | Legacy wrapper — no longer in grammar or highlights
 | `(tag_name)` | ✅ | `@tag` (generic elements) |
 | `(attribute_name)` | ✅ | `@attribute` |
 | `(attribute_value)` | ✅ | `@string` |

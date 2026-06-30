@@ -1724,7 +1724,7 @@ INSTANCES [
     aragorn: Character { name = 'Elessar' }
 ]
 ";
-    let twxml_content = r#"<document><metadata></metadata><body><review><hubref id="aragorn" field="name">Strider</hubref></review></body></document>"#;
+    let twxml_content = r#"<document><body><review><hubref id="aragorn" field="name">Strider</hubref></review></body></document>"#;
 
     {
         let mut db_lock = db_arc.lock().await;
@@ -1839,7 +1839,7 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
     // Register twxml file that references tailor via hubref id
     let twxml_path = std::env::current_dir().unwrap().join("twtest_story.twxml");
     let twxml_uri = Url::from_file_path(&twxml_path).unwrap();
-    let twxml_content = "<document><metadata></metadata><body>\n\
+    let twxml_content = "<document><body>\n\
       <paragraph>\n\
         <hubref id=\"tailor\" field=\"name\">The Brave Little Tailor</hubref>\n\
       </paragraph>\n\
@@ -2318,8 +2318,6 @@ async fn test_code_lens_twxml_jsonrpc() {
     let path = std::env::current_dir().unwrap().join("test_codelens.twxml");
     let uri = Url::from_file_path(&path).unwrap();
     let content = r#"<document>
-  <metadata>
-  </metadata>
   <body>
     <section>
       <paragraph>

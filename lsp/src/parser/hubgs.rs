@@ -190,6 +190,26 @@ fn parse_hubs_block<'a>(
         if hub_def.kind() == "hub_definition" {
             if let Some(name_node) = hub_def.child(0) {
                 let name = contents[name_node.byte_range()].to_string();
+                // ponytail: Extract parent types from optional EXTENDS clause
+                let mut ext_nodes: Vec<_> = hub_def
+                    .children(&mut hub_def.walk())
+                    .filter(|c| c.kind() == "extension_clause")
+                    .collect();
+                let extends_parents: Vec<String> = ext_nodes
+                    .drain(..)
+                    .flat_map(|ext| {
+                        (0..ext.child_count()).filter_map(move |i| {
+                            ext.child(i).and_then(|child| {
+                                if child.kind() == "identifier" {
+                                    Some(contents[child.byte_range()].to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                    })
+                    .collect();
+
                 let mut fields = Vec::new();
                 let mut roles = Vec::new();
 
@@ -225,6 +245,7 @@ fn parse_hubs_block<'a>(
                     super::ts_range_to_lsp(hub_def.range()),
                     fields,
                     roles,
+                    extends_parents,
                 ));
             }
         }

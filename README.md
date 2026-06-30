@@ -70,8 +70,6 @@ A semantic markup language for prose. It uses nesting depth to determine structu
 
 ```xml
 <document>
-  <metadata>
-  </metadata>
   <body>
     <section>
       <heading>The Journey Begins</heading>
