@@ -16,8 +16,13 @@
         {
           "type": "REPEAT",
           "content": {
-            "type": "SYMBOL",
-            "name": "meta_tag"
+            "type": "ALIAS",
+            "content": {
+              "type": "SYMBOL",
+              "name": "self_closing_element"
+            },
+            "named": true,
+            "value": "meta_tag"
           }
         },
         {
@@ -29,38 +34,6 @@
           "value": "</document>"
         }
       ]
-    },
-    "meta_tag": {
-      "type": "PREC_DYNAMIC",
-      "value": 1,
-      "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "STRING",
-            "value": "<"
-          },
-          {
-            "type": "FIELD",
-            "name": "name",
-            "content": {
-              "type": "SYMBOL",
-              "name": "tag_name"
-            }
-          },
-          {
-            "type": "REPEAT",
-            "content": {
-              "type": "SYMBOL",
-              "name": "attribute"
-            }
-          },
-          {
-            "type": "STRING",
-            "value": "/>"
-          }
-        ]
-      }
     },
     "body_block": {
       "type": "SEQ",
@@ -313,12 +286,7 @@
       "name": "comment"
     }
   ],
-  "conflicts": [
-    [
-      "meta_tag",
-      "self_closing_element"
-    ]
-  ],
+  "conflicts": [],
   "precedences": [],
   "externals": [],
   "inline": [
