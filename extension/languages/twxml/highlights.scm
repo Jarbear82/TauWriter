@@ -1,25 +1,136 @@
-; Structural block boundaries (match the literal string tokens)
-"<document>" @keyword.control
-"</document>" @keyword.control
-"<body>" @keyword.control
-"</body>" @keyword.control
+; highlights.scm for TWXML (Zed)
 
-; Tags (generic elements inside body)
-(tag_name) @tag
+; ----------------------------------------------------------------------
+; Structural literal keywords — fixed, mandatory document shell
+; ----------------------------------------------------------------------
 
+"<document>" @keyword
+"</document>" @keyword
+"<body>" @keyword
+"</body>" @keyword
+
+; ----------------------------------------------------------------------
+; Punctuation
+; ----------------------------------------------------------------------
+
+(start_tag ["<" ">"] @punctuation.bracket)
+(end_tag ["</" ">"] @punctuation.bracket)
+(self_closing_element ["<" "/>"] @punctuation.bracket)
+
+"=" @operator
+
+; ----------------------------------------------------------------------
+; Tag names — generic fallback
+; ----------------------------------------------------------------------
+
+(start_tag name: (tag_name) @tag)
+(end_tag name: (tag_name) @tag)
+(self_closing_element name: (tag_name) @constructor)
+
+; <meta /> tags (aliased node) — distinct from generic self-closing tags
+(meta_tag name: (tag_name) @keyword)
+
+; ----------------------------------------------------------------------
+; Specialized tag names (contextual overrides by name)
+; ----------------------------------------------------------------------
+
+(
+  (start_tag name: (tag_name) @title)
+  (#eq? @title "heading")
+)
+(
+  (end_tag name: (tag_name) @title)
+  (#eq? @title "heading")
+)
+
+(
+  (start_tag name: (tag_name) @keyword)
+  (#eq? @keyword "section")
+)
+(
+  (end_tag name: (tag_name) @keyword)
+  (#eq? @keyword "section")
+)
+
+(
+  (start_tag name: (tag_name) @label)
+  (#eq? @label "hubref")
+)
+(
+  (end_tag name: (tag_name) @label)
+  (#eq? @label "hubref")
+)
+
+(
+  (start_tag name: (tag_name) @emphasis.strong)
+  (#eq? @emphasis.strong "bold")
+)
+(
+  (end_tag name: (tag_name) @emphasis.strong)
+  (#eq? @emphasis.strong "bold")
+)
+
+(
+  (start_tag name: (tag_name) @emphasis)
+  (#eq? @emphasis "italic")
+)
+(
+  (end_tag name: (tag_name) @emphasis)
+  (#eq? @emphasis "italic")
+)
+
+(
+  (start_tag name: (tag_name) @hint)
+  (#eq? @hint "review")
+)
+(
+  (end_tag name: (tag_name) @hint)
+  (#eq? @hint "review")
+)
+
+; ----------------------------------------------------------------------
+; Specialized content — the text actually being formatted
+; ----------------------------------------------------------------------
+
+(element
+  (start_tag name: (tag_name) @_tag)
+  (text) @title
+  (#eq? @_tag "heading")
+)
+
+(element
+  (start_tag name: (tag_name) @_tag)
+  (text) @emphasis.strong
+  (#eq? @_tag "bold")
+)
+
+(element
+  (start_tag name: (tag_name) @_tag)
+  (text) @emphasis
+  (#eq? @_tag "italic")
+)
+
+(element
+  (start_tag name: (tag_name) @_tag)
+  (text) @hint
+  (#eq? @_tag "review")
+)
+
+(element
+  (start_tag name: (tag_name) @_tag)
+  (text) @link_text
+  (#eq? @_tag "hubref")
+)
+
+; ----------------------------------------------------------------------
 ; Attributes
-(attribute_name) @attribute
+; ----------------------------------------------------------------------
+
+(attribute name: (attribute_name) @attribute)
 (attribute_value) @string
 
-; Brackets (for generic inner elements)
-["<" ">" "</" "/>"] @punctuation.bracket
-
+; ----------------------------------------------------------------------
 ; Comments
-(comment) @comment
+; ----------------------------------------------------------------------
 
-; Specialized Tags (Contextual) - still applies to tag_name nodes
-((tag_name) @keyword.control (#match? @keyword.control "^(meta|section)$"))
-((tag_name) @keyword (#match? @keyword "^(hubref)$"))
-((tag_name) @markup.bold (#match? @markup.bold "^(bold)$"))
-((tag_name) @markup.italic (#match? @markup.italic "^(italic)$"))
-((tag_name) @keyword.exception (#match? @keyword.exception "^(review)$"))
+(comment) @comment
