@@ -12,6 +12,8 @@ module.exports = grammar({
 
   inline: ($) => [$._inner_node, $._node_content],
 
+  conflicts: ($) => [[$.meta_tag, $.self_closing_element]],
+
   rules: {
     // ------------------------------------------------------------------------
     // Root & Structural Blocks
@@ -28,7 +30,10 @@ module.exports = grammar({
       ),
 
     meta_tag: ($) =>
-      seq("<", field("name", $.tag_name), repeat($.attribute), "/>"),
+      prec.dynamic(
+        1,
+        seq("<", field("name", $.tag_name), repeat($.attribute), "/>"),
+      ),
 
     body_block: ($) => seq("<body>", repeat($._inner_node), "</body>"),
 

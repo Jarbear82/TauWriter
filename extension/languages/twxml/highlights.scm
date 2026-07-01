@@ -5,7 +5,6 @@
 "</body>" @keyword.control
 
 ; Tags (generic elements inside body)
-(meta_tag) @tag
 (tag_name) @tag
 
 ; Attributes
