@@ -2,6 +2,7 @@ use ropey::Rope;
 use tower_lsp::lsp_types::*;
 
 use crate::Backend;
+use salsa::prelude::*;
 
 pub async fn did_open(server: &Backend, params: DidOpenTextDocumentParams) {
     let uri = params.text_document.uri;
@@ -337,4 +338,61 @@ pub fn get_range_text(contents: &str, range: lsp_types::Range) -> String {
         return result.join("\n");
     }
     String::new()
+}
+
+pub async fn did_change_watched_files(server: &Backend, params: DidChangeWatchedFilesParams) {
+    let mut files_updated = false;
+    let mut affected_files = Vec::new();
+
+    {
+        let mut db = server.db.lock().await;
+        let ws = *server.workspace_input.lock().await;
+        let mut files = ws.files(&*db).clone();
+
+        for event in params.changes {
+            if let Ok(path) = event.uri.to_file_path() {
+                let path_str = path.to_string_lossy().to_string();
+                match event.typ {
+                    FileChangeType::CREATED | FileChangeType::CHANGED => {
+                        if let Ok(contents) = std::fs::read_to_string(&path) {
+                            if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
+                                files[idx].set_contents(&mut *db).to(contents.clone());
+                            } else {
+                                let source = crate::db::SourceFile::new(&mut *db, path_str.clone(), contents.clone());
+                                files.push(source);
+                            }
+                            if server.open_files.contains_key(&event.uri) {
+                                server.open_files.insert(event.uri.clone(), Rope::from_str(&contents));
+                            }
+                            files_updated = true;
+                            affected_files.push(event.uri);
+                        }
+                    }
+                    FileChangeType::DELETED => {
+                        if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
+                            files.remove(idx);
+                            server.open_files.remove(&event.uri);
+                            files_updated = true;
+                            server.client.publish_diagnostics(event.uri.clone(), Vec::new(), None).await;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if files_updated {
+            let ws_input = server.workspace_input.lock().await;
+            ws_input.set_files(&mut *db).to(files);
+        }
+    }
+
+    for uri in affected_files {
+        server.publish_diagnostics(uri).await;
+    }
+
+    let open_uris: Vec<Url> = server.open_files.iter().map(|kv| kv.key().clone()).collect();
+    for uri in open_uris {
+        server.publish_diagnostics(uri).await;
+    }
 }

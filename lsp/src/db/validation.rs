@@ -94,6 +94,7 @@ const VALID_TWXML_TAGS: &[&str] = &[
     "td",
     "footnote",
     "review",
+    "include",
 ];
 
 #[salsa::tracked]
@@ -197,6 +198,7 @@ fn validate_twxml(
                 message: format!("Unknown TWXML tag '{}'", tag.name(db)),
             });
         }
+
         // Validate nesting rules for 'heading'
         if tag.name(db) == "heading" {
             if let Some(parent_name) = tag.parent_name(db) {
@@ -214,46 +216,103 @@ fn validate_twxml(
         }
     }
 
-    // 3. Validate matching start/end tags via AST
+    // 3. Validate matching start/end tags, '<include />' tags, and '<meta />' tags via AST
     let language = unsafe { crate::parser::tree_sitter_twxml() };
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(language).ok();
 
     if let Some(tree) = parser.parse(&contents, None) {
         let mut stack = vec![tree.root_node()];
+        let mut metas = Vec::new();
 
         while let Some(node) = stack.pop() {
-            if node.kind() == "element" {
-                // Child 0 is start_tag, the last child is end_tag
-                if let (Some(start_tag), Some(end_tag)) =
-                    (node.child(0), node.child(node.child_count() - 1))
-                {
-                    if start_tag.kind() == "start_tag" && end_tag.kind() == "end_tag" {
-                        if let (Some(start_name_node), Some(end_name_node)) = (
-                            start_tag.child_by_field_name("name"),
-                            end_tag.child_by_field_name("name"),
-                        ) {
-                            let start_name = &contents[start_name_node.byte_range()];
-                            let end_name = &contents[end_name_node.byte_range()];
+            match node.kind() {
+                "meta_tag" => {
+                    metas.push(node);
+                }
+                "element" => {
+                    // Child 0 is start_tag, the last child is end_tag
+                    if let (Some(start_tag), Some(end_tag)) =
+                        (node.child(0), node.child(node.child_count() - 1))
+                    {
+                        if start_tag.kind() == "start_tag" && end_tag.kind() == "end_tag" {
+                            if let (Some(start_name_node), Some(end_name_node)) = (
+                                start_tag.child_by_field_name("name"),
+                                end_tag.child_by_field_name("name"),
+                            ) {
+                                let start_name = &contents[start_name_node.byte_range()];
+                                let end_name = &contents[end_name_node.byte_range()];
 
-                            if start_name != end_name {
-                                errors.push(ValidationError {
-                                    range: crate::parser::ts_range_to_lsp(end_tag.range()),
-                                    message: format!(
-                                        "Mismatched closing tag. Expected `</{}>`",
-                                        start_name
-                                    ),
-                                });
+                                if start_name != end_name {
+                                    errors.push(ValidationError {
+                                        range: crate::parser::ts_range_to_lsp(end_tag.range()),
+                                        message: format!(
+                                            "Mismatched closing tag. Expected `</{}>`",
+                                            start_name
+                                        ),
+                                    });
+                                }
+                                if start_name == "include" {
+                                    errors.push(ValidationError {
+                                        range: crate::parser::ts_range_to_lsp(node.range()),
+                                        message: "Invalid include: tag 'include' must be self-closing".to_string(),
+                                    });
+                                }
+                                if start_name == "meta" {
+                                    metas.push(node);
+                                }
                             }
                         }
                     }
                 }
+                "self_closing_element" => {
+                    if let Some(name_node) = node.child_by_field_name("name") {
+                        let name = &contents[name_node.byte_range()];
+                        if name == "include" {
+                            if !has_attribute(&node, &contents, "src") {
+                                errors.push(ValidationError {
+                                    range: crate::parser::ts_range_to_lsp(node.range()),
+                                    message: "Invalid include: tag 'include' must have a non-empty 'src' attribute".to_string(),
+                                });
+                            }
+                        }
+                        if name == "meta" {
+                            metas.push(node);
+                        }
+                    }
+                }
+                _ => {}
             }
 
             // Continue walking the tree
             let mut child_cursor = node.walk();
             for child in node.children(&mut child_cursor) {
                 stack.push(child);
+            }
+        }
+
+        // Validate `<meta />` nesting and positioning relative to `<body>`
+        let body_offset = contents.find("<body>");
+        for meta in &metas {
+            if let Some(body_off) = body_offset {
+                let meta_pos = crate::parser::ts_range_to_lsp(meta.range()).start;
+                let meta_off = lsp_pos_to_byte_offset(&contents, meta_pos);
+                if meta_off >= body_off {
+                    errors.push(ValidationError {
+                        range: crate::parser::ts_range_to_lsp(meta.range()),
+                        message: "Invalid positioning: tag 'meta' must precede the <body> block".to_string(),
+                    });
+                }
+            }
+        }
+        for meta in metas {
+            if let Some(parent) = meta.parent() {
+                if parent.kind() != "document_block" {
+                    errors.push(ValidationError {
+                        range: crate::parser::ts_range_to_lsp(meta.range()),
+                        message: "Invalid nesting: tag 'meta' is only allowed as a direct child of 'document'".to_string(),
+                    });
+                }
             }
         }
     }
@@ -529,4 +588,37 @@ fn validate_value_type(
 
 fn value_to_canonical(val: HubValue) -> String {
     val.to_string()
+}
+
+fn has_attribute(node: &tree_sitter::Node, contents: &str, attr_name: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "attribute" {
+            if let Some(name_child) = child.child(0) {
+                let name = &contents[name_child.byte_range()];
+                if name == attr_name {
+                    if let Some(val_child) = child.child(2) {
+                        let val = contents[val_child.byte_range()]
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .trim();
+                        return !val.is_empty();
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn lsp_pos_to_byte_offset(contents: &str, pos: super::LspPosition) -> usize {
+    let mut offset = 0;
+    for (i, line) in contents.lines().enumerate() {
+        if i == pos.line as usize {
+            offset += pos.character as usize;
+            break;
+        }
+        offset += line.len() + 1;
+    }
+    offset
 }

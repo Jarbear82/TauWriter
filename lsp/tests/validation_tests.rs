@@ -511,6 +511,113 @@ fn test_twxml_skeleton_valid() {
 }
 
 #[test]
+fn test_twxml_invalid_self_closing_tag() {
+    let mut db = RootDatabase::default();
+    let twxml_content = twxml!("<invalidtag />");
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "story.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("Unknown TWXML tag 'invalidtag'")));
+}
+
+#[test]
+fn test_twxml_meta_invalid_nesting() {
+    let mut db = RootDatabase::default();
+    // <meta /> nested inside <body>/paragraph is invalid
+    let twxml_content = "<document><body><paragraph><meta name=\"author\" content=\"Tolkien\"/></paragraph></body></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "nested_meta.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Invalid nesting: tag 'meta' is only allowed as a direct child of 'document'"));
+}
+
+#[test]
+fn test_twxml_meta_after_body() {
+    let mut db = RootDatabase::default();
+    // <meta /> placed after <body> is invalid
+    let twxml_content = "<document><body><paragraph>Hello</paragraph></body><meta name=\"author\" content=\"Tolkien\"/></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "ordered_meta.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+    let language = unsafe { tauwriter_lsp::parser::tree_sitter_twxml() };
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(language).unwrap();
+    let tree = parser.parse(&twxml_content, None).unwrap();
+    println!("AST TREE: {}", tree.root_node().to_sexp());
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    println!("ERRORS: {:?}", errors);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Invalid positioning: tag 'meta' must precede the <body> block"));
+}
+
+#[test]
+fn test_twxml_include_tag_valid() {
+    let mut db = RootDatabase::default();
+    let twxml_content = twxml!("<include src=\"chapter2.twxml\" />");
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "include_valid.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(!errors
+        .iter()
+        .any(|e| e.message.contains("Invalid include") || e.message.contains("Unknown TWXML tag")));
+}
+
+#[test]
+fn test_twxml_include_tag_invalid() {
+    let mut db = RootDatabase::default();
+    // 1. Missing src attribute
+    let twxml_content1 = twxml!("<include />");
+    let twxml_file1 = db::SourceFile::new(
+        &mut db,
+        "include_no_src.twxml".to_string(),
+        twxml_content1.to_string(),
+    );
+    let workspace1 = db::Workspace::new(&mut db, vec![twxml_file1]);
+    let errors1 = db::validate_file(&db, workspace1, twxml_file1);
+    assert!(errors1
+        .iter()
+        .any(|e| e.message == "Invalid include: tag 'include' must have a non-empty 'src' attribute"));
+
+    // 2. Block-style include is invalid
+    let twxml_content2 = twxml!("<include src=\"chapter2.twxml\">Nested content</include>");
+    let twxml_file2 = db::SourceFile::new(
+        &mut db,
+        "include_block.twxml".to_string(),
+        twxml_content2.to_string(),
+    );
+    let workspace2 = db::Workspace::new(&mut db, vec![twxml_file2]);
+    let errors2 = db::validate_file(&db, workspace2, twxml_file2);
+    assert!(errors2
+        .iter()
+        .any(|e| e.message == "Invalid include: tag 'include' must be self-closing"));
+}
+
+
+#[test]
 fn test_hubgs_unknown_instance_type() {
     let mut db = RootDatabase::default();
 

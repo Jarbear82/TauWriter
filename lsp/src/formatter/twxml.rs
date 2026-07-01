@@ -90,7 +90,7 @@ fn format_node(
             // R11: always own indented line, regardless of context.
             format!("{}{}\n", ind_str, contents[node.byte_range()].trim())
         }
-        "element" | "document_block" | "body_block" | "self_closing_element" => {
+        "element" | "document_block" | "body_block" | "self_closing_element" | "meta_tag" => {
             format_element(node, contents, indent, block_indent)
         }
         _ => {
@@ -322,10 +322,7 @@ fn build_inline_atoms(
                     atoms.push(Some(word));
                 }
             }
-            "element"
-            | "self_closing_element"
-            | "document_block"
-            | "body_block" => {
+            "element" | "self_closing_element" | "document_block" | "body_block" => {
                 let tag = get_tag_name(&child, contents).unwrap_or_default();
                 match tag.as_str() {
                     "br" => atoms.push(None),

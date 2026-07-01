@@ -2390,3 +2390,113 @@ async fn test_code_lens_twxml_jsonrpc() {
         );
     }
 }
+
+#[tokio::test]
+async fn test_did_change_watched_files_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let open_files = Arc::new(DashMap::new());
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_arc.clone(),
+        open_files: open_files.clone(),
+    });
+
+    let diag_messages = Arc::new(Mutex::new(Vec::new()));
+    let diag_messages_clone = diag_messages.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = socket.next().await {
+            if msg.method() == "textDocument/publishDiagnostics" {
+                diag_messages_clone.lock().await.push(msg);
+            }
+        }
+    });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("temp_watched_file.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "<document><body><paragraph>Hello</paragraph></body></document>";
+    std::fs::write(&path, content).unwrap();
+
+    {
+        let mut db_lock = db_arc.lock().await;
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_arc.lock().await;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let invalid_content = "<document><body><paragraph><invalidtag /></paragraph></body></document>";
+    std::fs::write(&path, invalid_content).unwrap();
+
+    let watched_files_params = DidChangeWatchedFilesParams {
+        changes: vec![FileEvent {
+            uri: uri.clone(),
+            typ: FileChangeType::CHANGED,
+        }],
+    };
+    let _ = service
+        .call(
+            Request::build("workspace/didChangeWatchedFiles")
+                .params(json!(watched_files_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let diags = diag_messages.lock().await;
+    assert!(!diags.is_empty(), "Should have received diagnostics after watched file change");
+
+    let last_diag = diags.last().unwrap();
+    let params: PublishDiagnosticsParams =
+        serde_json::from_value(last_diag.params().unwrap().clone()).unwrap();
+    assert_eq!(params.uri, uri);
+    assert!(
+        params.diagnostics.iter().any(|d| d.message.contains("Unknown TWXML tag 'invalidtag'")),
+        "Diagnostics should report the unknown tag: {:?}",
+        params.diagnostics
+    );
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}

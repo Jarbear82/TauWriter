@@ -130,9 +130,9 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
             let node = capture.node;
             let tag_name = contents[node.byte_range()].to_string();
 
-            if let Some(start_tag_node) = node.parent() {
-                if start_tag_node.kind() == "start_tag" {
-                    if let Some(element_node) = start_tag_node.parent() {
+            if let Some(parent_node) = node.parent() {
+                if parent_node.kind() == "start_tag" {
+                    if let Some(element_node) = parent_node.parent() {
                         if element_node.kind() == "element" {
                             let parent_name = resolve_parent_tag(&element_node, &contents);
 
@@ -145,6 +145,16 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
                             ));
                         }
                     }
+                } else if parent_node.kind() == "self_closing_element" {
+                    let parent_name = resolve_parent_tag(&parent_node, &contents);
+
+                    tags.push(crate::db::TwxmlTag::new(
+                        db,
+                        tag_name.clone(),
+                        file,
+                        super::ts_range_to_lsp(node.range()),
+                        parent_name,
+                    ));
                 }
             }
         }

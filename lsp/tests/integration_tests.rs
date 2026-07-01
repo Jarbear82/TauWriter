@@ -929,3 +929,30 @@ fn test_meta_tag_parsing() {
     let tag_names: Vec<_> = tags.iter().map(|t| t.name(&db).clone()).collect();
     assert!(tag_names.iter().any(|n| n == "body"));
 }
+
+#[test]
+fn test_formatter_preserves_meta_under_document() {
+    // ponytail: Verifies that <meta /> tags directly under <document>
+    // (without a <metadata> wrapper) are preserved through formatting.
+    // Previously these would disappear because meta_tag nodes weren't
+    // recognized in the formatter's dispatch match arm.
+    let content = "<document><meta name=\"title\" content=\"Test\" /><body></body></document>";
+    let formatted = tauwriter_lsp::formatter::format_source(content, "twxml");
+
+    // The formatted output must contain all original meta tags
+    assert!(
+        formatted.contains("meta"),
+        "Expected meta tag in formatted output, got:\n{}",
+        formatted
+    );
+    assert!(
+        formatted.contains("title"),
+        "Expected 'title' attribute in formatted output, got:\n{}",
+        formatted
+    );
+    assert!(
+        formatted.contains("Test"),
+        "Expected 'Test' value in formatted output, got:\n{}",
+        formatted
+    );
+}

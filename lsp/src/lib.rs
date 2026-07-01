@@ -308,6 +308,27 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::INFO, "TauWriter LSP initialized!")
             .await;
+
+        let registration = Registration {
+            id: "workspace/didChangeWatchedFiles".to_string(),
+            method: "workspace/didChangeWatchedFiles".to_string(),
+            register_options: Some(serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
+                watchers: vec![
+                    FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/*.hubgs".to_string()),
+                        kind: None,
+                    },
+                    FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/*.twxml".to_string()),
+                        kind: None,
+                    },
+                ],
+            }).unwrap()),
+        };
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            client.register_capability(vec![registration]).await.ok();
+        });
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -438,4 +459,8 @@ impl LanguageServer for Backend {
     }
 
     async fn did_save(&self, _params: DidSaveTextDocumentParams) {}
+
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        handlers::did_change_watched_files(self, params).await;
+    }
 }

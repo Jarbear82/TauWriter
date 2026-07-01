@@ -1,10 +1,8 @@
 <document>
-  <metadata>
-    <meta name="title" content="The Brave Little Tailor"/>
-    <meta name="author" content="Brothers Grimm"/>
-    <meta name="tags" content="fable, fairy tale"/>
-    <meta name="status" content="complete"/>
-  </metadata>
+  <meta name="title" content="The Brave Little Tailor"/>
+  <meta name="author" content="Brothers Grimm"/>
+  <meta name="tags" content="fable, fairy tale"/>
+  <meta name="status" content="complete"/>
   <body>
     <heading>The Brave Little Tailor</heading>
     <section alias="Chapter 1">
@@ -32,8 +30,8 @@
       </paragraph>
       <codeblock language="rust">
         fn sew(garment: &amp;str) -&gt; String {
-          format!("A fine {} is ready!", garment)
-        }
+                  format!("A fine {} is ready!", garment)
+                }
       </codeblock>
       <details open="false">
         <summary>Tailor's Hidden Motives</summary>
