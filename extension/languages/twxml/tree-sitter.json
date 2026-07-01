@@ -1,5 +1,10 @@
 {
   "name": "twxml",
   "version": "1.0.0",
-  "grammar": "twxml"
+  "grammar": "twxml",
+  "metadata": {
+    "description": "TWXML grammar for TauWriter",
+    "tags": ["xml"],
+    "version": "1.0.0"
+  }
 }
