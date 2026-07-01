@@ -9,17 +9,19 @@ pub async fn semantic_tokens_full(
 ) -> Result<Option<SemanticTokensResult>> {
     let uri = params.text_document.uri;
 
-    let (db, ws) = server.lock_db().await;
+    let (db_val, ws_val) = server.read_db();
+    let db = &db_val;
+    let ws = &ws_val;
 
     if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
-        let file = (*ws)
-            .files(&*db)
+        let file = ws
+            .files(db)
             .into_iter()
-            .find(|f| f.path(&*db) == path_str);
+            .find(|f| f.path(db) == path_str);
 
         if let Some(file) = file {
-            return semantic_tokens_impl(&*db, file);
+            return semantic_tokens_impl(db, file);
         }
     }
 
@@ -70,17 +72,19 @@ pub async fn folding_range(
 ) -> Result<Option<Vec<FoldingRange>>> {
     let uri = params.text_document.uri;
 
-    let (db, ws) = server.lock_db().await;
+    let (db_val, ws_val) = server.read_db();
+    let db = &db_val;
+    let ws = &ws_val;
 
     if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
-        let file = (*ws)
-            .files(&*db)
+        let file = ws
+            .files(db)
             .into_iter()
-            .find(|f| f.path(&*db) == path_str);
+            .find(|f| f.path(db) == path_str);
 
         if let Some(file) = file {
-            return folding_range_impl(&*db, file);
+            return folding_range_impl(db, file);
         }
     }
 

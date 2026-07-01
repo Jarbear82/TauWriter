@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauwriter_lsp::{Backend, RootDatabase};
 use tokio::sync::Mutex;
+use std::sync::Mutex as StdMutex;
 use tower::Service;
 use tower_lsp::jsonrpc::{Id, Request};
 use tower_lsp::lsp_types::*;
@@ -18,8 +19,8 @@ async fn test_initialize_jsonrpc() {
 
     let (mut service, _) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -48,8 +49,8 @@ async fn test_did_open_did_close_jsonrpc() {
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -106,14 +107,14 @@ async fn test_document_symbol_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -138,13 +139,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
 ";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -199,14 +200,14 @@ async fn test_document_highlight_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -233,13 +234,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandal
 ";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -294,14 +295,14 @@ async fn test_type_definition_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -326,13 +327,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
 ";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -391,14 +392,14 @@ async fn test_implementation_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -423,13 +424,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandal
 ";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -489,14 +490,14 @@ async fn test_formatting_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -565,14 +566,14 @@ async fn test_declaration_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -597,13 +598,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
 ";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -664,8 +665,8 @@ async fn test_initialized_jsonrpc() {
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -701,8 +702,8 @@ async fn test_shutdown_jsonrpc() {
 
     let (mut service, _) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -734,8 +735,8 @@ async fn test_did_change_jsonrpc() {
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -805,8 +806,8 @@ async fn test_did_save_jsonrpc() {
 
     let (mut service, _) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -841,13 +842,13 @@ async fn test_definition_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -868,13 +869,13 @@ async fn test_definition_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -933,13 +934,13 @@ async fn test_references_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -960,13 +961,13 @@ async fn test_references_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1023,13 +1024,13 @@ async fn test_hover_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1050,13 +1051,13 @@ async fn test_hover_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person { name = 'Aragorn' } ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1117,13 +1118,13 @@ async fn test_completion_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1144,13 +1145,13 @@ async fn test_completion_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person {} ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1216,13 +1217,13 @@ async fn test_rename_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1243,13 +1244,13 @@ async fn test_rename_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1306,13 +1307,13 @@ async fn test_folding_range_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1333,13 +1334,13 @@ async fn test_folding_range_jsonrpc() {
     let content = "DEFINITIONS [\n  HUBS [\n    Person {}\n  ]\n]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1388,13 +1389,13 @@ async fn test_semantic_tokens_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1415,13 +1416,13 @@ async fn test_semantic_tokens_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person {} ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1474,13 +1475,13 @@ async fn test_workspace_symbol_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1500,13 +1501,13 @@ async fn test_workspace_symbol_jsonrpc() {
     let content = "INSTANCES [ aragorn:Person {} ]";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1540,8 +1541,8 @@ async fn test_publish_diagnostics_jsonrpc() {
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1602,13 +1603,13 @@ async fn test_inlay_hint_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -1632,13 +1633,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' }, rivendell:Location { city = 'Ri
 ";
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -1688,13 +1689,13 @@ async fn test_code_action_jsonrpc() {
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
     let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -1727,7 +1728,7 @@ INSTANCES [
     let twxml_content = r#"<document><body><review><hubref id="aragorn" field="name">Strider</hubref></review></body></document>"#;
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let h_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             hubgs_path.to_string_lossy().to_string(),
@@ -1738,7 +1739,7 @@ INSTANCES [
             twxml_path.to_string_lossy().to_string(),
             twxml_content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![h_file, t_file]);
     }
 
@@ -1801,14 +1802,14 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -1847,7 +1848,7 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
 
     // Index both files into the workspace
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let hubgs_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             hubgs_path.to_string_lossy().to_string(),
@@ -1858,7 +1859,7 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
             twxml_path.to_string_lossy().to_string(),
             twxml_content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![hubgs_file, twxml_file]);
     }
 
@@ -2008,14 +2009,14 @@ async fn test_on_type_formatting_autoclose_tag() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -2098,8 +2099,8 @@ async fn test_on_type_formatting_no_autoclose_self_closing() {
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(StdMutex::new(db)),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -2175,13 +2176,13 @@ async fn test_code_lens_hubgs_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -2213,13 +2214,13 @@ async fn test_code_lens_hubgs_jsonrpc() {
     ]"#;
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -2293,13 +2294,13 @@ async fn test_code_lens_twxml_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -2328,13 +2329,13 @@ async fn test_code_lens_twxml_jsonrpc() {
 </document>"#;
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 
@@ -2396,14 +2397,14 @@ async fn test_did_change_watched_files_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(Mutex::new(db));
-    let ws_arc = Arc::new(Mutex::new(workspace_input));
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
         db: db_arc.clone(),
-        workspace_input: ws_arc.clone(),
+        workspace_input: ws_val,
         open_files: open_files.clone(),
     });
 
@@ -2436,13 +2437,13 @@ async fn test_did_change_watched_files_jsonrpc() {
     std::fs::write(&path, content).unwrap();
 
     {
-        let mut db_lock = db_arc.lock().await;
+        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
             &mut *db_lock,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_arc.lock().await;
+        let ws = ws_val;
         ws.set_files(&mut *db_lock).to(vec![source_file]);
     }
 

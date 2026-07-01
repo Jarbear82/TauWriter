@@ -31,13 +31,13 @@ pub async fn completion(
     let uri = params.text_document_position.text_document.uri;
     let position = params.text_document_position.position;
 
-    let (db, ws) = server.lock_db().await;
-    let db_ref = &*db;
-    let ws_ref = *ws;
+    let (db_val, ws_val) = server.read_db();
+    let db_ref = &db_val;
+    let ws_ref = ws_val;
 
     if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
-        let file = ws
+        let file = ws_ref
             .files(db_ref)
             .into_iter()
             .find(|f| f.path(db_ref) == path_str);

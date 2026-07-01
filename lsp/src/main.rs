@@ -1,7 +1,6 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use tauwriter_lsp::{Backend, RootDatabase};
-use tokio::sync::Mutex;
 use tower_lsp::{LspService, Server};
 
 #[tokio::main]
@@ -14,8 +13,8 @@ async fn main() {
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(Mutex::new(db)),
-        workspace_input: Arc::new(Mutex::new(workspace_input)),
+        db: Arc::new(std::sync::Mutex::new(db)),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
     Server::new(stdin, stdout, socket).serve(service).await;

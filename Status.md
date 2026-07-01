@@ -32,6 +32,8 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Diagnostics** | ✅ | Real-time error reporting, structural validation, tag checking. |
 | **Refactoring Support** | ✅ | Global renames and structural changes (References/Rename). |
 | **Dynamic Evaluation** | ✅ | Decorator parsing (`@computed`, `@default`), AST-based expression evaluator (arithmetic, string concatenation, unary ops, parentheses), cross-Hub field access via roles, `@default` override enforcement. |
+| **Concurrency & Performance** | ✅ | Lock-free concurrent read queries via database cloning; standard Mutex writes. |
+| **Incremental Parsing** | ✅ | Cached tree-sitter parse trees; `InputEdit` coordinate translation; tree-sitter incremental parse on typing. |
 
 ### DB (Salsa)
 
@@ -460,7 +462,7 @@ Robust engine for computed graph data.
 
 - [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
 - [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
-- [ ] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
+- [x] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
 - [x] Enforce `@default` override rules during instance instantiation.
 
 ## Things To Remove

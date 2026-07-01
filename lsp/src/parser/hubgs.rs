@@ -12,11 +12,56 @@ pub fn parse_hubgs_ast(db: &dyn Db, file: SourceFile) -> HubgsParseResult<'_> {
     let mut global_fields = Vec::new();
     let mut imports = Vec::new();
     let contents = file.contents(db);
+    let path = file.path(db);
 
     let language = unsafe { super::tree_sitter_hubgs() };
     let mut parser = Parser::new();
     parser.set_language(language).ok();
-    let tree = parser.parse(&contents, None).unwrap();
+    
+    let old_entry = crate::get_tree_cache().get(&path).map(|t| t.clone());
+    let tree = if let Some(ref entry) = old_entry {
+        if entry.content_len == contents.len() && entry.content_hash == crate::calculate_hash(&contents) {
+            if entry.needs_reparse {
+                let t = parser.parse(&contents, Some(&entry.tree)).unwrap();
+                crate::get_tree_cache().insert(
+                    path,
+                    crate::CachedTree {
+                        tree: t.clone(),
+                        content_len: contents.len(),
+                        content_hash: crate::calculate_hash(&contents),
+                        needs_reparse: false,
+                    },
+                );
+                t
+            } else {
+                entry.tree.clone()
+            }
+        } else {
+            let t = parser.parse(&contents, None).unwrap();
+            crate::get_tree_cache().insert(
+                path,
+                crate::CachedTree {
+                    tree: t.clone(),
+                    content_len: contents.len(),
+                    content_hash: crate::calculate_hash(&contents),
+                    needs_reparse: false,
+                },
+            );
+            t
+        }
+    } else {
+        let t = parser.parse(&contents, None).unwrap();
+        crate::get_tree_cache().insert(
+            path,
+            crate::CachedTree {
+                tree: t.clone(),
+                content_len: contents.len(),
+                content_hash: crate::calculate_hash(&contents),
+                needs_reparse: false,
+            },
+        );
+        t
+    };
 
     let mut cursor = tree.walk();
     for node in tree.root_node().children(&mut cursor) {
@@ -106,13 +151,17 @@ fn parse_fields_block<'a>(
     for field_def in block.children(&mut field_cursor) {
         if field_def.kind() == "field_definition" {
             if let (Some(id_node), Some(type_node)) = (field_def.child(0), field_def.child(2)) {
-                global_fields.push(crate::db::GlobalField::new(
-                    db,
-                    contents[id_node.byte_range()].to_string(),
-                    file,
-                    super::ts_range_to_lsp(id_node.range()),
-                    contents[type_node.byte_range()].to_string(),
-                ));
+                let id = contents[id_node.byte_range()].to_string();
+                let type_str = contents[type_node.byte_range()].to_string();
+                if !id.is_empty() && !type_str.is_empty() && !id_node.is_missing() && !type_node.is_missing() {
+                    global_fields.push(crate::db::GlobalField::new(
+                        db,
+                        id,
+                        file,
+                        super::ts_range_to_lsp(id_node.range()),
+                        type_str,
+                    ));
+                }
             }
         }
     }
@@ -129,20 +178,26 @@ fn parse_enums_block<'a>(
     for enum_def in block.children(&mut enum_cursor) {
         if enum_def.kind() == "enum_definition" {
             if let Some(name_node) = enum_def.child(0) {
-                let mut variants = Vec::new();
-                let mut var_cursor = enum_def.walk();
-                for var_node in enum_def.children(&mut var_cursor) {
-                    if var_node.kind() == "identifier" && var_node.id() != name_node.id() {
-                        variants.push(contents[var_node.byte_range()].to_string());
+                let name = contents[name_node.byte_range()].to_string();
+                if !name.is_empty() && !name_node.is_missing() {
+                    let mut variants = Vec::new();
+                    let mut var_cursor = enum_def.walk();
+                    for var_node in enum_def.children(&mut var_cursor) {
+                        if var_node.kind() == "identifier" && var_node.id() != name_node.id() {
+                            let var_name = contents[var_node.byte_range()].to_string();
+                            if !var_name.is_empty() && !var_node.is_missing() {
+                                variants.push(var_name);
+                            }
+                        }
                     }
+                    enums.push(crate::db::HubEnum::new(
+                        db,
+                        name,
+                        file,
+                        super::ts_range_to_lsp(name_node.range()),
+                        variants,
+                    ));
                 }
-                enums.push(crate::db::HubEnum::new(
-                    db,
-                    contents[name_node.byte_range()].to_string(),
-                    file,
-                    super::ts_range_to_lsp(name_node.range()),
-                    variants,
-                ));
             }
         }
     }
@@ -159,20 +214,26 @@ fn parse_structs_block<'a>(
     for struct_def in block.children(&mut struct_cursor) {
         if struct_def.kind() == "struct_definition" {
             if let Some(name_node) = struct_def.child(0) {
-                let mut field_names = Vec::new();
-                let mut field_cursor = struct_def.walk();
-                for field_node in struct_def.children(&mut field_cursor) {
-                    if field_node.kind() == "identifier" && field_node.id() != name_node.id() {
-                        field_names.push(contents[field_node.byte_range()].to_string());
+                let name = contents[name_node.byte_range()].to_string();
+                if !name.is_empty() && !name_node.is_missing() {
+                    let mut field_names = Vec::new();
+                    let mut field_cursor = struct_def.walk();
+                    for field_node in struct_def.children(&mut field_cursor) {
+                        if field_node.kind() == "identifier" && field_node.id() != name_node.id() {
+                            let f_name = contents[field_node.byte_range()].to_string();
+                            if !f_name.is_empty() && !field_node.is_missing() {
+                                field_names.push(f_name);
+                            }
+                        }
                     }
+                    structs.push(crate::db::HubStruct::new(
+                        db,
+                        name,
+                        file,
+                        super::ts_range_to_lsp(name_node.range()),
+                        field_names,
+                    ));
                 }
-                structs.push(crate::db::HubStruct::new(
-                    db,
-                    contents[name_node.byte_range()].to_string(),
-                    file,
-                    super::ts_range_to_lsp(name_node.range()),
-                    field_names,
-                ));
             }
         }
     }
@@ -190,63 +251,65 @@ fn parse_hubs_block<'a>(
         if hub_def.kind() == "hub_definition" {
             if let Some(name_node) = hub_def.child(0) {
                 let name = contents[name_node.byte_range()].to_string();
-                // ponytail: Extract parent types from optional EXTENDS clause
-                let mut ext_nodes: Vec<_> = hub_def
-                    .children(&mut hub_def.walk())
-                    .filter(|c| c.kind() == "extension_clause")
-                    .collect();
-                let extends_parents: Vec<String> = ext_nodes
-                    .drain(..)
-                    .flat_map(|ext| {
-                        (0..ext.child_count()).filter_map(move |i| {
-                            ext.child(i).and_then(|child| {
-                                if child.kind() == "identifier" {
-                                    Some(contents[child.byte_range()].to_string())
-                                } else {
-                                    None
-                                }
+                if !name.is_empty() && !name_node.is_missing() {
+                    // ponytail: Extract parent types from optional EXTENDS clause
+                    let mut ext_nodes: Vec<_> = hub_def
+                        .children(&mut hub_def.walk())
+                        .filter(|c| c.kind() == "extension_clause")
+                        .collect();
+                    let extends_parents: Vec<String> = ext_nodes
+                        .drain(..)
+                        .flat_map(|ext| {
+                            (0..ext.child_count()).filter_map(move |i| {
+                                ext.child(i).and_then(|child| {
+                                    if child.kind() == "identifier" {
+                                        Some(contents[child.byte_range()].to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
                             })
                         })
-                    })
-                    .collect();
+                        .collect();
 
-                let mut fields = Vec::new();
-                let mut roles = Vec::new();
+                    let mut fields = Vec::new();
+                    let mut roles = Vec::new();
 
-                let mut item_cursor = hub_def.walk();
-                for item in hub_def.children(&mut item_cursor) {
-                    match item.kind() {
-                        "hub_field" => {
-                            if let Some(id_node) = item.child(0) {
-                                let (decorator, expression) =
-                                    parse_field_decorators(&item, contents);
-                                fields.push(HubFieldDef {
-                                    name: contents[id_node.byte_range()].to_string(),
-                                    range: super::ts_range_to_lsp(id_node.range()),
-                                    decorator,
-                                    expression,
-                                });
+                    let mut item_cursor = hub_def.walk();
+                    for item in hub_def.children(&mut item_cursor) {
+                        match item.kind() {
+                            "hub_field" => {
+                                if let Some(id_node) = item.child(0) {
+                                    let (decorator, expression) =
+                                        parse_field_decorators(&item, contents);
+                                    fields.push(HubFieldDef {
+                                        name: contents[id_node.byte_range()].to_string(),
+                                        range: super::ts_range_to_lsp(id_node.range()),
+                                        decorator,
+                                        expression,
+                                    });
+                                }
                             }
-                        }
-                        "hub_role" => {
-                            if let Some(_id_node) = item.child(0) {
-                                roles.push(parse_hub_role(&item, contents));
+                            "hub_role" => {
+                                if let Some(_id_node) = item.child(0) {
+                                    roles.push(parse_hub_role(&item, contents));
+                                }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
-                }
 
-                types.push(HubType::new(
-                    db,
-                    name,
-                    file,
-                    super::ts_range_to_lsp(name_node.range()),
-                    super::ts_range_to_lsp(hub_def.range()),
-                    fields,
-                    roles,
-                    extends_parents,
-                ));
+                    types.push(HubType::new(
+                        db,
+                        name,
+                        file,
+                        super::ts_range_to_lsp(name_node.range()),
+                        super::ts_range_to_lsp(hub_def.range()),
+                        fields,
+                        roles,
+                        extends_parents,
+                    ));
+                }
             }
         }
     }
@@ -317,50 +380,54 @@ fn parse_instances<'a>(
         if child.kind() == "instance_block" {
             if let Some(ref_node) = child.child_by_field_name("ref") {
                 let name = contents[ref_node.byte_range()].to_string();
-                let type_name = if let Some(type_node) = child.child_by_field_name("type") {
-                    contents[type_node.byte_range()].to_string()
-                } else {
-                    "Unknown".to_string()
-                };
+                if !name.is_empty() && !ref_node.is_missing() {
+                    let type_name = if let Some(type_node) = child.child_by_field_name("type") {
+                        contents[type_node.byte_range()].to_string()
+                    } else {
+                        "Unknown".to_string()
+                    };
 
-                let mut assignments = Vec::new();
-                let mut block_cursor = child.walk();
-                for assignment in child.children(&mut block_cursor) {
-                    if assignment.kind() == "instance_assignment" {
-                        if let Some(id_node) = assignment.child(0) {
-                            let attr_name = contents[id_node.byte_range()].to_string();
-                            if let Some(expr_node) = assignment.child(2) {
-                                if let Some(val) = node_to_hub_value(expr_node, contents) {
-                                    assignments.push(HubAssignment {
-                                        name: attr_name,
-                                        range: super::ts_range_to_lsp(id_node.range()),
-                                        value: val,
-                                    });
+                    let mut assignments = Vec::new();
+                    let mut block_cursor = child.walk();
+                    for assignment in child.children(&mut block_cursor) {
+                        if assignment.kind() == "instance_assignment" {
+                            if let Some(id_node) = assignment.child(0) {
+                                let attr_name = contents[id_node.byte_range()].to_string();
+                                if !attr_name.is_empty() && !id_node.is_missing() {
+                                    if let Some(expr_node) = assignment.child(2) {
+                                        if let Some(val) = node_to_hub_value(expr_node, contents) {
+                                            assignments.push(HubAssignment {
+                                                name: attr_name,
+                                                range: super::ts_range_to_lsp(id_node.range()),
+                                                value: val,
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+
+                    // Extract description from assignments if present
+                    let description = assignments
+                        .iter()
+                        .find(|a| a.name == "description")
+                        .and_then(|a| match &a.value {
+                            crate::db::HubValue::String(s) => Some(s.clone()),
+                            _ => None,
+                        });
+
+                    instances.push(HubInstance::new(
+                        db,
+                        name,
+                        type_name,
+                        file,
+                        super::ts_range_to_lsp(ref_node.range()),
+                        super::ts_range_to_lsp(child.range()),
+                        description,
+                        assignments,
+                    ));
                 }
-
-                // Extract description from assignments if present
-                let description = assignments
-                    .iter()
-                    .find(|a| a.name == "description")
-                    .and_then(|a| match &a.value {
-                        crate::db::HubValue::String(s) => Some(s.clone()),
-                        _ => None,
-                    });
-
-                instances.push(HubInstance::new(
-                    db,
-                    name,
-                    type_name,
-                    file,
-                    super::ts_range_to_lsp(ref_node.range()),
-                    super::ts_range_to_lsp(child.range()),
-                    description,
-                    assignments,
-                ));
             }
         }
     }

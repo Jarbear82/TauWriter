@@ -6,30 +6,32 @@ use crate::Backend;
 pub async fn code_lens(server: &Backend, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
     let uri = params.text_document.uri;
 
-    let (db, ws) = server.lock_db().await;
+    let (db_val, ws_val) = server.read_db();
+    let db = &db_val;
+    let ws = &ws_val;
 
     if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
 
         // HubGS: CodeLens on instance definitions and type definitions
         if path_str.ends_with(".hubgs") {
-            let file = (*ws)
-                .files(&*db)
+            let file = ws
+                .files(db)
                 .into_iter()
-                .find(|f| f.path(&*db) == path_str);
+                .find(|f| f.path(db) == path_str);
             if let Some(file) = file {
-                return code_lens_hubgs_impl(&*db, *ws, file);
+                return code_lens_hubgs_impl(db, *ws, file);
             }
         }
 
         // TWXML: CodeLens on hubref tags
         if path_str.ends_with(".twxml") {
-            let file = (*ws)
-                .files(&*db)
+            let file = ws
+                .files(db)
                 .into_iter()
-                .find(|f| f.path(&*db) == path_str);
+                .find(|f| f.path(db) == path_str);
             if let Some(file) = file {
-                return code_lens_twxml_impl(&*db, file);
+                return code_lens_twxml_impl(db, file);
             }
         }
     }

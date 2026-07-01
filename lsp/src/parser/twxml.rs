@@ -4,11 +4,56 @@ use tree_sitter::Parser;
 pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
     let mut refs = Vec::new();
     let contents = file.contents(db);
+    let path = file.path(db);
 
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
     parser.set_language(language).ok();
-    let tree = parser.parse(&contents, None).unwrap();
+    
+    let old_entry = crate::get_tree_cache().get(&path).map(|t| t.clone());
+    let tree = if let Some(ref entry) = old_entry {
+        if entry.content_len == contents.len() && entry.content_hash == crate::calculate_hash(&contents) {
+            if entry.needs_reparse {
+                let t = parser.parse(&contents, Some(&entry.tree)).unwrap();
+                crate::get_tree_cache().insert(
+                    path,
+                    crate::CachedTree {
+                        tree: t.clone(),
+                        content_len: contents.len(),
+                        content_hash: crate::calculate_hash(&contents),
+                        needs_reparse: false,
+                    },
+                );
+                t
+            } else {
+                entry.tree.clone()
+            }
+        } else {
+            let t = parser.parse(&contents, None).unwrap();
+            crate::get_tree_cache().insert(
+                path,
+                crate::CachedTree {
+                    tree: t.clone(),
+                    content_len: contents.len(),
+                    content_hash: crate::calculate_hash(&contents),
+                    needs_reparse: false,
+                },
+            );
+            t
+        }
+    } else {
+        let t = parser.parse(&contents, None).unwrap();
+        crate::get_tree_cache().insert(
+            path,
+            crate::CachedTree {
+                tree: t.clone(),
+                content_len: contents.len(),
+                content_hash: crate::calculate_hash(&contents),
+                needs_reparse: false,
+            },
+        );
+        t
+    };
 
     let query_str = r#"
         (

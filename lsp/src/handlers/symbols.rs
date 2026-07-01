@@ -11,16 +11,18 @@ pub async fn references(
     let position = params.text_document_position.position;
 
     if let Some(symbol) = server.get_symbol_at_position(&uri, position) {
-        let (db, ws) = server.lock_db().await;
-        let refs = crate::db::find_all_references(&*db, *ws, symbol);
+        let (db_val, ws_val) = server.read_db();
+        let db = &db_val;
+        let ws = &ws_val;
+        let refs = crate::db::find_all_references(db, *ws, symbol);
         let locations = refs
             .into_iter()
-            .map(|r| {
+            .filter_map(|r| {
                 let path = r.file(&*db).path(&*db);
-                Location {
-                    uri: Url::from_file_path(path).unwrap(),
+                Url::from_file_path(path).ok().map(|uri| Location {
+                    uri,
                     range: r.range(&*db).into(),
-                }
+                })
             })
             .collect();
         return Ok(Some(locations));
@@ -35,8 +37,10 @@ pub async fn rename(server: &Backend, params: RenameParams) -> Result<Option<Wor
     let new_name = params.new_name;
 
     if let Some(symbol) = server.get_symbol_at_position(&uri, position) {
-        let (db, ws) = server.lock_db().await;
-        return rename_impl(&*db, *ws, &symbol, &new_name);
+        let (db_val, ws_val) = server.read_db();
+        let db = &db_val;
+        let ws = &ws_val;
+        return rename_impl(db, *ws, &symbol, &new_name);
     }
 
     Ok(None)
@@ -51,28 +55,30 @@ fn rename_impl(
     let mut changes = std::collections::HashMap::new();
 
     if let Some(instance) = crate::db::resolve_reference(db, ws, symbol.to_string()) {
-        let def_uri = Url::from_file_path(instance.file(db).path(db)).unwrap();
-        let def_edit = TextEdit {
-            range: instance.range(db).into(),
-            new_text: new_name.to_string(),
-        };
-        changes
-            .entry(def_uri)
-            .or_insert_with(Vec::new)
-            .push(def_edit);
+        if let Ok(def_uri) = Url::from_file_path(instance.file(db).path(db)) {
+            let def_edit = TextEdit {
+                range: instance.range(db).into(),
+                new_text: new_name.to_string(),
+            };
+            changes
+                .entry(def_uri)
+                .or_insert_with(Vec::new)
+                .push(def_edit);
+        }
     }
 
     let refs = crate::db::find_all_references(db, ws, symbol.to_string());
     for r in refs {
-        let ref_uri = Url::from_file_path(r.file(db).path(db)).unwrap();
-        let ref_edit = TextEdit {
-            range: r.range(db).into(),
-            new_text: new_name.to_string(),
-        };
-        changes
-            .entry(ref_uri)
-            .or_insert_with(Vec::new)
-            .push(ref_edit);
+        if let Ok(ref_uri) = Url::from_file_path(r.file(db).path(db)) {
+            let ref_edit = TextEdit {
+                range: r.range(db).into(),
+                new_text: new_name.to_string(),
+            };
+            changes
+                .entry(ref_uri)
+                .or_insert_with(Vec::new)
+                .push(ref_edit);
+        }
     }
 
     Ok(Some(WorkspaceEdit {
@@ -89,8 +95,10 @@ pub async fn document_highlight(
     let position = params.text_document_position_params.position;
 
     if let Some(symbol) = server.get_symbol_at_position(&uri, position) {
-        let (db, ws) = server.lock_db().await;
-        return document_highlight_impl(&*db, *ws, &symbol, &uri);
+        let (db_val, ws_val) = server.read_db();
+        let db = &db_val;
+        let ws = &ws_val;
+        return document_highlight_impl(db, *ws, &symbol, &uri);
     }
 
     Ok(None)

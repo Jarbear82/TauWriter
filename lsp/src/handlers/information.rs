@@ -8,8 +8,10 @@ pub async fn hover(server: &Backend, params: HoverParams) -> Result<Option<Hover
     let position = params.text_document_position_params.position;
 
     if let Some(symbol) = server.get_symbol_at_position(&uri, position) {
-        let (db, ws) = server.lock_db().await;
-        return hover_impl(&*db, *ws, &symbol, &uri);
+        let (db_val, ws_val) = server.read_db();
+        let db = &db_val;
+        let ws = &ws_val;
+        return hover_impl(db, *ws, &symbol, &uri);
     }
 
     Ok(None)
@@ -336,11 +338,13 @@ pub async fn code_action(
         if let Some((review_range, _hubref_range, id_val, field_val, current_text)) =
             crate::parser::find_review_at_position(&content, position.into())
         {
-            let (db, ws) = server.lock_db().await;
+            let (db_val, ws_val) = server.read_db();
+            let db = &db_val;
+            let ws = &ws_val;
 
-            if let Some(instance) = crate::db::resolve_reference(&*db, *ws, id_val.clone()) {
+            if let Some(instance) = crate::db::resolve_reference(db, *ws, id_val.clone()) {
                 if let Some(eval_val) =
-                    crate::db::compute_field_value(&*db, *ws, instance, field_val.clone())
+                    crate::db::compute_field_value(db, *ws, instance, field_val.clone())
                 {
                     return code_action_impl(
                         &uri,

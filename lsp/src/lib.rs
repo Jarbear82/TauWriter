@@ -7,7 +7,6 @@ use dashmap::DashMap;
 use ropey::Rope;
 use salsa::prelude::*;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
@@ -42,9 +41,49 @@ impl db::Db for RootDatabase {
 
 pub struct Backend {
     pub client: Client,
-    pub db: Arc<Mutex<RootDatabase>>,
-    pub workspace_input: Arc<Mutex<db::Workspace>>,
+    pub db: Arc<std::sync::Mutex<RootDatabase>>,
+    pub workspace_input: db::Workspace,
     pub open_files: Arc<DashMap<Url, Rope>>,
+}
+
+use std::sync::OnceLock;
+
+#[derive(Clone)]
+pub struct CachedTree {
+    pub tree: tree_sitter::Tree,
+    pub content_len: usize,
+    pub content_hash: u64,
+    pub needs_reparse: bool,
+}
+
+pub fn calculate_hash(s: &str) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    hasher.write(s.as_bytes());
+    hasher.finish()
+}
+
+pub static TREE_CACHE: OnceLock<DashMap<String, CachedTree>> = OnceLock::new();
+
+pub fn get_tree_cache() -> &'static DashMap<String, CachedTree> {
+    TREE_CACHE.get_or_init(DashMap::new)
+}
+
+pub fn utf16_idx_to_byte_idx(s: &str, utf16_idx: usize) -> usize {
+    let mut utf16_current = 0;
+    let mut byte_current = 0;
+    for c in s.chars() {
+        if utf16_current >= utf16_idx {
+            break;
+        }
+        utf16_current += c.len_utf16();
+        byte_current += c.len_utf8();
+    }
+    if utf16_current < utf16_idx {
+        s.len()
+    } else {
+        byte_current
+    }
 }
 
 impl Backend {
@@ -64,9 +103,17 @@ impl Backend {
         ts_parser.set_language(language).ok()?;
         let tree = ts_parser.parse(&content, None)?;
 
+        let lines: Vec<&str> = content.lines().collect();
+        let line_idx = position.line as usize;
+        let column_byte = if line_idx < lines.len() {
+            utf16_idx_to_byte_idx(lines[line_idx], position.character as usize)
+        } else {
+            position.character as usize
+        };
+
         let ts_pos = tree_sitter::Point {
             row: position.line as usize,
-            column: position.character as usize,
+            column: column_byte,
         };
 
         // Walk up to find a symbol node at the cursor.
@@ -133,28 +180,22 @@ impl Backend {
         }
     }
 
-    async fn lock_db(
-        &self,
-    ) -> (
-        tokio::sync::MutexGuard<'_, RootDatabase>,
-        tokio::sync::MutexGuard<'_, db::Workspace>,
-    ) {
-        let db = self.db.lock().await;
-        let ws = self.workspace_input.lock().await;
-        (db, ws)
+    pub fn read_db(&self) -> (RootDatabase, db::Workspace) {
+        let db = self.db.lock().unwrap();
+        (db.clone(), self.workspace_input)
     }
 
     async fn index_directory(
         client: Client,
-        db_mutex: Arc<Mutex<RootDatabase>>,
-        ws_mutex: Arc<Mutex<db::Workspace>>,
+        db_mutex: Arc<std::sync::Mutex<RootDatabase>>,
+        ws: db::Workspace,
         root: std::path::PathBuf,
     ) {
         use walkdir::WalkDir;
 
         let mut files = Vec::new();
         {
-            let mut db = db_mutex.lock().await;
+            let mut db = db_mutex.lock().unwrap();
             for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if path.is_file() {
@@ -168,7 +209,6 @@ impl Backend {
                     }
                 }
             }
-            let ws = ws_mutex.lock().await;
             ws.set_files(&mut *db).to(files);
         }
         client
@@ -185,10 +225,9 @@ impl Backend {
         let path = uri.to_file_path().unwrap().to_string_lossy().to_string();
 
         let errors = {
-            let mut db = self.db.lock().await;
-            let ws = *self.workspace_input.lock().await;
+            let mut db = self.db.lock().unwrap();
             let source_file = db::SourceFile::new(&mut *db, path, content.clone());
-            db::validate_file(&*db, ws, source_file)
+            db::validate_file(&*db, self.workspace_input, source_file)
         };
 
         let diagnostics = errors
@@ -462,5 +501,90 @@ impl LanguageServer for Backend {
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
         handlers::did_change_watched_files(self, params).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_utf16_idx_to_byte_idx() {
+        // ASCII
+        assert_eq!(utf16_idx_to_byte_idx("hello", 0), 0);
+        assert_eq!(utf16_idx_to_byte_idx("hello", 2), 2);
+        assert_eq!(utf16_idx_to_byte_idx("hello", 10), 5);
+
+        // Multi-byte Unicode (curly quotes: 3 bytes each, 1 UTF-16 code unit each)
+        let s = "“hello”";
+        assert_eq!(utf16_idx_to_byte_idx(s, 0), 0);
+        assert_eq!(utf16_idx_to_byte_idx(s, 1), 3); // after “
+        assert_eq!(utf16_idx_to_byte_idx(s, 6), 8); // after o
+
+        // Surrogate pairs (smiley face: 4 bytes, 2 UTF-16 code units)
+        let smiley = "a😊b";
+        assert_eq!(utf16_idx_to_byte_idx(smiley, 0), 0);
+        assert_eq!(utf16_idx_to_byte_idx(smiley, 1), 1); // before 😊
+        assert_eq!(utf16_idx_to_byte_idx(smiley, 2), 5); // middle of 😊, snaps to after 😊
+        assert_eq!(utf16_idx_to_byte_idx(smiley, 3), 5); // after 😊
+        assert_eq!(utf16_idx_to_byte_idx(smiley, 4), 6); // after b
+    }
+
+    #[test]
+    fn test_incremental_parse_cache() {
+        let mut db = RootDatabase::default();
+        let path = "/test/file.hubgs".to_string();
+        get_tree_cache().remove(&path);
+
+        let source_file = db::SourceFile::new(&mut db, path.clone(), "INSTANCES [ x:Y {} ]".to_string());
+        
+        let _result = crate::db::parse_hubgs(&db, source_file);
+        
+        assert!(get_tree_cache().contains_key(&path));
+        
+        {
+            let entry = get_tree_cache().get(&path).unwrap();
+            assert!(!entry.needs_reparse);
+            assert_eq!(entry.content_len, 20);
+        }
+
+        let range = lsp_types::Range {
+            start: lsp_types::Position { line: 0, character: 14 },
+            end: lsp_types::Position { line: 0, character: 15 },
+        };
+        let rope = ropey::Rope::from_str("INSTANCES [ x:Y {} ]");
+        {
+            let mut entry = get_tree_cache().get_mut(&path).unwrap();
+            crate::handlers::documents::edit_tree(
+                &mut entry.value_mut().tree,
+                &rope,
+                range,
+                "Z",
+                14,
+                15,
+                0,
+                0,
+            );
+            
+            let new_contents = "INSTANCES [ x:Z {} ]";
+            entry.value_mut().content_len = new_contents.len();
+            entry.value_mut().content_hash = calculate_hash(new_contents);
+            entry.value_mut().needs_reparse = true;
+        }
+
+        {
+            let entry = get_tree_cache().get(&path).unwrap();
+            assert!(entry.needs_reparse);
+            assert_eq!(entry.content_len, 20);
+        }
+
+        let source_file2 = db::SourceFile::new(&mut db, path.clone(), "INSTANCES [ x:Z {} ]".to_string());
+        let _result2 = crate::db::parse_hubgs(&db, source_file2);
+
+        {
+            let entry = get_tree_cache().get(&path).unwrap();
+            assert!(!entry.needs_reparse);
+            assert_eq!(entry.content_len, 20);
+        }
     }
 }
