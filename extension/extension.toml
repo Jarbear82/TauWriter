@@ -4,17 +4,17 @@ version = "0.1.1"
 schema_version = 1
 authors = ["Jarbear82", "Gemini CLI"]
 description = "IDE-style, graph-augmented word processor for novelists and worldbuilders."
-repository = "https://github.com/Jarbear82/TauWriter"
+repository = "/home/jarbear82/Documents/TauWriter"
 
 languages = ["languages/hubgs", "languages/twxml"]
 
 [grammars.hubgs]
-repository = "https://github.com/Jarbear82/TauWriter"
+repository = "/home/jarbear82/Documents/TauWriter"
 rev = "dev"
 path = "extension/languages/hubgs"
 
 [grammars.twxml]
-repository = "https://github.com/Jarbear82/TauWriter"
+repository = "/home/jarbear82/Documents/TauWriter"
 rev = "dev"
 path = "extension/languages/twxml"
 

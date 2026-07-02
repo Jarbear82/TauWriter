@@ -56,9 +56,6 @@
 (generic_type (identifier) @type)
 (type (identifier) @type)
 
-; Decorators, Attributes, and Constraints
-"@computed" @function.builtin
-"@default" @function.builtin
-"@constraints" @keyword.directive
-(field_attribute) @function.builtin
+(constraints_block "@constraints" @keyword.directive)
+(field_attribute) @keyword.directive
 (decorator ["@computed" "@default"] @function.builtin)
