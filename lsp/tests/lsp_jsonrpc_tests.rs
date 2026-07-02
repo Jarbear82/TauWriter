@@ -1209,6 +1209,14 @@ async fn test_completion_jsonrpc() {
             items.iter().any(|i| i.label == "aragorn"),
             "expected 'aragorn' in completions"
         );
+        assert!(
+            items.iter().any(|i| i.label == "uuid-v4"),
+            "expected 'uuid-v4' in completions"
+        );
+        assert!(
+            items.iter().any(|i| i.label == "uuid-ref"),
+            "expected 'uuid-ref' in completions"
+        );
     }
 }
 

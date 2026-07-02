@@ -35,7 +35,7 @@ pub async fn completion(
     let db_ref = &db_val;
     let ws_ref = ws_val;
 
-    if let Ok(path) = uri.to_file_path() {
+    let res = if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
         let file = ws_ref
             .files(db_ref)
@@ -46,34 +46,120 @@ pub async fn completion(
             let content = file.contents(db_ref);
 
             if path_str.ends_with(".twxml") {
-                return handle_twxml_completion(db_ref, ws_ref, &content, position);
-            }
-            if path_str.ends_with(".hubgs") {
-                return handle_hubgs_completion(db_ref, ws_ref, file, &content, position);
-            }
-        }
-    }
-
-    // Fallback: list all hub instances
-    let instances = crate::db::all_hub_instances(db_ref, ws_ref);
-    let items: Vec<CompletionItem> = instances
-        .into_iter()
-        .map(|i| {
-            let detail = if let Some(disp) = i.metadata_display(db_ref) {
-                format!("Hub Instance ({}) - {}", i.type_name(db_ref), disp)
+                handle_twxml_completion(db_ref, ws_ref, &content, position)
+            } else if path_str.ends_with(".hubgs") {
+                handle_hubgs_completion(db_ref, ws_ref, file, &content, position)
             } else {
-                format!("Hub Instance ({})", i.type_name(db_ref))
-            };
-            CompletionItem {
-                label: i.name(db_ref),
-                kind: Some(CompletionItemKind::REFERENCE),
-                detail: Some(detail),
-                ..Default::default()
+                Ok(None)
             }
-        })
-        .collect();
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    };
+
+    let mut items = match res {
+        Ok(Some(CompletionResponse::Array(arr))) => arr,
+        Ok(Some(CompletionResponse::List(list))) => list.items,
+        _ => {
+            // Fallback: list all hub instances
+            let instances = crate::db::all_hub_instances(db_ref, ws_ref);
+            instances
+                .into_iter()
+                .map(|i| {
+                    let detail = if let Some(disp) = i.metadata_display(db_ref) {
+                        format!("Hub Instance ({}) - {}", i.type_name(db_ref), disp)
+                    } else {
+                        format!("Hub Instance ({})", i.type_name(db_ref))
+                    };
+                    CompletionItem {
+                        label: i.name(db_ref),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(detail),
+                        ..Default::default()
+                    }
+                })
+                .collect()
+        }
+    };
+
+    // Generate fresh UUIDs for insertion!
+    let uuid_str = generate_uuid_v4();
+    let uuid_ref = generate_uuid_ref();
+
+    items.push(CompletionItem {
+        label: "uuid-v4".to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Insert a new standard UUID v4".to_string()),
+        insert_text: Some(uuid_str),
+        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+        ..Default::default()
+    });
+
+    items.push(CompletionItem {
+        label: "uuid-ref".to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Insert a valid HubGS ref UUID (prefixed, no hyphens)".to_string()),
+        insert_text: Some(uuid_ref),
+        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+        ..Default::default()
+    });
 
     Ok(Some(CompletionResponse::Array(items)))
+}
+
+fn get_pseudorandom_bytes(len: usize) -> Vec<u8> {
+    use std::io::Read;
+    // Try reading from /dev/urandom first
+    if let Ok(mut file) = std::fs::File::open("/dev/urandom") {
+        let mut buf = vec![0u8; len];
+        if file.read_exact(&mut buf).is_ok() {
+            return buf;
+        }
+    }
+    // Fallback to LCG seeded with time
+    let mut seed = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(123456789) as u64;
+    let mut buf = vec![0u8; len];
+    for byte in buf.iter_mut() {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *byte = (seed >> 32) as u8;
+    }
+    buf
+}
+
+fn generate_uuid_v4() -> String {
+    let mut bytes = get_pseudorandom_bytes(16);
+    // Set version to 4
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    // Set variant to RFC 4122
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5],
+        bytes[6], bytes[7],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    )
+}
+
+fn generate_uuid_ref() -> String {
+    let mut bytes = get_pseudorandom_bytes(16);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = format!(
+        "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5], bytes[6], bytes[7],
+        bytes[8], bytes[9], bytes[10], bytes[11],
+        bytes[12], bytes[13], bytes[14], bytes[15]
+    );
+    format!("_{}", hex)
 }
 
 fn handle_twxml_completion(
