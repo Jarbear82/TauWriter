@@ -14,8 +14,8 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `TauWriterMD/TauWriterDesign.md` | ✅ Up to Date | Core design spec for the TauWriter ecosystem. |
 
 ### Things To Update
-- [ ] `README.md` — example TWXML uses deprecated `<metadata>` wrapper; should show `<meta />` under root `<document>`.
-- [ ] `README.md` — example HubGS should reflect `EXTENDS` syntax and newer type system features.
+- [x] `README.md` — example TWXML uses root `<meta/>` and has no deprecated `<metadata>` wrapper.
+- [x] `README.md` — example HubGS reflects `EXTENDS` syntax and new type system features.
 - [ ] Status sections for **Extension > Snippets** — to be defined once snippets are implemented.
 
 ---
@@ -298,7 +298,8 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `hub_definition (identifier)` | ✅ | `@type` |
 | `generic_type (identifier)` | ✅ | `@type` |
 | `(decorator) "@computed" \| "@default"` | ✅ | `@function.builtin` |
-| `"@metadata"` | ✅ | `@keyword.directive` |
+| `"@constraints"` | ✅ | `@keyword.directive` |
+| `"@display"`, `"@background"` | ✅ | `@keyword.directive` |
 
 **Fallback captures:** No custom fallback captures defined. Uses Zed default language fallback.
 
@@ -375,14 +376,13 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 
 ---
 
-### Inheritance & Extensibility (HubGS) — Planned / In Progress
-
+### Inheritance & Extensibility (HubGS)
 | Feature | Status | Notes |
 |:---|:---:|:---|
-| **EXTENDS AST Parsing** | ⚠️ Pending | Update AST extraction to support composite inheritance definitions. |
-| **Set-Union Compilation** | ❌ Not started | Child hubs must inherit all FIELDS and roles from EXTENDS parents. |
-| **Polymorphism Rules** | ❌ Not started | Child type instances valid for parent `ALLOWS` roles. |
-| **Decorator Precedence** | ❌ Not started | Child can override parent `@default()`, but not `@computed()`. |
+| **EXTENDS AST Parsing** | ✅ | Full composite inheritance parsing and AST extraction. |
+| **Set-Union Compilation** | ✅ | Child hubs inherit all fields and roles from extends parents. |
+| **Polymorphism Rules** | ✅ | Fully validated for instance and role references. |
+| **Decorator Precedence** | ✅ | Child can override parent `@default()`, but not `@computed()`. |
 
 ---
 
@@ -427,9 +427,8 @@ Robust engine for computed graph data.
 - [x] Enforce `@default` override rules during instance instantiation.
 
 ## Things To Remove
-
-- Deprecated `<metadata>` wrapper support — migration path from old TWXML schema.
-- Any lingering references to legacy formatting (`format_metadata_block`) in code and docs.
+- [x] Deprecated `<metadata>` wrapper support — migration path from old TWXML schema is complete.
+- [x] Any lingering references to legacy formatting (`format_metadata_block`) in code and docs.
 
 ## Things To Clarify
 

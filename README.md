@@ -101,20 +101,31 @@ A semantic markup language for prose. It uses nesting depth to determine structu
 A DSL for defining fields, typed nodes ("Hubs") and their relationships ("Roles").
 
 ```hubgs
-DEFINITIONS[ 
+DEFINITIONS [ 
   FIELDS [
-    name: String,
+    name: Text,
+    description: Text,
+    is_hero: Boolean
   ],
   HUBS [
+    Location {
+      name @display
+    },
     Character {
-      name,
+      name @display,
       resides_in -> (1) ALLOWS [Location]
+    },
+    Hero EXTENDS [Character] {
+      is_hero @default(true)
     }
   ]
 ]
 
 INSTANCES [
-    aragorn:Character {
+    rivendell:Location {
+        name = "Rivendell"
+    },
+    aragorn:Hero {
         name = "Aragorn",
         resides_in = [rivendell]
     }
