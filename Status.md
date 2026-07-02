@@ -59,12 +59,12 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | Feature | Status | Notes |
 |:---|:---:|:---|
 | **TWXML Formatting** | ✅ | 26 block tags known; 2-space indentation; block-level children indent at `+1`; self-closing tags respect indentation; inline content stays compact. |
-| **HubGS Formatting** | ⚠️ Partial | Basic support via `formatter/hubgs.rs`. Missing: chained method calls, arrow functions (EXTENDS block is implemented). |
+| **HubGS Formatting** | ✅ | Full support via `formatter/hubgs.rs`, including chained method calls and arrow functions. |
 | **`textDocument/formatting` handler** | ✅ | JSON-RPC tested and wired up. |
 | **TWXML `<meta />` formatting** | ✅ | `<meta>` handled as `SelfClosingBlock` in `tag_behavior()`; listed in `VALID_TWXML_TAGS`. |
 
 #### Current Focus: Formatter
-- Add HubGS formatting support for chained method calls and arrow functions (EXTENDS block is implemented).
+- [x] Add HubGS formatting support for chained method calls and arrow functions (EXTENDS block is implemented).
 - TWXML formatter fully updated for post-`<metadata>`-deprecation structure. All tests pass.
 
 ### JSON-RPC API
@@ -205,46 +205,25 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 ###### Bracket Matching
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| `["<" ">" "</" "/>"]` → `@punctuation.bracket` | ⚠️ Defined in highlights only | No dedicated `brackets.scm` file. Zed's generic XML bracket matching may not apply reliably — needs explicit pair definitions. |
-
-**TODO:** Create `brackets.scm` with paired `<tag_name>` ↔ `</tag_name>` captures for reliable bracket matching on TWXML custom tags.
+| `["<" ">" "</" "/>"]` → `@punctuation.bracket` | ✅ Implemented | Dedicated `brackets.scm` file exists. |
 
 ###### Code Outline (`outlines.scm`)
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| — | ❌ Not implemented | No `outlines.scm` file. Tree-sitter node types available (document, element, start_tag, end_tag, self_closing_element) but not mapped to Zed outline hierarchy. |
-
-**TODO:** Create `outlines.scm` mapping:
-- `<section>` → named_item / section
-- `<heading>` → heading
-- `<paragraph>` → paragraph
-- `<hubref>` → reference
+| — | ✅ Implemented | Supported via `outlines.scm`. |
 
 ###### Auto-indentation (`indents.scm`)
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| — | ❌ Not implemented | No `indents.scm` file. |
-
-**TODO:** Create `indents.scm` defining indent/dedent rules for TWXML block nesting.
+| — | ✅ Implemented | Supported via `indents.scm`. |
 
 ###### Code Injections
 | Status | Notes |
 |:---|:---|
-| ⚠️ Planned | Targets `<codeblock>` elements with a `language` attribute. Grammar already exposes `(tag_name)`, `attribute → (attribute_name)/(attribute_value)`, and inner `(text)` — ready for an `injections.scm` file. |
-
-**Required query (`queries/twxml/injections.scm`):**
-```scm
-(element
-  (tag_name) @tag (#eq? @tag "codeblock")
-  (attribute
-    (attribute_name) @attr (#eq? @attr "language")
-    (attribute_value) @injection.language)
-  (text) @injection.content)
-```
+| ✅ Implemented | Targets `<codeblock>` elements with a `language` attribute via `injections.scm`. |
 
 **Notes:**
 - Zed extracts the string from `@injection.language` and loads the matching sub-parser.
-- If `attribute_value` includes surrounding quotes in the AST, replace `(attribute_value) @injection.language` with `(attribute_value (attribute_value_text) @injection.language)` or use an extraction directive to strip them.
 - This enables embedding Rust, Python, JSON, etc. inside TWXML prose with dynamic highlighting.
 
 ###### Syntax Overrides (`overrides.scm`)
@@ -257,12 +236,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 ###### Text Objects (`textobjects.scm`)
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| — | ❌ Not implemented | No `textobjects.scm` file for vim-mode navigation. |
-
-**TODO:** Create `textobjects.scm` with:
-- Paragraph-level text objects (inner/outer)
-- Section-level text objects
-- Hubref anchor text objects
+| — | ✅ Implemented | Supported via `textobjects.scm` for vim-mode navigation. |
 
 ###### Text Redactions (`redactions.scm`)
 | Status | Notes |
@@ -331,29 +305,17 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 ###### Bracket Matching
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| `[]`, `{}`, `()` → `@punctuation.bracket` | ⚠️ Single-char pairs in highlights only | No dedicated `brackets.scm`. Zed will handle basic bracket matching for common characters but not custom HubGS pairings. |
-
-**TODO:** Create `brackets.scm` with explicit paired brackets (e.g., `HUBS [...]`, `FIELDS {...}`) for reliable bracket matching.
+| `[]`, `{}`, `()` → `@punctuation.bracket` | ✅ Implemented | Dedicated `brackets.scm` file exists.
 
 ###### Code Outline (`outlines.scm`)
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| — | ❌ Not implemented | No `outlines.scm` file. Tree-sitter provides named types (hub_definition, field_definition, enum_definition, struct_definition, instance_block) but not mapped to Zed outline. |
-
-**TODO:** Create `outlines.scm` mapping HubGS hierarchy:
-- HUBS → top-level section
-- hub_definition → class / struct
-- FIELDS → properties
-- ENUMS → enum
-- STRUCTS → struct
-- INSTANCES → variable
+| — | ✅ Implemented | Supported via `outlines.scm`.
 
 ###### Auto-indentation (`indents.scm`)
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| — | ❌ Not implemented | No `indents.scm` file. |
-
-**TODO:** Create `indents.scm` defining indent/dedent rules for HubGS block nesting (FIELDS, ENUMS, INSTANCES, etc.).
+| — | ✅ Implemented | Supported via `indents.scm`.
 
 ###### Code Injections
 | Status | Notes |
@@ -370,13 +332,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 ###### Text Objects (`textobjects.scm`)
 | Capture | Status | Notes |
 |:---|:---:|:---|
-| — | ❌ Not implemented | No `textobjects.scm` file for vim-mode navigation. |
-
-**TODO:** Create `textobjects.scm` with:
-- Hub definition text objects (inner/outer)
-- Field block text objects
-- Instance block text objects
-- Enum/struct body text objects
+| — | ✅ Implemented | Supported via `textobjects.scm` for vim-mode navigation.
 
 ###### Text Redactions (`redactions.scm`)
 | Status | Notes |

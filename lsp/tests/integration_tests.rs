@@ -956,3 +956,15 @@ fn test_formatter_preserves_meta_under_document() {
         formatted
     );
 }
+
+#[test]
+fn test_hubgs_formatter_expressions() {
+    // ponytail: Verifies that the HubGS formatter correctly processes chained method calls,
+    // arrow functions, and complex computed decorators.
+    let content = "DEFINITIONS [\n    HUBS [\n        Person {\n            full_name = @computed(first_name   +   ' '   +   last_name),\n            companions_count = @computed(this.companions.len(   )),\n            companions_joined = @computed(this.companions.map(c   =>   c.name).join(',   '))\n        }\n    ]\n]";
+
+    let formatted = tauwriter_lsp::formatter::format_source(content, "hubgs");
+    let expected = "DEFINITIONS [\n    HUBS [\n        Person {\n            full_name = @computed(first_name + ' ' + last_name),\n            companions_count = @computed(this.companions.len()),\n            companions_joined = @computed(this.companions.map(c => c.name).join(',   '))\n        }\n    ]\n]\n";
+    assert_eq!(formatted, expected);
+}
+
