@@ -388,9 +388,36 @@ fn parse_instances<'a>(
                     };
 
                     let mut assignments = Vec::new();
+                    let mut metadata_display = None;
+                    let mut metadata_background = None;
+                    let mut metadata_background_range = None;
                     let mut block_cursor = child.walk();
                     for assignment in child.children(&mut block_cursor) {
-                        if assignment.kind() == "instance_assignment" {
+                        let is_meta = assignment.kind() == "metadata_block";
+                        let is_inst_meta = assignment.kind() == "instance_assignment" && assignment.child(0).map(|c| c.kind() == "metadata_block").unwrap_or(false);
+                        if is_meta || is_inst_meta {
+                            let meta_node = if is_meta { assignment } else { assignment.child(0).unwrap() };
+                            let mut meta_cursor = meta_node.walk();
+                            let named_children: Vec<tree_sitter::Node> = meta_node
+                                .children(&mut meta_cursor)
+                                .filter(|n| n.is_named())
+                                .collect();
+                            for chunk in named_children.chunks_exact(2) {
+                                let key_node = chunk[0];
+                                let val_node = chunk[1];
+                                if key_node.kind() == "identifier" {
+                                    let key = contents[key_node.byte_range()].to_string();
+                                    if let Some(val) = node_to_hub_value(val_node, contents) {
+                                        if key == "display" {
+                                            metadata_display = Some(val.to_string());
+                                        } else if key == "background" {
+                                            metadata_background = Some(val.to_string());
+                                            metadata_background_range = Some(super::ts_range_to_lsp(val_node.range()));
+                                        }
+                                    }
+                                }
+                            }
+                        } else if assignment.kind() == "instance_assignment" {
                             if let Some(id_node) = assignment.child(0) {
                                 let attr_name = contents[id_node.byte_range()].to_string();
                                 if !attr_name.is_empty() && !id_node.is_missing() {
@@ -426,6 +453,9 @@ fn parse_instances<'a>(
                         super::ts_range_to_lsp(child.range()),
                         description,
                         assignments,
+                        metadata_display,
+                        metadata_background,
+                        metadata_background_range,
                     ));
                 }
             }

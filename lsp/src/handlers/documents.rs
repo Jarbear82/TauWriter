@@ -532,3 +532,125 @@ pub async fn did_change_watched_files(server: &Backend, params: DidChangeWatched
         server.publish_diagnostics(uri).await;
     }
 }
+
+pub async fn did_create_files(server: &Backend, params: CreateFilesParams) {
+    let mut files_updated = false;
+    let mut affected_files = Vec::new();
+
+    {
+        let mut db = server.db.lock().unwrap();
+        let ws = server.workspace_input;
+        let mut files = ws.files(&*db).clone();
+
+        for f in params.files {
+            if let Ok(uri) = Url::parse(&f.uri) {
+                if let Ok(path) = uri.to_file_path() {
+                    let path_str = path.to_string_lossy().to_string();
+                    if let Ok(contents) = std::fs::read_to_string(&path) {
+                        if !files.iter().any(|file| file.path(&*db) == path_str) {
+                            let source = crate::db::SourceFile::new(&mut *db, path_str, contents);
+                            files.push(source);
+                            files_updated = true;
+                            affected_files.push(uri);
+                        }
+                    }
+                }
+            }
+        }
+
+        if files_updated {
+            ws.set_files(&mut *db).to(files);
+        }
+    }
+
+    for uri in affected_files {
+        server.publish_diagnostics(uri).await;
+    }
+}
+
+pub async fn did_rename_files(server: &Backend, params: RenameFilesParams) {
+    let mut files_updated = false;
+    let mut affected_files = Vec::new();
+    let mut deleted_uris = Vec::new();
+
+    {
+        let mut db = server.db.lock().unwrap();
+        let ws = server.workspace_input;
+        let mut files = ws.files(&*db).clone();
+
+        for f in params.files {
+            let old_uri_opt = Url::parse(&f.old_uri).ok();
+            let new_uri_opt = Url::parse(&f.new_uri).ok();
+
+            if let (Some(old_uri), Some(new_uri)) = (old_uri_opt, new_uri_opt) {
+                let old_path = old_uri.to_file_path().ok();
+                let new_path = new_uri.to_file_path().ok();
+
+                if let (Some(old_p), Some(new_p)) = (old_path, new_path) {
+                    let old_path_str = old_p.to_string_lossy().to_string();
+                    let new_path_str = new_p.to_string_lossy().to_string();
+
+                    if let Some(idx) = files.iter().position(|file| file.path(&*db) == old_path_str) {
+                        files.remove(idx);
+                        server.open_files.remove(&old_uri);
+                        deleted_uris.push(old_uri);
+                        files_updated = true;
+                    }
+
+                    if let Ok(contents) = std::fs::read_to_string(&new_p) {
+                        let source = crate::db::SourceFile::new(&mut *db, new_path_str, contents);
+                        files.push(source);
+                        affected_files.push(new_uri);
+                        files_updated = true;
+                    }
+                }
+            }
+        }
+
+        if files_updated {
+            ws.set_files(&mut *db).to(files);
+        }
+    }
+
+    for uri in deleted_uris {
+        server.client.publish_diagnostics(uri, Vec::new(), None).await;
+    }
+
+    for uri in affected_files {
+        server.publish_diagnostics(uri).await;
+    }
+}
+
+pub async fn did_delete_files(server: &Backend, params: DeleteFilesParams) {
+    let mut files_updated = false;
+    let mut deleted_uris = Vec::new();
+
+    {
+        let mut db = server.db.lock().unwrap();
+        let ws = server.workspace_input;
+        let mut files = ws.files(&*db).clone();
+
+        for f in params.files {
+            if let Ok(uri) = Url::parse(&f.uri) {
+                if let Ok(path) = uri.to_file_path() {
+                    let path_str = path.to_string_lossy().to_string();
+                    if let Some(idx) = files.iter().position(|file| file.path(&*db) == path_str) {
+                        files.remove(idx);
+                        server.open_files.remove(&uri);
+                        deleted_uris.push(uri);
+                        files_updated = true;
+                    }
+                }
+            }
+        }
+
+        if files_updated {
+            ws.set_files(&mut *db).to(files);
+        }
+    }
+
+    for uri in deleted_uris {
+        server.client.publish_diagnostics(uri, Vec::new(), None).await;
+    }
+}
+

@@ -2501,3 +2501,954 @@ async fn test_did_change_watched_files_jsonrpc() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+#[tokio::test]
+async fn test_completion_metadata_hint_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_metadata_hint.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r#"DEFINITIONS [
+    HUBS [
+        Character {
+            name,
+            resides_in -> (1) ALLOWS [Location]
+        },
+        Location {
+            name
+        }
+    ]
+],
+INSTANCES [
+    workshop:Location {
+        name = "Tailor's Workshop",
+        @metadata {
+            display = "Tailor's Workshop"
+        }
+    },
+    tailor:Character {
+        name = "Brave Tailor",
+        resides_in = [ w ]
+    }
+]"#;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "hubgs".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = CompletionParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 20,
+                character: 24,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+        context: None,
+    };
+
+    let request = Request::build("textDocument/completion")
+        .id(5)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let items: Vec<CompletionItem> = serde_json::from_value(result.clone())
+        .expect("completion response should be an array of completion items");
+    assert!(!items.is_empty());
+    
+    let workshop_item = items.iter().find(|i| i.label == "workshop").unwrap();
+    assert_eq!(
+        workshop_item.detail.as_deref(),
+        Some("Hub Instance (Location) - Tailor's Workshop")
+    );
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[tokio::test]
+async fn test_document_color_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_color.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"DEFINITIONS [ HUBS [ Location { name: String } ] ], INSTANCES [ workshop:Location { name = "Workshop", @metadata { display = "Workshop", background = "#FFD700" } } ]"##;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "hubgs".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = DocumentColorParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        partial_result_params: PartialResultParams::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+    };
+
+    let request = Request::build("textDocument/documentColor")
+        .id(6)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let color_infos: Vec<ColorInformation> = serde_json::from_value(result.clone())
+        .expect("should return an array of ColorInformation");
+    assert_eq!(color_infos.len(), 1);
+    
+    let info = &color_infos[0];
+    assert!((info.color.red - 1.0).abs() < 1e-4);
+    assert!((info.color.green - 0.8431).abs() < 1e-3);
+    assert!((info.color.blue - 0.0).abs() < 1e-4);
+
+    let presentation_params = ColorPresentationParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        color: Color { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 },
+        range: info.range,
+        partial_result_params: PartialResultParams::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+    };
+    let request_pres = Request::build("textDocument/colorPresentation")
+        .id(7)
+        .params(json!(presentation_params))
+        .finish();
+
+    let response_pres = service
+        .call(request_pres)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result_pres = response_pres.result().unwrap();
+    
+    assert!(!result_pres.is_null());
+    let presentations: Vec<ColorPresentation> = serde_json::from_value(result_pres.clone()).unwrap();
+    assert_eq!(presentations.len(), 1);
+    assert_eq!(presentations[0].label, "\"#ffffff\"");
+    assert_eq!(presentations[0].text_edit.as_ref().unwrap().new_text, "\"#ffffff\"");
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[tokio::test]
+async fn test_document_link_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path1 = std::env::current_dir().unwrap().join("test_link1.twxml");
+    let uri1 = Url::from_file_path(&path1).unwrap();
+    let content1 = r##"<document>
+  <body>
+    <heading id="chapter1">The Beginning</heading>
+    <paragraph>
+      Go to <link href="#chapter1">chapter 1</link>.
+      Also go to <link href="test_link2.twxml#chapter2">chapter 2</link>.
+    </paragraph>
+  </body>
+</document>"##;
+
+    let path2 = std::env::current_dir().unwrap().join("test_link2.twxml");
+    let uri2 = Url::from_file_path(&path2).unwrap();
+    let content2 = r##"<document>
+  <body>
+    <heading id="chapter2">The Next Part</heading>
+  </body>
+</document>"##;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file1 = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path1.to_string_lossy().to_string(),
+            content1.to_string(),
+        );
+        let source_file2 = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path2.to_string_lossy().to_string(),
+            content2.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file1, source_file2]);
+    }
+
+    let did_open_params1 = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri1.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content1.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params1))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = DocumentLinkParams {
+        text_document: TextDocumentIdentifier { uri: uri1.clone() },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let request = Request::build("textDocument/documentLink")
+        .id(8)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let links: Vec<DocumentLink> = serde_json::from_value(result.clone())
+        .expect("should return an array of DocumentLink");
+    assert_eq!(links.len(), 2);
+
+    let link1 = &links[0];
+    let target1 = link1.target.as_ref().unwrap();
+    assert_eq!(target1.path(), uri1.path());
+    assert_eq!(target1.fragment(), Some("L3"));
+
+    let link2 = &links[1];
+    let target2 = link2.target.as_ref().unwrap();
+    assert_eq!(target2.path(), uri2.path());
+    assert_eq!(target2.fragment(), Some("L3"));
+
+    if path1.exists() {
+        let _ = std::fs::remove_file(&path1);
+    }
+    if path2.exists() {
+        let _ = std::fs::remove_file(&path2);
+    }
+}
+
+#[tokio::test]
+async fn test_call_hierarchy_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_hierarchy.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"DEFINITIONS [
+    HUBS [
+        Location {
+            neighbor: Location
+        }
+    ]
+],
+INSTANCES [
+    workshop:Location {
+        neighbor = store
+    },
+    store:Location {
+        neighbor = workshop
+    }
+]"##;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "hubgs".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let prep_params = CallHierarchyPrepareParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 8,
+                character: 6,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+    };
+
+    let prep_req = Request::build("textDocument/prepareCallHierarchy")
+        .id(9)
+        .params(json!(prep_params))
+        .finish();
+
+    let response = service
+        .call(prep_req)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let items: Vec<CallHierarchyItem> = serde_json::from_value(result.clone()).unwrap();
+    assert_eq!(items.len(), 1);
+    let item = &items[0];
+    assert_eq!(item.name, "workshop");
+    assert_eq!(item.kind, SymbolKind::VARIABLE);
+
+    let incoming_params = CallHierarchyIncomingCallsParams {
+        item: item.clone(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+    let incoming_req = Request::build("callHierarchy/incomingCalls")
+        .id(10)
+        .params(json!(incoming_params))
+        .finish();
+
+    let response_inc = service
+        .call(incoming_req)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result_inc = response_inc.result().unwrap();
+    assert!(!result_inc.is_null());
+    let incoming_calls: Vec<CallHierarchyIncomingCall> = serde_json::from_value(result_inc.clone()).unwrap();
+    assert!(!incoming_calls.is_empty());
+    assert!(incoming_calls.iter().any(|c| c.from.name == "store"));
+
+    let outgoing_params = CallHierarchyOutgoingCallsParams {
+        item: item.clone(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+    let outgoing_req = Request::build("callHierarchy/outgoingCalls")
+        .id(11)
+        .params(json!(outgoing_params))
+        .finish();
+
+    let response_out = service
+        .call(outgoing_req)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result_out = response_out.result().unwrap();
+    assert!(!result_out.is_null());
+    let outgoing_calls: Vec<CallHierarchyOutgoingCall> = serde_json::from_value(result_out.clone()).unwrap();
+    assert_eq!(outgoing_calls.len(), 1);
+    assert_eq!(outgoing_calls[0].to.name, "Location");
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[tokio::test]
+async fn test_range_formatting_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_range_fmt.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"<document>
+<body>
+<paragraph>
+Hello
+</paragraph>
+</body>
+</document>"##;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let formatting_options = FormattingOptions {
+        tab_size: 2,
+        insert_spaces: true,
+        ..Default::default()
+    };
+
+    let params = DocumentRangeFormattingParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        range: Range {
+            start: Position { line: 2, character: 0 },
+            end: Position { line: 4, character: 12 },
+        },
+        options: formatting_options,
+        work_done_progress_params: WorkDoneProgressParams::default(),
+    };
+
+    let request = Request::build("textDocument/rangeFormatting")
+        .id(12)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let edits: Vec<TextEdit> = serde_json::from_value(result.clone()).unwrap();
+    assert!(!edits.is_empty());
+    
+    let edit = &edits[0];
+    assert!(edit.new_text.contains("    <paragraph>\n      Hello\n    </paragraph>"));
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[tokio::test]
+async fn test_signature_help_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_sig.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"DEFINITIONS [
+    HUBS [
+        Location {
+            neighbor -> (1) ALLOWS [ Location ]
+        }
+    ]
+],
+INSTANCES [
+    workshop:Location {
+        neighbor = store
+    }
+]"##;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "hubgs".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = SignatureHelpParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line: 9, character: 19 },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        context: None,
+    };
+
+    let request = Request::build("textDocument/signatureHelp")
+        .id(13)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let sig_help: SignatureHelp = serde_json::from_value(result.clone()).unwrap();
+    assert_eq!(sig_help.signatures.len(), 1);
+    let sig = &sig_help.signatures[0];
+    assert!(sig.label.contains("Location"));
+    assert!(sig.label.contains("neighbor: Location"));
+    assert_eq!(sig_help.active_parameter, Some(0));
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[tokio::test]
+async fn test_metadata_tag_handling_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    let mut diagnostics_rx = socket;
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_metadata.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"<document>
+  <body>
+    <metadata></metadata>
+  </body>
+</document>"##;
+
+    let rope = ropey::Rope::from_str("<document><body><metadata>");
+    let open_files = Arc::new(DashMap::new());
+    open_files.insert(uri.clone(), rope);
+
+    let (mut service2, mut socket2) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: open_files.clone(),
+    });
+    tokio::spawn(async move { while let Some(_) = socket2.next().await {} });
+
+    let _ = service2
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let fmt_params = DocumentOnTypeFormattingParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line: 0, character: 26 },
+        },
+        ch: ">".to_string(),
+        options: FormattingOptions::default(),
+    };
+    let fmt_req = Request::build("textDocument/onTypeFormatting")
+        .id(14)
+        .params(json!(fmt_params))
+        .finish();
+
+    let fmt_resp = service2.call(fmt_req).await.unwrap().expect("Response should be present");
+    let fmt_result = fmt_resp.result().unwrap();
+    assert!(fmt_result.is_null());
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let mut found_metadata_warning = false;
+    while let Some(msg) = diagnostics_rx.next().await {
+        if msg.method() == "textDocument/publishDiagnostics" {
+            let params = msg.params().unwrap();
+            let diags: Vec<Diagnostic> = serde_json::from_value(params.get("diagnostics").unwrap().clone()).unwrap();
+            for d in diags {
+                if d.message.contains("Unknown TWXML tag 'metadata'") {
+                    found_metadata_warning = true;
+                }
+            }
+            break;
+        }
+    }
+    assert!(found_metadata_warning);
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[tokio::test]
+async fn test_selection_range_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+
+    let db_arc = Arc::new(StdMutex::new(db));
+    let ws_val = workspace_input;
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_arc.clone(),
+        workspace_input: ws_val,
+        open_files: Arc::new(DashMap::new()),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let path = std::env::current_dir().unwrap().join("test_sel_range.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"<document>
+  <body>
+    <paragraph>Hello</paragraph>
+  </body>
+</document>"##;
+
+    {
+        let mut db_lock = db_arc.lock().unwrap();
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut *db_lock,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = ws_val;
+        ws.set_files(&mut *db_lock).to(vec![source_file]);
+    }
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "twxml".to_string(),
+            version: 1,
+            text: content.to_string(),
+        },
+    };
+    let _ = service
+        .call(
+            Request::build("textDocument/didOpen")
+                .params(json!(did_open_params))
+                .finish(),
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let params = SelectionRangeParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        positions: vec![Position { line: 2, character: 17 }],
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    };
+
+    let request = Request::build("textDocument/selectionRange")
+        .id(15)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+    
+    assert!(!result.is_null());
+    let ranges: Vec<SelectionRange> = serde_json::from_value(result.clone()).unwrap();
+    assert_eq!(ranges.len(), 1);
+    
+    let leaf = &ranges[0];
+    assert_eq!(leaf.range.start.line, 2);
+    assert!(leaf.parent.is_some());
+
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+
+
+
+
+
+
+

@@ -58,11 +58,18 @@ pub async fn completion(
     let instances = crate::db::all_hub_instances(db_ref, ws_ref);
     let items: Vec<CompletionItem> = instances
         .into_iter()
-        .map(|i| CompletionItem {
-            label: i.name(db_ref),
-            kind: Some(CompletionItemKind::REFERENCE),
-            detail: Some("Hub Instance".to_string()),
-            ..Default::default()
+        .map(|i| {
+            let detail = if let Some(disp) = i.metadata_display(db_ref) {
+                format!("Hub Instance ({}) - {}", i.type_name(db_ref), disp)
+            } else {
+                format!("Hub Instance ({})", i.type_name(db_ref))
+            };
+            CompletionItem {
+                label: i.name(db_ref),
+                kind: Some(CompletionItemKind::REFERENCE),
+                detail: Some(detail),
+                ..Default::default()
+            }
         })
         .collect();
 
@@ -82,11 +89,18 @@ fn handle_twxml_completion(
             let instances = crate::db::all_hub_instances(db, ws);
             let items: Vec<CompletionItem> = instances
                 .into_iter()
-                .map(|i| CompletionItem {
-                    label: i.name(db),
-                    kind: Some(CompletionItemKind::REFERENCE),
-                    detail: Some("Hub Instance".to_string()),
-                    ..Default::default()
+                .map(|i| {
+                    let detail = if let Some(disp) = i.metadata_display(db) {
+                        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
+                    } else {
+                        format!("Hub Instance ({})", i.type_name(db))
+                    };
+                    CompletionItem {
+                        label: i.name(db),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(detail),
+                        ..Default::default()
+                    }
                 })
                 .collect();
             Ok(Some(CompletionResponse::Array(items)))
@@ -279,11 +293,18 @@ fn complete_role_instances(
                         role.allowed_types.contains(&i.type_name(db))
                     }
                 })
-                .map(|i| CompletionItem {
-                    label: i.name(db),
-                    kind: Some(CompletionItemKind::REFERENCE),
-                    detail: Some(format!("Hub Instance ({})", i.type_name(db))),
-                    ..Default::default()
+                .map(|i| {
+                    let detail = if let Some(disp) = i.metadata_display(db) {
+                        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
+                    } else {
+                        format!("Hub Instance ({})", i.type_name(db))
+                    };
+                    CompletionItem {
+                        label: i.name(db),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(detail),
+                        ..Default::default()
+                    }
                 })
                 .collect();
             return Ok(Some(CompletionResponse::Array(items)));

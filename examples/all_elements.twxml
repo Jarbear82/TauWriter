@@ -5,7 +5,7 @@
   <meta name="status" content="complete"/>
   <body>
     <heading>The Brave Little Tailor</heading>
-    <section alias="Chapter 1">
+    <section alias="Chapter1">
       <heading>The Seven at One Blow</heading>
       <paragraph>
         One summer morning, a little <bold><italic>tailor</italic></bold> sat on his bench by the door,
@@ -79,7 +79,7 @@
       <paragraph>
         For more on the original tale
         <link href="https://en.wikipedia.org/wiki/The_Story_of_the_Brave_Little_Tailor">Wikipedia</link>.
-        Images and media of the story are scattered across <link href="#chapter1">Chapter 1 above</link>.
+        Images and media of the story are scattered across <link href="#Chapter1">Chapter 1 above</link>.
       </paragraph>
       <image src="images/tailor-belt.png" alt="The tailor's belt reading Seven at One Blow"/>
       <audio src="audio/nursery-rhyme.mp3" alt="Nursery rhyme narration of the tailor's tale"/>
@@ -93,3 +93,4 @@
     </footnote>
   </body>
 </document>
+

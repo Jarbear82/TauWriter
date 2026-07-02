@@ -1446,3 +1446,74 @@ INSTANCES [
     );
 }
 
+#[test]
+fn test_hubgs_metadata_parsing() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    HUBS [
+        Person { name: String }
+    ]
+],
+INSTANCES [
+    aragorn:Person {
+        name = \"Aragorn\",
+        @metadata {
+            display = \"Aragorn Elessar\",
+            background = \"#FFD700\"
+        }
+    }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "metadata.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+
+    let result = db::parse_hubgs(&db, hubgs_file);
+    let instances = result.instances(&db);
+    assert_eq!(instances.len(), 1);
+    let aragorn = &instances[0];
+    assert_eq!(aragorn.name(&db), "aragorn");
+    assert_eq!(aragorn.metadata_display(&db), Some("Aragorn Elessar".to_string()));
+    assert_eq!(aragorn.metadata_background(&db), Some("#FFD700".to_string()));
+    assert!(aragorn.metadata_background_range(&db).is_some());
+}
+
+#[test]
+fn test_broken_link_validation() {
+    let mut db = RootDatabase::default();
+    
+    let path1 = "/workspace/doc1.twxml".to_string();
+    let content1 = r##"<document>
+  <body>
+    <paragraph>
+      Go to <link href="doc2.twxml#missing_anchor">missing</link>.
+      Also go to <link href="missing_file.twxml">missing file</link>.
+    </paragraph>
+  </body>
+</document>"##;
+
+    let path2 = "/workspace/doc2.twxml".to_string();
+    let content2 = r##"<document>
+  <body>
+    <paragraph id="existing_anchor">existing</paragraph>
+  </body>
+</document>"##;
+
+    let file1 = db::SourceFile::new(&mut db, path1.clone(), content1.to_string());
+    let file2 = db::SourceFile::new(&mut db, path2.clone(), content2.to_string());
+
+    let ws = db::Workspace::new(&mut db, vec![file1, file2]);
+
+    let errors = db::validate_file(&db, ws, file1);
+    
+    assert_eq!(errors.len(), 2);
+    assert!(errors[0].message.contains("Anchor '#missing_anchor' not found"));
+    assert!(errors[1].message.contains("Target file 'missing_file.twxml' not found"));
+}
+
+
+

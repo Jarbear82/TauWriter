@@ -105,6 +105,9 @@ pub struct HubInstance<'db> {
     pub block_range: super::LspRange,
     pub description: Option<String>,
     pub assignments: Vec<HubAssignment>,
+    pub metadata_display: Option<String>,
+    pub metadata_background: Option<String>,
+    pub metadata_background_range: Option<super::LspRange>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

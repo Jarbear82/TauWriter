@@ -112,7 +112,7 @@ pub fn validate_file(db: &dyn Db, workspace: Workspace, file: SourceFile) -> Vec
 
 fn validate_twxml(
     db: &dyn Db,
-    _workspace: Workspace,
+    workspace: Workspace,
     file: SourceFile,
     errors: &mut Vec<ValidationError>,
 ) {
@@ -148,11 +148,11 @@ fn validate_twxml(
     let refs = parse_twxml(db, file);
     for r in refs {
         let name = r.name(db);
-        if let Some(instance) = resolve_reference(db, _workspace, name.clone()) {
+        if let Some(instance) = resolve_reference(db, workspace, name.clone()) {
             if let Some(ref field_name) = r.field(db) {
                 let type_name = instance.type_name(db);
                 if let Some(hub_type) =
-                    resolve_type(db, _workspace, instance.file(db), type_name.clone())
+                    resolve_type(db, workspace, instance.file(db), type_name.clone())
                 {
                     let is_field = hub_type.fields(db).iter().any(|f| &f.name == field_name);
                     let is_role = hub_type.roles(db).iter().any(|r| &r.name == field_name);
@@ -166,7 +166,7 @@ fn validate_twxml(
                         });
                     } else if let Some(ref text_val) = r.text(db) {
                         if let Some(eval_val) =
-                            compute_field_value(db, _workspace, instance, field_name.clone())
+                            compute_field_value(db, workspace, instance, field_name.clone())
                         {
                             let canonical_str = value_to_canonical(eval_val);
                             if canonical_str != *text_val {
@@ -193,9 +193,14 @@ fn validate_twxml(
     // 2. Validate Tag Names
     for tag in tags.iter() {
         if !VALID_TWXML_TAGS.contains(&tag.name(db).as_str()) {
+            let message = if tag.name(db) == "metadata" {
+                "Unknown TWXML tag 'metadata'. Did you mean '<meta />' at the document root?".to_string()
+            } else {
+                format!("Unknown TWXML tag '{}'", tag.name(db))
+            };
             errors.push(ValidationError {
                 range: tag.range(db),
-                message: format!("Unknown TWXML tag '{}'", tag.name(db)),
+                message,
             });
         }
 
@@ -316,6 +321,149 @@ fn validate_twxml(
             }
         }
     }
+    validate_links(db, workspace, file, errors);
+}
+
+fn anchor_exists(contents: &str, anchor: &str) -> bool {
+    let language = unsafe { crate::parser::tree_sitter_twxml() };
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(language).ok();
+    let tree = match parser.parse(contents, None) {
+        Some(t) => t,
+        None => return false,
+    };
+
+    fn walk(node: tree_sitter::Node, contents: &str, anchor: &str) -> bool {
+        if node.kind() == "start_tag" || node.kind() == "self_closing_element" {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "attribute" {
+                    if let (Some(name_node), Some(val_node)) = (child.child(0), child.child(2)) {
+                        let attr_name = &contents[name_node.byte_range()];
+                        let attr_val = contents[val_node.byte_range()]
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
+                        if (attr_name == "id" || attr_name == "alias" || attr_name == "class") && attr_val == anchor {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if walk(child, contents, anchor) {
+                return true;
+            }
+        }
+        false
+    }
+
+    walk(tree.root_node(), contents, anchor)
+}
+
+fn validate_links(
+    db: &dyn Db,
+    workspace: Workspace,
+    file: SourceFile,
+    errors: &mut Vec<ValidationError>,
+) {
+    let contents = file.contents(db);
+    let current_path_str = file.path(db);
+    let current_path = std::path::Path::new(&current_path_str);
+    let parent_path = current_path.parent();
+
+    let language = unsafe { crate::parser::tree_sitter_twxml() };
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(language).ok();
+    let tree = match parser.parse(&contents, None) {
+        Some(t) => t,
+        None => return,
+    };
+
+    fn walk_links(
+        node: tree_sitter::Node,
+        contents: &str,
+        parent_path: Option<&std::path::Path>,
+        db: &dyn Db,
+        workspace: Workspace,
+        current_file: SourceFile,
+        errors: &mut Vec<ValidationError>,
+    ) {
+        if node.kind() == "start_tag" || node.kind() == "self_closing_element" {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let tag_name = &contents[name_node.byte_range()];
+                if tag_name == "link" {
+                    let mut cursor = node.walk();
+                    for child in node.children(&mut cursor) {
+                        if child.kind() == "attribute" {
+                            if let (Some(name_node), Some(val_node)) = (child.child(0), child.child(2)) {
+                                let attr_name = &contents[name_node.byte_range()];
+                                if attr_name == "href" {
+                                    let href = contents[val_node.byte_range()]
+                                        .trim_matches('"')
+                                        .trim_matches('\'')
+                                        .to_string();
+
+                                    if href.starts_with("http://") || href.starts_with("https://") {
+                                        continue;
+                                    }
+
+                                    let parts: Vec<&str> = href.split('#').collect();
+                                    let (target_file_path, anchor_id) = if parts.len() == 2 {
+                                        (if parts[0].is_empty() { None } else { Some(parts[0]) }, Some(parts[1]))
+                                    } else if href.starts_with('#') {
+                                        (None, Some(&href[1..]))
+                                    } else {
+                                        (Some(href.as_str()), None)
+                                    };
+
+                                    let target_file = if let Some(path) = target_file_path {
+                                        if let Some(parent) = parent_path {
+                                            let full_path = parent.join(path);
+                                            let full_path_str = full_path.to_string_lossy().to_string();
+                                            workspace.files(db).into_iter().find(|f| f.path(db) == full_path_str)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        Some(current_file)
+                                    };
+
+                                    match target_file {
+                                        None => {
+                                            errors.push(ValidationError {
+                                                range: crate::parser::ts_range_to_lsp(val_node.range()),
+                                                message: format!("Target file '{}' not found in workspace", target_file_path.unwrap()),
+                                            });
+                                        }
+                                        Some(tgt) => {
+                                            if let Some(anchor) = anchor_id {
+                                                let tgt_contents = tgt.contents(db);
+                                                if !anchor_exists(&tgt_contents, anchor) {
+                                                    errors.push(ValidationError {
+                                                        range: crate::parser::ts_range_to_lsp(val_node.range()),
+                                                        message: format!("Anchor '#{}' not found in target file", anchor),
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            walk_links(child, contents, parent_path, db, workspace, current_file, errors);
+        }
+    }
+
+    walk_links(tree.root_node(), &contents, parent_path, db, workspace, file, errors);
 }
 
 fn validate_hubgs(

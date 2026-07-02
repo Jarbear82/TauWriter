@@ -192,6 +192,23 @@ impl Backend {
         root: std::path::PathBuf,
     ) {
         use walkdir::WalkDir;
+        use tower_lsp::lsp_types::notification::Progress;
+
+        let token = NumberOrString::String("indexing-progress".to_string());
+        use tower_lsp::lsp_types::request::WorkDoneProgressCreate;
+        let _ = client.send_request::<WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+            token: token.clone(),
+        }).await;
+
+        let _ = client.send_notification::<Progress>(ProgressParams {
+            token: token.clone(),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(WorkDoneProgressBegin {
+                title: "Indexing Workspace".to_string(),
+                cancellable: Some(false),
+                message: Some("Scanning directory...".to_string()),
+                percentage: Some(10),
+            })),
+        }).await;
 
         let mut files = Vec::new();
         {
@@ -211,6 +228,23 @@ impl Backend {
             }
             ws.set_files(&mut *db).to(files);
         }
+
+        let _ = client.send_notification::<Progress>(ProgressParams {
+            token: token.clone(),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(WorkDoneProgressReport {
+                cancellable: Some(false),
+                message: Some("Populating Salsa database...".to_string()),
+                percentage: Some(80),
+            })),
+        }).await;
+
+        let _ = client.send_notification::<Progress>(ProgressParams {
+            token: token.clone(),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                message: Some("Indexing complete.".to_string()),
+            })),
+        }).await;
+
         client
             .log_message(MessageType::INFO, "Indexing complete.")
             .await;
@@ -330,6 +364,19 @@ impl LanguageServer for Backend {
                     resolve_provider: None,
                 }),
                 inlay_hint_provider: Some(OneOf::Left(true)),
+                color_provider: Some(ColorProviderCapability::Simple(true)),
+                document_link_provider: Some(DocumentLinkOptions {
+                    resolve_provider: Some(false),
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
+                }),
+                call_hierarchy_provider: Some(CallHierarchyServerCapability::Simple(true)),
+                document_range_formatting_provider: Some(OneOf::Left(true)),
+                signature_help_provider: Some(SignatureHelpOptions {
+                    trigger_characters: Some(vec!["{".to_string(), ",".to_string(), "=".to_string()]),
+                    retrigger_characters: None,
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
+                }),
+                selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -450,6 +497,42 @@ impl LanguageServer for Backend {
         handlers::inlay_hints(self, params).await
     }
 
+    async fn document_color(&self, params: DocumentColorParams) -> Result<Vec<ColorInformation>> {
+        handlers::document_color(self, params).await.map(|opt| opt.unwrap_or_default())
+    }
+
+    async fn color_presentation(
+        &self,
+        params: ColorPresentationParams,
+    ) -> Result<Vec<ColorPresentation>> {
+        handlers::color_presentation(self, params).await.map(|opt| opt.unwrap_or_default())
+    }
+
+    async fn document_link(&self, params: DocumentLinkParams) -> Result<Option<Vec<DocumentLink>>> {
+        handlers::document_link(self, params).await
+    }
+
+    async fn prepare_call_hierarchy(
+        &self,
+        params: CallHierarchyPrepareParams,
+    ) -> Result<Option<Vec<CallHierarchyItem>>> {
+        handlers::prepare_call_hierarchy(self, params).await
+    }
+
+    async fn incoming_calls(
+        &self,
+        params: CallHierarchyIncomingCallsParams,
+    ) -> Result<Option<Vec<CallHierarchyIncomingCall>>> {
+        handlers::incoming_calls(self, params).await
+    }
+
+    async fn outgoing_calls(
+        &self,
+        params: CallHierarchyOutgoingCallsParams,
+    ) -> Result<Option<Vec<CallHierarchyOutgoingCall>>> {
+        handlers::outgoing_calls(self, params).await
+    }
+
     async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
         handlers::code_lens(self, params).await
     }
@@ -460,6 +543,27 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         handlers::formatting(self, params).await
+    }
+
+    async fn signature_help(
+        &self,
+        params: SignatureHelpParams,
+    ) -> Result<Option<SignatureHelp>> {
+        handlers::signature_help(self, params).await
+    }
+
+    async fn selection_range(
+        &self,
+        params: SelectionRangeParams,
+    ) -> Result<Option<Vec<SelectionRange>>> {
+        handlers::selection_range(self, params).await
+    }
+
+    async fn range_formatting(
+        &self,
+        params: DocumentRangeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        handlers::range_formatting(self, params).await
     }
 
     async fn on_type_formatting(
@@ -501,6 +605,34 @@ impl LanguageServer for Backend {
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
         handlers::did_change_watched_files(self, params).await;
+    }
+
+    async fn did_change_configuration(&self, _params: DidChangeConfigurationParams) {}
+
+    async fn execute_command(&self, _params: ExecuteCommandParams) -> Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
+
+    async fn did_create_files(&self, params: CreateFilesParams) {
+        handlers::did_create_files(self, params).await;
+    }
+
+    async fn did_rename_files(&self, params: RenameFilesParams) {
+        handlers::did_rename_files(self, params).await;
+    }
+
+    async fn did_delete_files(&self, params: DeleteFilesParams) {
+        handlers::did_delete_files(self, params).await;
+    }
+
+    async fn will_save(&self, _params: WillSaveTextDocumentParams) {}
+
+    async fn will_save_wait_until(&self, _params: WillSaveTextDocumentParams) -> Result<Option<Vec<TextEdit>>> {
+        Ok(None)
+    }
+
+    async fn moniker(&self, _params: MonikerParams) -> Result<Option<Vec<Moniker>>> {
+        Ok(None)
     }
 }
 
