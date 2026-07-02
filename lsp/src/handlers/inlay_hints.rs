@@ -9,7 +9,9 @@ pub async fn inlay_hints(
 ) -> Result<Option<Vec<InlayHint>>> {
     let uri = params.text_document.uri;
 
-    let (db, ws) = server.lock_db().await;
+    let (db_val, ws_val) = server.read_db();
+    let db = &db_val;
+    let ws = &ws_val;
 
     let mut hints = Vec::new();
 
@@ -18,13 +20,13 @@ pub async fn inlay_hints(
 
         // For .hubgs files, show type hints on instance assignments
         if path_str.ends_with(".hubgs") {
-            let file = (*ws)
-                .files(&*db)
+            let file = ws
+                .files(db)
                 .into_iter()
-                .find(|f| f.path(&*db) == path_str);
+                .find(|f| f.path(db) == path_str);
 
             if let Some(file) = file {
-                let result = crate::db::parse_hubgs(&*db, file);
+                let result = crate::db::parse_hubgs(db, file);
 
                 for inst in result.instances(&*db) {
                     let type_name = inst.type_name(&*db);

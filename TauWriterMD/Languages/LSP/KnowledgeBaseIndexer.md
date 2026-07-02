@@ -12,12 +12,13 @@ The Knowledge Base Indexer is the core "sync engine" of TauWriter. It runs as a 
 ## Tech Stack
 - **Rust**: Primary implementation language.
 - **Salsa**: For incremental computation and reactive indexing.
-- **Notify**: For file system watching.
+- **LSP File Watcher (`workspace/didChangeWatchedFiles`)**: For standards-compliant directory and file change events.
 - **Tree-Sitter**: For fast, partial re-parsing of changed files.
 
 ## Workflow Example: Hub Deletion
-1. User deletes an instance `aragorn:Person` from `fantasy.hubgs`.
-2. `Notify` triggers the Indexer.
-3. `Salsa` identifies that the Hub graph has changed.
-4. The LSP queries the indexer for all documents containing `<hubref id="aragorn">`.
-5. The LSP sends a `workspace/applyEdit` to the client to strip the `<hubref>` tags from those documents.
+1. User deletes an instance `aragorn:Person` from `fantasy.hubgs` externally (e.g. via Git or another editor).
+2. The editor client's file watcher triggers and sends a `workspace/didChangeWatchedFiles` notification to the LSP.
+3. The LSP updates the `Salsa` input source file.
+4. `Salsa` identifies that the Hub graph has changed.
+5. The LSP queries the indexer for all documents containing `<hubref id="aragorn">`.
+6. The LSP sends a `workspace/applyEdit` to the client to strip the `<hubref>` tags from those documents.

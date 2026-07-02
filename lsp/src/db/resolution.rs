@@ -239,3 +239,54 @@ fn find_ref_in_value(
         _ => None,
     }
 }
+
+pub fn hub_instance_metadata_display(
+    db: &dyn Db,
+    workspace: Workspace,
+    inst: HubInstance<'_>,
+) -> Option<String> {
+    let type_name = inst.type_name(db);
+    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
+    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
+    let display_field = all_fields.into_iter().find(|f| f.is_display)?;
+    let assign = inst.assignments(db).into_iter().find(|a| a.name == display_field.name)?;
+    match &assign.value {
+        crate::db::HubValue::String(s) => Some(s.clone()),
+        crate::db::HubValue::Number(n) => Some(n.clone()),
+        crate::db::HubValue::Boolean(b) => Some(b.to_string()),
+        crate::db::HubValue::Identifier(i) => Some(i.clone()),
+        _ => None,
+    }
+}
+
+pub fn hub_instance_metadata_background(
+    db: &dyn Db,
+    workspace: Workspace,
+    inst: HubInstance<'_>,
+) -> Option<String> {
+    let type_name = inst.type_name(db);
+    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
+    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
+    let bg_field = all_fields.into_iter().find(|f| f.is_background)?;
+    let assign = inst.assignments(db).into_iter().find(|a| a.name == bg_field.name)?;
+    match &assign.value {
+        crate::db::HubValue::String(s) => Some(s.clone()),
+        crate::db::HubValue::Number(n) => Some(n.clone()),
+        crate::db::HubValue::Boolean(b) => Some(b.to_string()),
+        crate::db::HubValue::Identifier(i) => Some(i.clone()),
+        _ => None,
+    }
+}
+
+pub fn hub_instance_metadata_background_range(
+    db: &dyn Db,
+    workspace: Workspace,
+    inst: HubInstance<'_>,
+) -> Option<super::LspRange> {
+    let type_name = inst.type_name(db);
+    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
+    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
+    let bg_field = all_fields.into_iter().find(|f| f.is_background)?;
+    let assign = inst.assignments(db).into_iter().find(|a| a.name == bg_field.name)?;
+    Some(assign.value_range)
+}

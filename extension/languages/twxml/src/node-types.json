@@ -70,14 +70,14 @@
     "fields": {},
     "children": {
       "multiple": true,
-      "required": false,
+      "required": true,
       "types": [
         {
           "type": "body_block",
           "named": true
         },
         {
-          "type": "metadata_block",
+          "type": "meta_tag",
           "named": true
         }
       ]
@@ -131,23 +131,26 @@
     }
   },
   {
-    "type": "metadata_block",
+    "type": "meta_tag",
     "named": true,
-    "fields": {},
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "tag_name",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
       "multiple": true,
       "required": false,
       "types": [
         {
-          "type": "element",
-          "named": true
-        },
-        {
-          "type": "self_closing_element",
-          "named": true
-        },
-        {
-          "type": "text",
+          "type": "attribute",
           "named": true
         }
       ]
@@ -263,19 +266,11 @@
     "named": false
   },
   {
-    "type": "</metadata>",
-    "named": false
-  },
-  {
     "type": "<body>",
     "named": false
   },
   {
     "type": "<document>",
-    "named": false
-  },
-  {
-    "type": "<metadata>",
     "named": false
   },
   {

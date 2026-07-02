@@ -1,0 +1,7 @@
+DEFINITIONS [
+    HUBS [
+        Person {
+            @constraints [ 1 == 1 ]
+        }
+    ]
+]

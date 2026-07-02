@@ -31,13 +31,13 @@ pub async fn completion(
     let uri = params.text_document_position.text_document.uri;
     let position = params.text_document_position.position;
 
-    let (db, ws) = server.lock_db().await;
-    let db_ref = &*db;
-    let ws_ref = *ws;
+    let (db_val, ws_val) = server.read_db();
+    let db_ref = &db_val;
+    let ws_ref = ws_val;
 
-    if let Ok(path) = uri.to_file_path() {
+    let res = if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
-        let file = ws
+        let file = ws_ref
             .files(db_ref)
             .into_iter()
             .find(|f| f.path(db_ref) == path_str);
@@ -46,27 +46,120 @@ pub async fn completion(
             let content = file.contents(db_ref);
 
             if path_str.ends_with(".twxml") {
-                return handle_twxml_completion(db_ref, ws_ref, &content, position);
+                handle_twxml_completion(db_ref, ws_ref, &content, position)
+            } else if path_str.ends_with(".hubgs") {
+                handle_hubgs_completion(db_ref, ws_ref, file, &content, position)
+            } else {
+                Ok(None)
             }
-            if path_str.ends_with(".hubgs") {
-                return handle_hubgs_completion(db_ref, ws_ref, file, &content, position);
-            }
+        } else {
+            Ok(None)
         }
-    }
+    } else {
+        Ok(None)
+    };
 
-    // Fallback: list all hub instances
-    let instances = crate::db::all_hub_instances(db_ref, ws_ref);
-    let items: Vec<CompletionItem> = instances
-        .into_iter()
-        .map(|i| CompletionItem {
-            label: i.name(db_ref),
-            kind: Some(CompletionItemKind::REFERENCE),
-            detail: Some("Hub Instance".to_string()),
-            ..Default::default()
-        })
-        .collect();
+    let mut items = match res {
+        Ok(Some(CompletionResponse::Array(arr))) => arr,
+        Ok(Some(CompletionResponse::List(list))) => list.items,
+        _ => {
+            // Fallback: list all hub instances
+            let instances = crate::db::all_hub_instances(db_ref, ws_ref);
+            instances
+                .into_iter()
+                .map(|i| {
+                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db_ref, ws_ref, i) {
+                        format!("Hub Instance ({}) - {}", i.type_name(db_ref), disp)
+                    } else {
+                        format!("Hub Instance ({})", i.type_name(db_ref))
+                    };
+                    CompletionItem {
+                        label: i.name(db_ref),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(detail),
+                        ..Default::default()
+                    }
+                })
+                .collect()
+        }
+    };
+
+    // Generate fresh UUIDs for insertion!
+    let uuid_str = generate_uuid_v4();
+    let uuid_ref = generate_uuid_ref();
+
+    items.push(CompletionItem {
+        label: "uuid-v4".to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Insert a new standard UUID v4".to_string()),
+        insert_text: Some(uuid_str),
+        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+        ..Default::default()
+    });
+
+    items.push(CompletionItem {
+        label: "uuid-ref".to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Insert a valid HubGS ref UUID (prefixed, no hyphens)".to_string()),
+        insert_text: Some(uuid_ref),
+        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+        ..Default::default()
+    });
 
     Ok(Some(CompletionResponse::Array(items)))
+}
+
+fn get_pseudorandom_bytes(len: usize) -> Vec<u8> {
+    use std::io::Read;
+    // Try reading from /dev/urandom first
+    if let Ok(mut file) = std::fs::File::open("/dev/urandom") {
+        let mut buf = vec![0u8; len];
+        if file.read_exact(&mut buf).is_ok() {
+            return buf;
+        }
+    }
+    // Fallback to LCG seeded with time
+    let mut seed = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(123456789) as u64;
+    let mut buf = vec![0u8; len];
+    for byte in buf.iter_mut() {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *byte = (seed >> 32) as u8;
+    }
+    buf
+}
+
+fn generate_uuid_v4() -> String {
+    let mut bytes = get_pseudorandom_bytes(16);
+    // Set version to 4
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    // Set variant to RFC 4122
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5],
+        bytes[6], bytes[7],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    )
+}
+
+fn generate_uuid_ref() -> String {
+    let mut bytes = get_pseudorandom_bytes(16);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = format!(
+        "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5], bytes[6], bytes[7],
+        bytes[8], bytes[9], bytes[10], bytes[11],
+        bytes[12], bytes[13], bytes[14], bytes[15]
+    );
+    format!("_{}", hex)
 }
 
 fn handle_twxml_completion(
@@ -82,11 +175,18 @@ fn handle_twxml_completion(
             let instances = crate::db::all_hub_instances(db, ws);
             let items: Vec<CompletionItem> = instances
                 .into_iter()
-                .map(|i| CompletionItem {
-                    label: i.name(db),
-                    kind: Some(CompletionItemKind::REFERENCE),
-                    detail: Some("Hub Instance".to_string()),
-                    ..Default::default()
+                .map(|i| {
+                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db, ws, i) {
+                        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
+                    } else {
+                        format!("Hub Instance ({})", i.type_name(db))
+                    };
+                    CompletionItem {
+                        label: i.name(db),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(detail),
+                        ..Default::default()
+                    }
                 })
                 .collect();
             Ok(Some(CompletionResponse::Array(items)))
@@ -105,10 +205,9 @@ fn handle_twxml_completion(
 fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse>> {
     // ponytail: full nesting rules not yet implemented — suggest all known tags.
     // Upgrade path: build a parent->allowed_children map from validation rules.
-    let all_tags: [(&str, CompletionItemKind, &str); 39] = [
+    let all_tags: [(&str, CompletionItemKind, &str); 38] = [
         // Structural
         ("document", CompletionItemKind::CLASS, "TWXML Document"),
-        ("metadata", CompletionItemKind::CLASS, "Metadata Block"),
         ("body", CompletionItemKind::CLASS, "Body Block"),
         ("meta", CompletionItemKind::CLASS, "Meta Tag"),
         // Content blocks
@@ -161,12 +260,8 @@ fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse
             if parent.is_some() && *name == "document" {
                 return false;
             }
-            // Don't suggest metadata/body inside body
-            if parent == Some("body") && (*name == "metadata" || *name == "body") {
-                return false;
-            }
-            // Don't suggest metadata/body inside metadata
-            if parent == Some("metadata") && (*name == "metadata" || *name == "body") {
+            // Don't suggest body inside another body
+            if parent == Some("body") && *name == "body" {
                 return false;
             }
             true
@@ -191,7 +286,10 @@ fn complete_hub_fields(
         let type_name = instance.type_name(db);
         if let Some(hub_type) = crate::db::resolve_type(db, ws, instance.file(db), type_name) {
             let mut items = Vec::new();
-            for field in hub_type.fields(db) {
+            // ponytail: Use polymorphic field/role lookups to respect EXTENDS inheritance
+            let all_fields = crate::db::polymorphic::hub_type_all_fields(db, ws, &hub_type);
+            let all_roles = crate::db::polymorphic::hub_type_all_roles(db, ws, &hub_type);
+            for field in all_fields {
                 items.push(CompletionItem {
                     label: field.name.clone(),
                     kind: Some(CompletionItemKind::FIELD),
@@ -199,7 +297,7 @@ fn complete_hub_fields(
                     ..Default::default()
                 });
             }
-            for role in hub_type.roles(db) {
+            for role in all_roles {
                 items.push(CompletionItem {
                     label: role.name.clone(),
                     kind: Some(CompletionItemKind::INTERFACE),
@@ -227,7 +325,7 @@ fn handle_hubgs_completion(
     // Try field/role completion on current type at position
     if let Some(type_name) = crate::db::get_hub_type_at_position(db, file, position.into()) {
         if let Some(hub_type) = crate::db::resolve_type(db, ws, file, type_name) {
-            let items = complete_fields_and_roles(db, &hub_type);
+            let items = complete_fields_and_roles(db, ws, &hub_type);
             return Ok(Some(CompletionResponse::Array(items)));
         }
     }
@@ -268,14 +366,31 @@ fn complete_role_instances(
     if let Some(hub_type) = crate::db::resolve_type(db, ws, file, type_name.to_string()) {
         if let Some(role) = hub_type.roles(db).iter().find(|r| r.name == role_name) {
             let instances = crate::db::all_hub_instances(db, ws);
+            // ponytail: Polymorphic completion - child instances satisfy parent roles
+            use crate::db::polymorphic::hub_type_allows;
             let items: Vec<CompletionItem> = instances
                 .into_iter()
-                .filter(|i| role.allowed_types.contains(&i.type_name(db)))
-                .map(|i| CompletionItem {
-                    label: i.name(db),
-                    kind: Some(CompletionItemKind::REFERENCE),
-                    detail: Some(format!("Hub Instance ({})", i.type_name(db))),
-                    ..Default::default()
+                .filter(|i| {
+                    if let Some(inst_type) =
+                        crate::db::resolve_type(db, ws, i.file(db), i.type_name(db).clone())
+                    {
+                        hub_type_allows(db, ws, &inst_type, &role.allowed_types)
+                    } else {
+                        role.allowed_types.contains(&i.type_name(db))
+                    }
+                })
+                .map(|i| {
+                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db, ws, i) {
+                        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
+                    } else {
+                        format!("Hub Instance ({})", i.type_name(db))
+                    };
+                    CompletionItem {
+                        label: i.name(db),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(detail),
+                        ..Default::default()
+                    }
                 })
                 .collect();
             return Ok(Some(CompletionResponse::Array(items)));
@@ -286,10 +401,14 @@ fn complete_role_instances(
 
 fn complete_fields_and_roles(
     db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
     hub_type: &crate::db::HubType<'_>,
 ) -> Vec<CompletionItem> {
     let mut items = Vec::new();
-    for field in hub_type.fields(db) {
+    // ponytail: Use polymorphic field/role lookups to respect EXTENDS inheritance
+    let all_fields = crate::db::polymorphic::hub_type_all_fields(db, ws, &hub_type);
+    let all_roles = crate::db::polymorphic::hub_type_all_roles(db, ws, &hub_type);
+    for field in all_fields {
         items.push(CompletionItem {
             label: field.name.clone(),
             kind: Some(CompletionItemKind::FIELD),
@@ -297,7 +416,7 @@ fn complete_fields_and_roles(
             ..Default::default()
         });
     }
-    for role in hub_type.roles(db) {
+    for role in all_roles {
         items.push(CompletionItem {
             label: role.name.clone(),
             kind: Some(CompletionItemKind::INTERFACE),
@@ -319,4 +438,45 @@ fn complete_global_fields(db: &dyn crate::db::Db, ws: crate::db::Workspace) -> V
             ..Default::default()
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uuid_generation_formats() {
+        // Test standard UUID v4 format
+        let uuid_v4 = generate_uuid_v4();
+        assert_eq!(uuid_v4.len(), 36);
+        
+        let parts: Vec<&str> = uuid_v4.split('-').collect();
+        assert_eq!(parts.len(), 5);
+        assert_eq!(parts[0].len(), 8);
+        assert_eq!(parts[1].len(), 4);
+        assert_eq!(parts[2].len(), 4);
+        assert_eq!(parts[3].len(), 4);
+        assert_eq!(parts[4].len(), 12);
+        
+        // Assert version is 4 (the first character of the 3rd group must be '4')
+        assert_eq!(parts[2].chars().next(), Some('4'));
+        
+        // Assert variant is RFC 4122 (the first character of the 4th group must be '8', '9', 'a', or 'b')
+        let var_char = parts[3].chars().next().unwrap().to_ascii_lowercase();
+        assert!(vec!['8', '9', 'a', 'b'].contains(&var_char));
+
+        // Test HubGS ref UUID format
+        let uuid_ref = generate_uuid_ref();
+        assert_eq!(uuid_ref.len(), 33); // '_' prefix + 32 hex chars
+        assert!(uuid_ref.starts_with('_'));
+        
+        // Ensure only alphanumeric/underscore chars are present
+        assert!(uuid_ref.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+
+        // Entropy check: ensure consecutive UUIDs are different
+        let uuid_v4_2 = generate_uuid_v4();
+        let uuid_ref_2 = generate_uuid_ref();
+        assert_ne!(uuid_v4, uuid_v4_2);
+        assert_ne!(uuid_ref, uuid_ref_2);
+    }
 }

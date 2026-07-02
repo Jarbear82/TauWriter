@@ -4,10 +4,7 @@ use tauwriter_lsp::RootDatabase;
 /// Wrap TWXML content in the required skeleton
 macro_rules! twxml {
     ($content:expr) => {
-        format!(
-            "<document><metadata></metadata><body>{}</body></document>",
-            $content
-        )
+        format!("<document><body>{}</body></document>", $content)
     };
 }
 
@@ -273,7 +270,7 @@ INSTANCES [
 
 #[test]
 fn test_twxml_completion_contexts() {
-    let content = r#"<document><metadata></metadata><body>
+    let content = r#"<document><body>
   <paragraph>
     <hubref id="aragorn" field="name">Strider</hubref>
   </paragraph>
@@ -409,7 +406,7 @@ fn test_semantic_tokens_twxml() {
     let tokens = db::get_semantic_tokens(&db, twxml_file);
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].token_type, 2); // VARIABLE
-    assert_eq!(tokens[0].character, 49); // After id=' (shifted by skeleton prefix)
+    assert_eq!(tokens[0].character, 28); // After id=' (shifted by new skeleton prefix)
 }
 
 #[test]
@@ -910,7 +907,7 @@ fn test_snapshot_fixture_testing() {
 #[test]
 fn test_formatter_structural_blocks() {
     // Verify the formatter handles structural blocks correctly
-    let content = "<document><metadata></metadata><body><heading>Title</heading></body></document>";
+    let content = "<document><body><heading>Title</heading></body></document>";
     let formatted = tauwriter_lsp::formatter::format_source(content, "twxml");
 
     // The formatted output should contain proper document structure
@@ -919,18 +916,55 @@ fn test_formatter_structural_blocks() {
 }
 
 #[test]
-fn test_metadata_block_parsed() {
-    let mut db = RootDatabase::default();
-
-    // Verify that metadata block is properly recognized in tag listing
-    let twxml_content = twxml!(""); // Empty body, with metadata
+fn test_meta_tag_parsing() {
+    // ponytail: Tests that <meta /> tags under <document> are recognized.
+    let mut db = tauwriter_lsp::RootDatabase::default();
+    let twxml_content = twxml!("");
     let twxml_file =
         db::SourceFile::new(&mut db, "test.twxml".to_string(), twxml_content.to_string());
 
     let tags = db::all_twxml_tags(&db, twxml_file);
 
-    // Should find 'metadata' and 'body' structural tags
+    // Should find 'body' structural tag; no metadata since it was replaced by <meta />.
     let tag_names: Vec<_> = tags.iter().map(|t| t.name(&db).clone()).collect();
-    assert!(tag_names.iter().any(|n| n == "metadata"));
     assert!(tag_names.iter().any(|n| n == "body"));
 }
+
+#[test]
+fn test_formatter_preserves_meta_under_document() {
+    // ponytail: Verifies that <meta /> tags directly under <document>
+    // (without a <metadata> wrapper) are preserved through formatting.
+    // Previously these would disappear because meta_tag nodes weren't
+    // recognized in the formatter's dispatch match arm.
+    let content = "<document><meta name=\"title\" content=\"Test\" /><body></body></document>";
+    let formatted = tauwriter_lsp::formatter::format_source(content, "twxml");
+
+    // The formatted output must contain all original meta tags
+    assert!(
+        formatted.contains("meta"),
+        "Expected meta tag in formatted output, got:\n{}",
+        formatted
+    );
+    assert!(
+        formatted.contains("title"),
+        "Expected 'title' attribute in formatted output, got:\n{}",
+        formatted
+    );
+    assert!(
+        formatted.contains("Test"),
+        "Expected 'Test' value in formatted output, got:\n{}",
+        formatted
+    );
+}
+
+#[test]
+fn test_hubgs_formatter_expressions() {
+    // ponytail: Verifies that the HubGS formatter correctly processes chained method calls,
+    // arrow functions, and complex computed decorators.
+    let content = "DEFINITIONS [\n    HUBS [\n        Person {\n            full_name = @computed(first_name   +   ' '   +   last_name),\n            companions_count = @computed(this.companions.len(   )),\n            companions_joined = @computed(this.companions.map(c   =>   c.name).join(',   '))\n        }\n    ]\n]";
+
+    let formatted = tauwriter_lsp::formatter::format_source(content, "hubgs");
+    let expected = "DEFINITIONS [\n    HUBS [\n        Person {\n            full_name = @computed(first_name + ' ' + last_name),\n            companions_count = @computed(this.companions.len()),\n            companions_joined = @computed(this.companions.map(c => c.name).join(',   '))\n        }\n    ]\n]\n";
+    assert_eq!(formatted, expected);
+}
+
