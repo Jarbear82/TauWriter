@@ -8,7 +8,7 @@ pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
 
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
+    parser.set_language(language).unwrap();
     
     let old_entry = crate::get_tree_cache().get(&path).map(|t| t.clone());
     let tree = if let Some(ref entry) = old_entry {
@@ -127,7 +127,7 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
 
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
+    parser.set_language(language).unwrap();
     let tree = parser.parse(&contents, None).unwrap();
 
     let root = tree.root_node();

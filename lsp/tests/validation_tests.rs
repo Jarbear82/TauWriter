@@ -1453,16 +1453,16 @@ fn test_hubgs_metadata_parsing() {
     let hubgs_content = "
 DEFINITIONS [
     HUBS [
-        Person { name: String }
+        Person {
+            name @display,
+            bg @background
+        }
     ]
 ],
 INSTANCES [
     aragorn:Person {
-        name = \"Aragorn\",
-        @metadata {
-            display = \"Aragorn Elessar\",
-            background = \"#FFD700\"
-        }
+        name = \"Aragorn Elessar\",
+        bg = \"#FFD700\"
     }
 ]
 ";
@@ -1471,15 +1471,22 @@ INSTANCES [
         "metadata.hubgs".to_string(),
         hubgs_content.to_string(),
     );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
 
     let result = db::parse_hubgs(&db, hubgs_file);
     let instances = result.instances(&db);
     assert_eq!(instances.len(), 1);
-    let aragorn = &instances[0];
+    let aragorn = instances[0];
     assert_eq!(aragorn.name(&db), "aragorn");
-    assert_eq!(aragorn.metadata_display(&db), Some("Aragorn Elessar".to_string()));
-    assert_eq!(aragorn.metadata_background(&db), Some("#FFD700".to_string()));
-    assert!(aragorn.metadata_background_range(&db).is_some());
+    assert_eq!(
+        db::resolution::hub_instance_metadata_display(&db, workspace, aragorn),
+        Some("Aragorn Elessar".to_string())
+    );
+    assert_eq!(
+        db::resolution::hub_instance_metadata_background(&db, workspace, aragorn),
+        Some("#FFD700".to_string())
+    );
+    assert!(db::resolution::hub_instance_metadata_background_range(&db, workspace, aragorn).is_some());
 }
 
 #[test]
@@ -1513,6 +1520,82 @@ fn test_broken_link_validation() {
     assert_eq!(errors.len(), 2);
     assert!(errors[0].message.contains("Anchor '#missing_anchor' not found"));
     assert!(errors[1].message.contains("Target file 'missing_file.twxml' not found"));
+}
+
+#[test]
+fn test_hubgs_validation_new_rules() {
+    let mut db = RootDatabase::default();
+
+    let content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        legacy_name: String,
+        theme_color: Color,
+        avatar: Image
+    ],
+    HUBS [
+        Character {
+            name,
+            legacy_name,
+            theme_color,
+            avatar,
+            resides_in -> (1) ALLOWS [Location]
+        },
+        Location {
+            name
+        }
+    ]
+],
+INSTANCES [
+    workshop:Location {
+        name = \"Workshop\"
+    },
+    aragorn:Character {
+        name = \"Aragorn Elessar\",
+        legacy_name = \"Strider\",
+        theme_color = 0xFFD700,
+        avatar = \"aragorn.png\",
+        resides_in = workshop
+    },
+    gandalf:Character {
+        name = \"Gandalf the Grey\",
+        legacy_name = \"Mithrandir\",
+        theme_color = \"rgb(128, 128, 128)\",
+        avatar = \"gandalf.webp\",
+        resides_in = [ workshop ]
+    },
+    legolas:Character {
+        name = \"Legolas Greenleaf\",
+        legacy_name = \"Legolas\",
+        theme_color = \"not_a_color\",
+        avatar = \"legolas.txt\",
+        resides_in = [ workshop ]
+    }
+]
+";
+    let file = db::SourceFile::new(&mut db, "validation_rules.hubgs".to_string(), content.to_string());
+    let ws = db::Workspace::new(&mut db, vec![file]);
+
+    let errors = db::validate_file(&db, ws, file);
+
+    // Let's assert on the validation errors:
+    // 1. legacy_name uses String type, which should produce Type mismatch since String is not a valid primitive type
+    // 2. aragorn's resides_in is assigned directly (not an array), which should produce "must be an array of references wrapped in '[...]'"
+    // 3. legolas's theme_color is "not_a_color", which should produce Type mismatch for Color
+    // 4. legolas's avatar is "legolas.txt", which should produce Type mismatch for Image
+
+    let string_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("expected 'String'")).collect();
+    assert!(!string_errors.is_empty(), "Expected error for legacy String type");
+
+    let array_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("must be an array of references")).collect();
+    assert_eq!(array_errors.len(), 1, "Expected role assignment array wrapper error");
+
+    let color_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("expected 'Color'")).collect();
+    assert_eq!(color_errors.len(), 1, "Expected Color validation error");
+
+    let image_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("expected 'Image'")).collect();
+    assert_eq!(image_errors.len(), 1, "Expected Image validation error");
 }
 
 

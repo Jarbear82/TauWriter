@@ -2542,20 +2542,17 @@ async fn test_completion_metadata_hint_jsonrpc() {
     let content = r#"DEFINITIONS [
     HUBS [
         Character {
-            name,
+            name @display,
             resides_in -> (1) ALLOWS [Location]
         },
         Location {
-            name
+            name @display
         }
     ]
 ],
 INSTANCES [
     workshop:Location {
-        name = "Tailor's Workshop",
-        @metadata {
-            display = "Tailor's Workshop"
-        }
+        name = "Tailor's Workshop"
     },
     tailor:Character {
         name = "Brave Tailor",
@@ -2662,7 +2659,7 @@ async fn test_document_color_jsonrpc() {
 
     let path = std::env::current_dir().unwrap().join("test_color.hubgs");
     let uri = Url::from_file_path(&path).unwrap();
-    let content = r##"DEFINITIONS [ HUBS [ Location { name: String } ] ], INSTANCES [ workshop:Location { name = "Workshop", @metadata { display = "Workshop", background = "#FFD700" } } ]"##;
+    let content = r##"DEFINITIONS [ HUBS [ Location { name: Text, bg @background } ] ], INSTANCES [ workshop:Location { name = "Workshop", bg = "#FFD700" } ]"##;
 
     {
         let mut db_lock = db_arc.lock().unwrap();

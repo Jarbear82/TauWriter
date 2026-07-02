@@ -274,6 +274,7 @@ fn parse_hubs_block<'a>(
 
                     let mut fields = Vec::new();
                     let mut roles = Vec::new();
+                    let mut constraints = Vec::new();
 
                     let mut item_cursor = hub_def.walk();
                     for item in hub_def.children(&mut item_cursor) {
@@ -282,17 +283,44 @@ fn parse_hubs_block<'a>(
                                 if let Some(id_node) = item.child(0) {
                                     let (decorator, expression) =
                                         parse_field_decorators(&item, contents);
+                                    let mut is_display = false;
+                                    let mut is_background = false;
+                                    let mut attr_cursor = item.walk();
+                                    for child in item.children(&mut attr_cursor) {
+                                        if child.kind() == "field_attribute" {
+                                            let attr_text = contents[child.byte_range()].trim().to_string();
+                                            if attr_text == "@display" {
+                                                is_display = true;
+                                            } else if attr_text == "@background" {
+                                                is_background = true;
+                                            }
+                                        }
+                                    }
                                     fields.push(HubFieldDef {
                                         name: contents[id_node.byte_range()].to_string(),
                                         range: super::ts_range_to_lsp(id_node.range()),
                                         decorator,
                                         expression,
+                                        is_display,
+                                        is_background,
                                     });
                                 }
                             }
                             "hub_role" => {
                                 if let Some(_id_node) = item.child(0) {
                                     roles.push(parse_hub_role(&item, contents));
+                                }
+                            }
+                            "constraints_block" => {
+                                let mut c_cursor = item.walk();
+                                for child in item.children(&mut c_cursor) {
+                                    let kind = child.kind();
+                                    if kind != "@constraints" && kind != "[" && kind != "]" && kind != "," && !child.is_missing() {
+                                        let expr_text = contents[child.byte_range()].to_string();
+                                        if !expr_text.is_empty() {
+                                            constraints.push(expr_text);
+                                        }
+                                    }
                                 }
                             }
                             _ => {}
@@ -308,6 +336,7 @@ fn parse_hubs_block<'a>(
                         fields,
                         roles,
                         extends_parents,
+                        constraints,
                     ));
                 }
             }
@@ -388,36 +417,9 @@ fn parse_instances<'a>(
                     };
 
                     let mut assignments = Vec::new();
-                    let mut metadata_display = None;
-                    let mut metadata_background = None;
-                    let mut metadata_background_range = None;
                     let mut block_cursor = child.walk();
                     for assignment in child.children(&mut block_cursor) {
-                        let is_meta = assignment.kind() == "metadata_block";
-                        let is_inst_meta = assignment.kind() == "instance_assignment" && assignment.child(0).map(|c| c.kind() == "metadata_block").unwrap_or(false);
-                        if is_meta || is_inst_meta {
-                            let meta_node = if is_meta { assignment } else { assignment.child(0).unwrap() };
-                            let mut meta_cursor = meta_node.walk();
-                            let named_children: Vec<tree_sitter::Node> = meta_node
-                                .children(&mut meta_cursor)
-                                .filter(|n| n.is_named())
-                                .collect();
-                            for chunk in named_children.chunks_exact(2) {
-                                let key_node = chunk[0];
-                                let val_node = chunk[1];
-                                if key_node.kind() == "identifier" {
-                                    let key = contents[key_node.byte_range()].to_string();
-                                    if let Some(val) = node_to_hub_value(val_node, contents) {
-                                        if key == "display" {
-                                            metadata_display = Some(val.to_string());
-                                        } else if key == "background" {
-                                            metadata_background = Some(val.to_string());
-                                            metadata_background_range = Some(super::ts_range_to_lsp(val_node.range()));
-                                        }
-                                    }
-                                }
-                            }
-                        } else if assignment.kind() == "instance_assignment" {
+                        if assignment.kind() == "instance_assignment" {
                             if let Some(id_node) = assignment.child(0) {
                                 let attr_name = contents[id_node.byte_range()].to_string();
                                 if !attr_name.is_empty() && !id_node.is_missing() {
@@ -427,6 +429,7 @@ fn parse_instances<'a>(
                                                 name: attr_name,
                                                 range: super::ts_range_to_lsp(id_node.range()),
                                                 value: val,
+                                                value_range: super::ts_range_to_lsp(expr_node.range()),
                                             });
                                         }
                                     }
@@ -453,9 +456,6 @@ fn parse_instances<'a>(
                         super::ts_range_to_lsp(child.range()),
                         description,
                         assignments,
-                        metadata_display,
-                        metadata_background,
-                        metadata_background_range,
                     ));
                 }
             }

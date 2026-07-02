@@ -11,5 +11,5 @@
 (struct_definition "}" @end) @indent
 (hub_definition "}" @end) @indent
 (instance_block "}" @end) @indent
-(metadata_block "}" @end) @indent
+(constraints_block "]" @end) @indent
 (array "]" @end) @indent

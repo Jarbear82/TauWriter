@@ -130,7 +130,32 @@ HUBS [
 ```
 Note: Hub fields **must** be defined globally in a `FIELDS` block before being used in a Hub.
 
-## Type Inheritance (`EXTENDS`)
+#### @metadata
+A directive block that can appear inside a hub definition to provide visual and display hints for the editor:
+```hubgs
+HUBS [
+    Character {
+        name,
+        description,
+        resides_in -> (0..1) ALLOWS [Location],
+        background_color: Hex,
+
+        @metadata {
+            display: name,
+            background: background_color,
+            constraints: { name <= 50, color != 0xFFFFFF }
+        }
+    }
+]
+```
+**Properties:**
+| Property | Type | Purpose |
+|---|---|---|
+| `display` | field name (e.g. `name`) | Which field to use as the primary display label for this hub type |
+| `background` | field name (e.g. `background_color`) | Which field provides the background; its Hub field type must be `Color` or `Image` |
+| `constraints` | constraint map | Field-level validation rules referencing other hub fields, using comparison operators (`<=`, `!=`, etc.) |
+
+### Type Inheritance (`EXTENDS`)
 
 HubGS supports composite inheritance for Hub types using the `EXTENDS` keyword. This allows a child Hub type to inherit fields and roles from one or more parent Hub types.
 

@@ -85,13 +85,23 @@ module.exports = grammar({
         $.identifier,
         optional($._extension),
         "{",
-        commaSep(choice($.hub_field, $.hub_role)),
+        commaSep(choice($.hub_field, $.hub_role, $.constraints_block)),
         "}",
       ),
 
     _extension: ($) => $.extension_clause,
 
-    hub_field: ($) => seq($.identifier, optional(seq("=", $.decorator))),
+    hub_field: ($) =>
+      seq(
+        $.identifier,
+        optional(seq("=", $.decorator)),
+        repeat($.field_attribute),
+      ),
+
+    field_attribute: ($) => seq("@", choice("display", "background")),
+
+    constraints_block: ($) =>
+      seq("@constraints", "[", commaSep($._expression), "]"),
 
     hub_role: ($) =>
       seq(
@@ -128,16 +138,9 @@ module.exports = grammar({
         "}",
       ),
 
-    instance_assignment: ($) =>
-      choice(seq($.identifier, "=", $._expression), $.metadata_block),
+    instance_assignment: ($) => seq($.identifier, "=", $._expression),
 
-    metadata_block: ($) =>
-      seq(
-        "@metadata",
-        "{",
-        commaSep(seq($.identifier, "=", $._expression)),
-        "}",
-      ),
+
 
     // ------------------------------------------------------------------------
     // Types & Decorators
@@ -191,8 +194,8 @@ module.exports = grammar({
           field("function", $._expression),
           "(",
           commaSep($._expression),
-          ")"
-        )
+          ")",
+        ),
       ),
 
     arrow_function: ($) =>
@@ -201,8 +204,8 @@ module.exports = grammar({
         seq(
           field("parameter", $.identifier),
           "=>",
-          field("body", $._expression)
-        )
+          field("body", $._expression),
+        ),
       ),
 
     unary_expression: ($) =>

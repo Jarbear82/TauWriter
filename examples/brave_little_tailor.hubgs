@@ -1,12 +1,12 @@
 DEFINITIONS [
     FIELDS [
-        name: String,
-        description: String,
+        name: Text,
+        description: Text,
     ],
     HUBS [
         Character {
-            name,
-            description,
+            name @display,
+            description @background,
             resides_in -> (0..1) ALLOWS [Location],
             associates <-> (0..*) ALLOWS [Character]
         },
@@ -71,6 +71,11 @@ INSTANCES [
         description = "The companion of the first giant.",
         resides_in = [cave]
     },
+    e02d4036-a5e8-4ce2-9a6f-52dea5c9965a:Character {
+        name = "Hello World",
+        description = "",
+        resides_in = [cave],
+    }
 
     // Creatures
     flies:Creature {
@@ -108,4 +113,4 @@ INSTANCES [
         description = "A piece of soft cheese used to trick the giant.",
         owner = [tailor]
     }
-];
+]

@@ -190,6 +190,21 @@
     }
   },
   {
+    "type": "constraints_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "_expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "decorator",
     "named": true,
     "fields": {},
@@ -277,6 +292,11 @@
     }
   },
   {
+    "type": "field_attribute",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "field_definition",
     "named": true,
     "fields": {},
@@ -338,6 +358,10 @@
       "required": true,
       "types": [
         {
+          "type": "constraints_block",
+          "named": true
+        },
+        {
           "type": "extension_clause",
           "named": true
         },
@@ -366,6 +390,10 @@
       "types": [
         {
           "type": "decorator",
+          "named": true
+        },
+        {
+          "type": "field_attribute",
           "named": true
         },
         {
@@ -458,10 +486,6 @@
         {
           "type": "_expression",
           "named": true
-        },
-        {
-          "type": "metadata_block",
-          "named": true
         }
       ]
     }
@@ -541,21 +565,6 @@
           }
         ]
       }
-    }
-  },
-  {
-    "type": "metadata_block",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "_expression",
-          "named": true
-        }
-      ]
     }
   },
   {
@@ -835,15 +844,19 @@
     "named": false
   },
   {
+    "type": "@",
+    "named": false
+  },
+  {
     "type": "@computed",
     "named": false
   },
   {
-    "type": "@default",
+    "type": "@constraints",
     "named": false
   },
   {
-    "type": "@metadata",
+    "type": "@default",
     "named": false
   },
   {
@@ -899,9 +912,17 @@
     "named": false
   },
   {
+    "type": "background",
+    "named": false
+  },
+  {
     "type": "comment",
     "named": true,
     "extra": true
+  },
+  {
+    "type": "display",
+    "named": false
   },
   {
     "type": "escape_sequence",

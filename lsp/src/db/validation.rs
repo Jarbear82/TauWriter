@@ -603,6 +603,16 @@ fn validate_role_assignment(
     assignment_range: super::LspRange,
     errors: &mut Vec<ValidationError>,
 ) {
+    if !matches!(value, HubValue::Array(_)) {
+        errors.push(ValidationError {
+            range: assignment_range,
+            message: format!(
+                "Role assignment for '{}' must be an array of references wrapped in '[...]'",
+                role_def.name
+            ),
+        });
+    }
+
     let refs = get_refs_from_value(value);
 
     // 1. Type mismatch validation (polymorphic: checks extends_parents chain)
@@ -701,10 +711,11 @@ fn validate_value_type(
     type_name: &str,
 ) -> bool {
     match type_name {
-        "Text" | "String" => matches!(value, HubValue::String(_)),
+        "String" | "Array<String>" => false,
+        "Text" => matches!(value, HubValue::String(_)),
         "Number" => matches!(value, HubValue::Number(_)),
         "Boolean" => matches!(value, HubValue::Boolean(_)),
-        "Array<Text>" | "Array<String>" => {
+        "Array<Text>" => {
             if let HubValue::Array(vals) = value {
                 vals.iter().all(|v| matches!(v, HubValue::String(_)))
             } else {
@@ -714,6 +725,26 @@ fn validate_value_type(
         "Array<Number>" => {
             if let HubValue::Array(vals) = value {
                 vals.iter().all(|v| matches!(v, HubValue::Number(_)))
+            } else {
+                false
+            }
+        }
+        "Color" => {
+            match value {
+                HubValue::Number(num_str) => {
+                    num_str.starts_with("0x") || num_str.starts_with("0X")
+                }
+                HubValue::String(s) => {
+                    s.starts_with('#') || s.starts_with("rgb") || s.starts_with("hsl")
+                }
+                _ => false,
+            }
+        }
+        "Image" => {
+            if let HubValue::String(s) = value {
+                let s_lower = s.to_lowercase();
+                s_lower.ends_with(".png") || s_lower.ends_with(".jpg") || s_lower.ends_with(".jpeg") ||
+                s_lower.ends_with(".gif") || s_lower.ends_with(".svg") || s_lower.ends_with(".webp")
             } else {
                 false
             }

@@ -68,7 +68,7 @@ pub async fn completion(
             instances
                 .into_iter()
                 .map(|i| {
-                    let detail = if let Some(disp) = i.metadata_display(db_ref) {
+                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db_ref, ws_ref, i) {
                         format!("Hub Instance ({}) - {}", i.type_name(db_ref), disp)
                     } else {
                         format!("Hub Instance ({})", i.type_name(db_ref))
@@ -176,7 +176,7 @@ fn handle_twxml_completion(
             let items: Vec<CompletionItem> = instances
                 .into_iter()
                 .map(|i| {
-                    let detail = if let Some(disp) = i.metadata_display(db) {
+                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db, ws, i) {
                         format!("Hub Instance ({}) - {}", i.type_name(db), disp)
                     } else {
                         format!("Hub Instance ({})", i.type_name(db))
@@ -380,7 +380,7 @@ fn complete_role_instances(
                     }
                 })
                 .map(|i| {
-                    let detail = if let Some(disp) = i.metadata_display(db) {
+                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db, ws, i) {
                         format!("Hub Instance ({}) - {}", i.type_name(db), disp)
                     } else {
                         format!("Hub Instance ({})", i.type_name(db))

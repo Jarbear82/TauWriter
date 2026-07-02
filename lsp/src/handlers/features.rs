@@ -275,7 +275,10 @@ pub async fn document_color(
                 let parse_res = crate::db::parse_hubgs(&db, file);
                 let mut colors = Vec::new();
                 for inst in parse_res.instances(&db) {
-                    if let (Some(bg), Some(range)) = (inst.metadata_background(&db), inst.metadata_background_range(&db)) {
+                    if let (Some(bg), Some(range)) = (
+                        crate::db::resolution::hub_instance_metadata_background(&db, ws, inst),
+                        crate::db::resolution::hub_instance_metadata_background_range(&db, ws, inst),
+                    ) {
                         if let Some(color) = parse_hex_color(&bg) {
                             colors.push(ColorInformation {
                                 range: range.into(),
