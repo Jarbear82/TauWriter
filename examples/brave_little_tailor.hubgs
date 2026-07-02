@@ -2,11 +2,15 @@ DEFINITIONS [
     FIELDS [
         name: Text,
         description: Text,
+        theme_color: Color,
+        avatar: Image
     ],
     HUBS [
         Character {
             name @display,
-            description @background,
+            description,
+            theme_color @background,
+            avatar,
             resides_in -> (0..1) ALLOWS [Location],
             associates <-> (0..*) ALLOWS [Character]
         },
@@ -50,31 +54,43 @@ INSTANCES [
     tailor:Character {
         name = "The Brave Little Tailor",
         description = "A nimble and clever tailor who killed seven flies with one blow.",
+        theme_color = 0xFFD700,
+        avatar = "tailor.png",
         resides_in = [workshop]
     },
     king:Character {
         name = "The King",
         description = "A ruler who is both impressed and terrified by the tailor's alleged prowess.",
+        theme_color = 0x4169E1,
+        avatar = "king.png",
         resides_in = [palace]
     },
     princess:Character {
         name = "The Princess",
-        description = "The King's daughter who eventually marries the tailor."
+        description = "The King's daughter who eventually marries the tailor.",
+        theme_color = 0xFF69B4,
+        avatar = "princess.png"
     },
     giant1:Character {
         name = "The First Giant",
         description = "A huge giant the tailor meets on a mountain.",
+        theme_color = 0x8B4513,
+        avatar = "giant1.png",
         resides_in = [cave]
     },
     giant2:Character {
         name = "The Second Giant",
         description = "The companion of the first giant.",
+        theme_color = 0x8B4513,
+        avatar = "giant2.png",
         resides_in = [cave]
     },
     e02d4036-a5e8-4ce2-9a6f-52dea5c9965a:Character {
         name = "Hello World",
         description = "",
-        resides_in = [cave],
+        theme_color = 0x000000,
+        avatar = "hello.png",
+        resides_in = [cave]
     }
 
     // Creatures
