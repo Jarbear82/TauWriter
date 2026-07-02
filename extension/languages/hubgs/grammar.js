@@ -1,5 +1,6 @@
 /**
  * @file HubGS grammar for tree-sitter
+ * @author Jarbear82
  * @author Gemini CLI
  * @license MIT
  */
@@ -8,6 +9,7 @@
 // @ts-check
 
 const OP_PREC = {
+  ARROW: 0,
   LOGICAL: 1,
   EQUALITY: 2,
   ADD: 3,
@@ -21,31 +23,19 @@ module.exports = grammar({
 
   extras: ($) => [/\s/, $.comment],
 
+  supertypes: ($) => [$._expression],
+  word: ($) => $.identifier,
+
   rules: {
     // ------------------------------------------------------------------------
     // Top-Level Structure (Strict Ordering: IMPORTS -> DEFINITIONS -> INSTANCES)
     // ------------------------------------------------------------------------
 
-    source_file: ($) => $.document,
-
-    document: ($) =>
-      choice(
-        // At least one section must be present, in correct order
-        seq(
-          $.imports_section,
-          optional(seq(optional(","), $.definitions_section)),
-          optional(seq(optional(","), $.instances_section)),
-        ),
-        seq(
-          optional($.imports_section),
-          $.definitions_section,
-          optional(seq(optional(","), $.instances_section)),
-        ),
-        seq(
-          optional($.imports_section),
-          optional(seq(optional(","), $.definitions_section)),
-          $.instances_section,
-        ),
+    source_file: ($) =>
+      seq(
+        optional($.imports_section),
+        optional($.definitions_section),
+        optional($.instances_section),
       ),
 
     // ------------------------------------------------------------------------
@@ -88,10 +78,30 @@ module.exports = grammar({
 
     hubs_block: ($) => seq("HUBS", "[", commaSep($.hub_definition), "]"),
 
-    hub_definition: ($) =>
-      seq($.identifier, "{", commaSep(choice($.hub_field, $.hub_role)), "}"),
+    extension_clause: ($) => seq("EXTENDS", "[", commaSep1($.identifier), "]"),
 
-    hub_field: ($) => seq($.identifier, optional(seq("=", $.decorator))),
+    hub_definition: ($) =>
+      seq(
+        $.identifier,
+        optional($._extension),
+        "{",
+        commaSep(choice($.hub_field, $.hub_role, $.constraints_block)),
+        "}",
+      ),
+
+    _extension: ($) => $.extension_clause,
+
+    hub_field: ($) =>
+      seq(
+        $.identifier,
+        optional(seq("=", $.decorator)),
+        repeat($.field_attribute),
+      ),
+
+    field_attribute: ($) => seq("@", choice("display", "background")),
+
+    constraints_block: ($) =>
+      seq("@constraints", "[", commaSep($._expression), "]"),
 
     hub_role: ($) =>
       seq(
@@ -128,16 +138,9 @@ module.exports = grammar({
         "}",
       ),
 
-    instance_assignment: ($) =>
-      choice(seq($.identifier, "=", $._expression), $.metadata_block),
+    instance_assignment: ($) => seq($.identifier, "=", $._expression),
 
-    metadata_block: ($) =>
-      seq(
-        "@metadata",
-        "{",
-        commaSep(seq($.identifier, "=", $._expression)),
-        "}",
-      ),
+
 
     // ------------------------------------------------------------------------
     // Types & Decorators
@@ -159,6 +162,8 @@ module.exports = grammar({
         $.binary_expression,
         $.unary_expression,
         $.member_expression,
+        $.call_expression,
+        $.arrow_function,
         $.identifier,
         $.number,
         $.string,
@@ -179,6 +184,27 @@ module.exports = grammar({
           field("object", $._expression),
           ".",
           field("property", $.identifier),
+        ),
+      ),
+
+    call_expression: ($) =>
+      prec(
+        OP_PREC.MEMBER,
+        seq(
+          field("function", $._expression),
+          "(",
+          commaSep($._expression),
+          ")",
+        ),
+      ),
+
+    arrow_function: ($) =>
+      prec(
+        OP_PREC.ARROW,
+        seq(
+          field("parameter", $.identifier),
+          "=>",
+          field("body", $._expression),
         ),
       ),
 

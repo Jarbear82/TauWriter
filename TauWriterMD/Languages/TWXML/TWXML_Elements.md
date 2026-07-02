@@ -3,26 +3,41 @@
 ## Document Hierarchy
 TWXML uses an **enforced tree hierarchy** where structural meaning is derived from nesting depth rather than explicit level attributes. This eliminates "structural drift" — the problem of accidental heading-level mismatches common in Markdown and HTML.
 
+### File Structure
+Every `*.twxml` file follows this top-level structure:
+```xml
+<document>
+  <meta />
+  <body>
+    <section></section>
+  </body>
+</document>
+```
+
 ### Heading Levels by Nesting Depth
 | Nesting Level | Equivalent | Typical Use |
 |---------------|------------|-------------|
-| `<document>` → `<heading>` | H1 | Document title (must be unique per document) |
-| `<document>` → `<section>` → `<heading>` | H2 | Chapter or major section title |
+| `<document>` → `<body>` → `<heading>` | H1 | Document title (must be unique per document) |
+| `<document>` → `<body>` → `<section>` → `<heading>` | H2 | Chapter or major section title |
 | `<section>` → `<section>` → `<heading>` | H3+ | Sub-section titles, deeper nesting as needed |
 
 This means you never need to specify heading levels manually. The tree structure itself defines the outline.
 
 ### Document
-The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document.  
-Tags: `<document></document>`  
+The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document. Direct children are zero or more `<meta />` tags followed by exactly one `<body>`.  
+Tags: `<document></document>` 
 
 ### Meta
-Defines document-level metadata (author, tags, status). Placed inside `<document>` at the top, before any block content. Not rendered in the primary prose view but indexed by the LSP.  
-Equivalent to Markdown Frontmatter (YAML).  
+A single key-value metadata entry.  
+
 Tags: `<meta />`  
 Tag Attributes:  
 - name: The metadata key.  
 - content: The metadata value.
+
+### Body
+The container for all document content. Placed after all `<meta/>` tags inside `<document>`. Contains `<section>`, `<heading>`, `<footnote>`, and other block-level elements.  
+Tags: `<body></body>`
 
 ### Section
 A semantic divider element used to distinguish different sections and sub-sections within a document.
@@ -59,17 +74,22 @@ Tag Attributes:
 
 ### Horizontal Rule
 Represents a thematic break between paragraph-level elements. Equivalent to Markdown's `---`.  
-Tags: `<hr />`  
+Tags: `<hr/>`  
 
 ### Line Break
 Forces a hard line break within a block element without creating a new paragraph.  
-Tags: `<br />`
+Tags: `<br/>`
 
 ---
 
 ## Lists
 Containers for bulleted or numbered lists.  
 Tags: `<ul></ul>` (Unordered), `<ol></ol>` (Ordered)  
+
+### Ordered List
+* **Attributes**: 
+  * `type`: Selects marker taxonomy (`1 | a | A | i | I`).
+  * `start`: An integer value establishing the numerical root of the list.
 
 ### List Item
 Represents an individual item within a `<ul>` or `<ol>`.  
@@ -102,11 +122,18 @@ Tags: `<summary></summary>`
 ---
 
 ## Inline Elements
+
+### Include
+A self-closing structural compilation directive that stitches a separate file fragment inline into the current document branch at runtime.
+* **Tags**: `<include />`
+* **Attributes**: `src` (Relative path to targeted file)
+
 ### HubRef
-The tag that wraps text to link it to its HubGS graph reference.
-Tags: `<hubref></hubref>`
-Tag Attributes:
-- id: The unique identifier for that hub. (ex: `<hubref id="aragorn">Aragorn</hubref>`)
+Connects written text directly to its HubGS schema properties.
+* **Wrapping Variant**: Wraps arbitrary textual prose. Subject to tracking updates via the `<review>` engine.
+  * *Example*: `<hubref id="aragorn" field="first_name">The Ranger</hubref>`
+* **Self-Closing Variant**: Instructs the WYSIWYG and compilation engines to fetch and drop active values straight from the graph execution pass.
+  * *Example*: `<hubref id="aragorn" field="full_name" />`
 
 ### Link
 Creates a standard hyperlink to an external URL or an internal heading/file anchor.
@@ -122,10 +149,10 @@ Tag Attributes:
 - alt: Alternative text for accessibility and context.
 
 ### Audio
-Embeds a auditory asset into the document.
+Embeds an auditory asset into the document.
 Tags: `<audio />`
 Tag Attributes:
-- src: The file path or URL to the image.
+- src: The file path or URL to the audio.
 - alt: Alternative text for accessibility and context.
 
 ### Video
@@ -141,7 +168,7 @@ Tags: `<code></code>`
 
 ### Footnote Reference
 Places a superscript footnote marker in the text.
-Tags: `<fr />`
+Tags: `<fr/>`
 Tag Attributes:
 - id: Matches the ID of the defined footnote.
 
@@ -167,14 +194,25 @@ Elements used to create and structure tabular data, directly mapping to Markdown
 - `<th></th>`: A table header cell (typically used in the first row).
 - `<td></td>`: A standard table data cell.
 
+### Table Cell Data / Header
+* **Attributes**: `colspan` and `rowspan` parameters are universally unlocked on `<td>` and `<th>` tags to map structured tables flawlessly.
+
 ---
 
 ## Footnote Definitions
 ### Footnote
-Defines the content of a footnote referenced earlier in the text. Usually placed at the bottom of a `<section>` or `<document>`.
+Defines the content of a footnote referenced earlier in the text. Usually placed at the bottom of a `<body>` or `<section>`.
 Tags: `<footnote></footnote>`
 Tag Attributes:
 - id: The unique identifier matching the `<fr>` tag.
+
+---
+
+## Review
+A container element used to flag content that can no longer be automatically synchronized with its HubGS graph source — for example, when a user changes the value of a field for a hub, all wrapping hub references to that value wrap text that may no longer be valid. So wrapping hubrefs are flagged for review. The user reviews the discrepancy and resolves it via code actions:
+- **Sync and Resolve**: replaces `<review>` with an updated `<hubref>` wrapping the new canonical text.
+- **Mark as Resolved**: keeps the current text and removes the `review` flag.
+Tags: `<review></review>`
 
 ---
 
@@ -182,22 +220,25 @@ Tag Attributes:
 
 ```xml
 <document>
-  <meta name="author" content="J.R.R. Tolkien" />
-  <section alias="A Shadow of the Past">
-    <heading>Departure</heading>
-    <paragraph>
-      <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
-      and looked across the field toward <hubref id="mordor">Mordor</hubref>.
-    </paragraph>
-    
-    <ul>
-      <li checked="true">Pack lembas bread</li>
-      <li checked="false">Sharpen sword</li>
-    </ul>
+    <meta name="author" content="J.R.R. Tolkien" />
+  <body>
+    <section alias="A Shadow of the Past">
+      <heading>Departure</heading>
+      <paragraph>
+        <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
+        and looked across the field toward <hubref id="mordor">Mordor</hubref>.
+      </paragraph>
+      
+      <ul>
+        <li checked="true">Pack lembas bread</li>
+        <li checked="false">Sharpen sword</li>
+      </ul>
 
-    <blockquote>
-      "Not all those who wander are lost."<br />
-      <italic>- <hubref id="bilbo">Bilbo Baggins</hubref></italic>
-    </blockquote>
-  </section>
+      <blockquote>
+        "Not all those who wander are lost."<br />
+        <italic>- <hubref id="bilbo">Bilbo Baggins</hubref></italic>
+      </blockquote>
+    </section>
+  </body>
 </document>
+```

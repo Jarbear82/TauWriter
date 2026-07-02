@@ -1,13 +1,10 @@
 use tauwriter_lsp::db;
 use tauwriter_lsp::RootDatabase;
 
-/// Wrap TWXML content in the required skeleton: <document><metadata></metadata><body>...</body></document>
+/// Wrap TWXML content in the required skeleton: <document><body>...</body></document>
 macro_rules! twxml {
     ($content:expr) => {
-        format!(
-            "<document><metadata></metadata><body>{}</body></document>",
-            $content
-        )
+        format!("<document><body>{}</body></document>", $content)
     };
 }
 
@@ -454,7 +451,7 @@ INSTANCES [ hero:Person { name = 'Hero' } ]
 fn test_twxml_skeleton_missing_metadata() {
     let mut db = RootDatabase::default();
 
-    // Document with <body> but no <metadata>
+    // Document with <body> but no <meta /> — still valid (meta tags are optional)
     let twxml_content = "<document><body><paragraph>Hello</paragraph></body></document>";
     let twxml_file = db::SourceFile::new(
         &mut db,
@@ -464,17 +461,19 @@ fn test_twxml_skeleton_missing_metadata() {
     let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
 
     let errors = db::validate_file(&db, workspace, twxml_file);
-    assert!(errors
-        .iter()
-        .any(|e| e.message == "Document missing required <metadata> block"));
+    assert!(
+        errors.is_empty(),
+        "Expected no errors for valid document without meta tags, found: {:?}",
+        errors
+    );
 }
 
 #[test]
 fn test_twxml_skeleton_missing_body() {
     let mut db = RootDatabase::default();
 
-    // Document with <metadata> but no <body>
-    let twxml_content = "<document><metadata></metadata></document>";
+    // Document with <meta /> but no <body>
+    let twxml_content = "<document><meta /></document>";
     let twxml_file = db::SourceFile::new(
         &mut db,
         "no_body.twxml".to_string(),
@@ -492,9 +491,8 @@ fn test_twxml_skeleton_missing_body() {
 fn test_twxml_skeleton_valid() {
     let mut db = RootDatabase::default();
 
-    // Valid document with both blocks
-    let twxml_content =
-        "<document><metadata></metadata><body><paragraph>Hello</paragraph></body></document>";
+    // Valid document without <metadata> — meta tags are optional
+    let twxml_content = "<document><body><paragraph>Hello</paragraph></body></document>";
     let twxml_file = db::SourceFile::new(
         &mut db,
         "valid.twxml".to_string(),
@@ -511,6 +509,113 @@ fn test_twxml_skeleton_valid() {
         errors
     );
 }
+
+#[test]
+fn test_twxml_invalid_self_closing_tag() {
+    let mut db = RootDatabase::default();
+    let twxml_content = twxml!("<invalidtag />");
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "story.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("Unknown TWXML tag 'invalidtag'")));
+}
+
+#[test]
+fn test_twxml_meta_invalid_nesting() {
+    let mut db = RootDatabase::default();
+    // <meta /> nested inside <body>/paragraph is invalid
+    let twxml_content = "<document><body><paragraph><meta name=\"author\" content=\"Tolkien\"/></paragraph></body></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "nested_meta.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Invalid nesting: tag 'meta' is only allowed as a direct child of 'document'"));
+}
+
+#[test]
+fn test_twxml_meta_after_body() {
+    let mut db = RootDatabase::default();
+    // <meta /> placed after <body> is invalid
+    let twxml_content = "<document><body><paragraph>Hello</paragraph></body><meta name=\"author\" content=\"Tolkien\"/></document>";
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "ordered_meta.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+    let language = unsafe { tauwriter_lsp::parser::tree_sitter_twxml() };
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(language).unwrap();
+    let tree = parser.parse(&twxml_content, None).unwrap();
+    println!("AST TREE: {}", tree.root_node().to_sexp());
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    println!("ERRORS: {:?}", errors);
+    assert!(errors
+        .iter()
+        .any(|e| e.message == "Invalid positioning: tag 'meta' must precede the <body> block"));
+}
+
+#[test]
+fn test_twxml_include_tag_valid() {
+    let mut db = RootDatabase::default();
+    let twxml_content = twxml!("<include src=\"chapter2.twxml\" />");
+    let twxml_file = db::SourceFile::new(
+        &mut db,
+        "include_valid.twxml".to_string(),
+        twxml_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![twxml_file]);
+
+    let errors = db::validate_file(&db, workspace, twxml_file);
+    assert!(!errors
+        .iter()
+        .any(|e| e.message.contains("Invalid include") || e.message.contains("Unknown TWXML tag")));
+}
+
+#[test]
+fn test_twxml_include_tag_invalid() {
+    let mut db = RootDatabase::default();
+    // 1. Missing src attribute
+    let twxml_content1 = twxml!("<include />");
+    let twxml_file1 = db::SourceFile::new(
+        &mut db,
+        "include_no_src.twxml".to_string(),
+        twxml_content1.to_string(),
+    );
+    let workspace1 = db::Workspace::new(&mut db, vec![twxml_file1]);
+    let errors1 = db::validate_file(&db, workspace1, twxml_file1);
+    assert!(errors1
+        .iter()
+        .any(|e| e.message == "Invalid include: tag 'include' must have a non-empty 'src' attribute"));
+
+    // 2. Block-style include is invalid
+    let twxml_content2 = twxml!("<include src=\"chapter2.twxml\">Nested content</include>");
+    let twxml_file2 = db::SourceFile::new(
+        &mut db,
+        "include_block.twxml".to_string(),
+        twxml_content2.to_string(),
+    );
+    let workspace2 = db::Workspace::new(&mut db, vec![twxml_file2]);
+    let errors2 = db::validate_file(&db, workspace2, twxml_file2);
+    assert!(errors2
+        .iter()
+        .any(|e| e.message == "Invalid include: tag 'include' must be self-closing"));
+}
+
 
 #[test]
 fn test_hubgs_unknown_instance_type() {
@@ -989,3 +1094,509 @@ INSTANCES [
     let version_val = db::compute_field_value(&db, workspace, a1, "version".to_string());
     assert_eq!(version_val, Some(db::HubValue::Number("1".to_string())));
 }
+
+// ============================================================
+// Polymorphic Type Resolution Tests (P2/P3)
+// ============================================================
+
+#[test]
+fn test_polymorphic_validation_child_satisfies_parent_role() {
+    // P3: Child type extending parent should validate when role accepts parent
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name
+        },
+        Dog EXTENDS [Animal] {
+            name,
+            role -> (1) ALLOWS [Animal]
+        }
+    ]
+],
+INSTANCES [
+    buddy:Dog { name = 'Buddy', role = [rex] },
+    rex:Animal { name = 'Rex' }
+]
+";
+    let hubgs_file =
+        db::SourceFile::new(&mut db, "poly.hubgs".to_string(), hubgs_content.to_string());
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // buddy.role references rex (type Animal), which is in Dog's allowed_types [Animal]
+    // This should validate successfully since Buddy is a Dog and Dog extends Animal
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for polymorphic assignment, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_no_extends_fails() {
+    // Robot does NOT extend Animal -> should fail role assignment when role expects [Animal]
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name
+        },
+        Robot {
+            name,
+            serve -> (1) ALLOWS [Animal]
+        }
+    ]
+],
+INSTANCES [
+    robby:Robot { name = 'Robby', serve = [robby] }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_fail.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // whiskers.serve role accepts [Animal], robby is Robot (does NOT extend Animal)
+    // This should produce a type mismatch error
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        !errors.is_empty(),
+        "Expected type mismatch error for non-extended type"
+    );
+    assert!(
+        errors.iter().any(|e| e.message.contains("Type mismatch")),
+        "Expected type mismatch error, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_multi_extends_satisfies_any_parent() {
+    // P2: Multi-parent EXTENDS - child should satisfy any parent's role
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name
+        },
+        Mammal {
+            name
+        },
+        Dragon EXTENDS [Animal, Mammal] {
+            name,
+            roar_to -> (1) ALLOWS [Mammal],
+            fly_to -> (1) ALLOWS [Animal]
+        }
+    ]
+],
+INSTANCES [
+    draco:Dragon { name = 'Draco', roar_to = [spike], fly_to = [sparky] },
+    spike:Mammal { name = 'Spike' },
+    sparky:Animal { name = 'Sparky' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_multi.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // Dragon extends both Animal and Mammal - should satisfy either parent's role
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for multi-extends polymorphic assignment, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_transitive_extends() {
+    // Role accepts [LivingThing], instance is Animal (extends LivingThing) -> valid
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        LivingThing {
+            name,
+            keeper -> (0..1) ALLOWS [LivingThing]
+        },
+        Animal EXTENDS [LivingThing] {
+            name
+        }
+    ]
+],
+INSTANCES [
+    leo:Animal { name = 'Leo', keeper = [keeper_inst] },
+    keeper_inst:LivingThing { name = 'Keeper' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_transitive.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // keeper role accepts [LivingThing], leo's keeper is LivingThing - exact match works
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for transitive extends with direct grandparent instance, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_grandchild_role_match() {
+    // When role accepts [LivingThing], an Animal instance (extends LivingThing) should satisfy it
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        LivingThing {
+            name,
+            keeper -> (0..1) ALLOWS [LivingThing]
+        },
+        Animal EXTENDS [LivingThing] {
+            name,
+            parent -> (0..1) ALLOWS [LivingThing]
+        }
+    ]
+],
+INSTANCES [
+    leo:Animal { name = 'Leo', keeper = [grandparent] },
+    grandparent:LivingThing { name = 'Grandparent' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_grandchild.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // keeper role accepts [LivingThing], grandparent is LivingThing - exact match works
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for grandchild-instance filling grandparent-role, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_child_as_parent_instance() {
+    // True polymorphism: role accepts [Animal], instance is Dog (extends Animal)
+    // This validates the extends_parents traversal works correctly
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        Animal {
+            name,
+            keeper -> (0..1) ALLOWS [Animal]
+        },
+        Dog EXTENDS [Animal] {
+            name
+        }
+    ]
+],
+INSTANCES [
+    buddy:Dog { name = 'Buddy' },
+    whiskers:Animal { name = 'Whiskers', keeper = [buddy] }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_child_as_parent.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // whiskers.keeper role accepts [Animal], buddy is Dog which extends Animal
+    // This should pass via polymorphism (no exact 'Animal' instance needed)
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for child-instance filling parent-role, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_polymorphic_validation_grandchild_as_grandparent_instance() {
+    // Grandchild fills grandparent role (two levels of inheritance)
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text
+    ],
+    HUBS [
+        LivingThing {
+            name,
+            caretaker -> (0..1) ALLOWS [LivingThing]
+        },
+        Animal EXTENDS [LivingThing] {
+            name
+        },
+        Dog EXTENDS [Animal] {
+            name
+        }
+    ]
+],
+INSTANCES [
+    buddy:Dog { name = 'Buddy' },
+    guardian:LivingThing { name = 'Guardian', caretaker = [buddy] }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "poly_grandchild_as_gp.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    // caretaker role accepts [LivingThing], buddy is Dog which extends Animal which extends LivingThing
+    // This validates the full chain traversal works
+    let errors = db::validate_file(&db, workspace, hubgs_file);
+    assert!(
+        errors.is_empty(),
+        "Expected no validation errors for grandchild-instance filling grandparent-role, found: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_computed_collection_operators() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        companions_count: Number,
+        companions_joined: Text
+    ],
+    HUBS [
+        Person {
+            name,
+            companions <-> (0..*) ALLOWS [Person],
+            companions_count = @computed(this.companions.len()),
+            companions_joined = @computed(this.companions.map(c => c.name).join(', '))
+        }
+    ]
+],
+INSTANCES [
+    aragorn:Person { name = 'Aragorn', companions = [gandalf, legolas] },
+    gandalf:Person { name = 'Gandalf' },
+    legolas:Person { name = 'Legolas' }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "collections.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let instances = db::all_hub_instances(&db, workspace);
+    let aragorn_inst = instances.iter().find(|i| i.name(&db) == "aragorn").cloned().unwrap();
+
+    let count_val = db::compute_field_value(&db, workspace, aragorn_inst, "companions_count".to_string());
+    let joined_val = db::compute_field_value(&db, workspace, aragorn_inst, "companions_joined".to_string());
+
+    assert_eq!(count_val, Some(db::HubValue::Number("2".to_string())));
+    assert_eq!(
+        joined_val,
+        Some(db::HubValue::String("Gandalf, Legolas".to_string()))
+    );
+}
+
+#[test]
+fn test_hubgs_metadata_parsing() {
+    let mut db = RootDatabase::default();
+
+    let hubgs_content = "
+DEFINITIONS [
+    HUBS [
+        Person {
+            name @display,
+            bg @background
+        }
+    ]
+],
+INSTANCES [
+    aragorn:Person {
+        name = \"Aragorn Elessar\",
+        bg = \"#FFD700\"
+    }
+]
+";
+    let hubgs_file = db::SourceFile::new(
+        &mut db,
+        "metadata.hubgs".to_string(),
+        hubgs_content.to_string(),
+    );
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file]);
+
+    let result = db::parse_hubgs(&db, hubgs_file);
+    let instances = result.instances(&db);
+    assert_eq!(instances.len(), 1);
+    let aragorn = instances[0];
+    assert_eq!(aragorn.name(&db), "aragorn");
+    assert_eq!(
+        db::resolution::hub_instance_metadata_display(&db, workspace, aragorn),
+        Some("Aragorn Elessar".to_string())
+    );
+    assert_eq!(
+        db::resolution::hub_instance_metadata_background(&db, workspace, aragorn),
+        Some("#FFD700".to_string())
+    );
+    assert!(db::resolution::hub_instance_metadata_background_range(&db, workspace, aragorn).is_some());
+}
+
+#[test]
+fn test_broken_link_validation() {
+    let mut db = RootDatabase::default();
+    
+    let path1 = "/workspace/doc1.twxml".to_string();
+    let content1 = r##"<document>
+  <body>
+    <paragraph>
+      Go to <link href="doc2.twxml#missing_anchor">missing</link>.
+      Also go to <link href="missing_file.twxml">missing file</link>.
+    </paragraph>
+  </body>
+</document>"##;
+
+    let path2 = "/workspace/doc2.twxml".to_string();
+    let content2 = r##"<document>
+  <body>
+    <paragraph id="existing_anchor">existing</paragraph>
+  </body>
+</document>"##;
+
+    let file1 = db::SourceFile::new(&mut db, path1.clone(), content1.to_string());
+    let file2 = db::SourceFile::new(&mut db, path2.clone(), content2.to_string());
+
+    let ws = db::Workspace::new(&mut db, vec![file1, file2]);
+
+    let errors = db::validate_file(&db, ws, file1);
+    
+    assert_eq!(errors.len(), 2);
+    assert!(errors[0].message.contains("Anchor '#missing_anchor' not found"));
+    assert!(errors[1].message.contains("Target file 'missing_file.twxml' not found"));
+}
+
+#[test]
+fn test_hubgs_validation_new_rules() {
+    let mut db = RootDatabase::default();
+
+    let content = "
+DEFINITIONS [
+    FIELDS [
+        name: Text,
+        legacy_name: String,
+        theme_color: Color,
+        avatar: Image
+    ],
+    HUBS [
+        Character {
+            name,
+            legacy_name,
+            theme_color,
+            avatar,
+            resides_in -> (1) ALLOWS [Location]
+        },
+        Location {
+            name
+        }
+    ]
+],
+INSTANCES [
+    workshop:Location {
+        name = \"Workshop\"
+    },
+    aragorn:Character {
+        name = \"Aragorn Elessar\",
+        legacy_name = \"Strider\",
+        theme_color = 0xFFD700,
+        avatar = \"aragorn.png\",
+        resides_in = workshop
+    },
+    gandalf:Character {
+        name = \"Gandalf the Grey\",
+        legacy_name = \"Mithrandir\",
+        theme_color = \"rgb(128, 128, 128)\",
+        avatar = \"gandalf.webp\",
+        resides_in = [ workshop ]
+    },
+    legolas:Character {
+        name = \"Legolas Greenleaf\",
+        legacy_name = \"Legolas\",
+        theme_color = \"not_a_color\",
+        avatar = \"legolas.txt\",
+        resides_in = [ workshop ]
+    }
+]
+";
+    let file = db::SourceFile::new(&mut db, "validation_rules.hubgs".to_string(), content.to_string());
+    let ws = db::Workspace::new(&mut db, vec![file]);
+
+    let errors = db::validate_file(&db, ws, file);
+
+    // Let's assert on the validation errors:
+    // 1. legacy_name uses String type, which should produce Type mismatch since String is not a valid primitive type
+    // 2. aragorn's resides_in is assigned directly (not an array), which should produce "must be an array of references wrapped in '[...]'"
+    // 3. legolas's theme_color is "not_a_color", which should produce Type mismatch for Color
+    // 4. legolas's avatar is "legolas.txt", which should produce Type mismatch for Image
+
+    let string_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("expected 'String'")).collect();
+    assert!(!string_errors.is_empty(), "Expected error for legacy String type");
+
+    let array_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("must be an array of references")).collect();
+    assert_eq!(array_errors.len(), 1, "Expected role assignment array wrapper error");
+
+    let color_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("expected 'Color'")).collect();
+    assert_eq!(color_errors.len(), 1, "Expected Color validation error");
+
+    let image_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("expected 'Image'")).collect();
+    assert_eq!(image_errors.len(), 1, "Expected Image validation error");
+}
+
+
+

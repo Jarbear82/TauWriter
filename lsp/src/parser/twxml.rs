@@ -4,11 +4,56 @@ use tree_sitter::Parser;
 pub fn parse_twxml_ast(db: &dyn Db, file: SourceFile) -> Vec<HubReference<'_>> {
     let mut refs = Vec::new();
     let contents = file.contents(db);
+    let path = file.path(db);
 
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
-    let tree = parser.parse(&contents, None).unwrap();
+    parser.set_language(language).unwrap();
+    
+    let old_entry = crate::get_tree_cache().get(&path).map(|t| t.clone());
+    let tree = if let Some(ref entry) = old_entry {
+        if entry.content_len == contents.len() && entry.content_hash == crate::calculate_hash(&contents) {
+            if entry.needs_reparse {
+                let t = parser.parse(&contents, Some(&entry.tree)).unwrap();
+                crate::get_tree_cache().insert(
+                    path,
+                    crate::CachedTree {
+                        tree: t.clone(),
+                        content_len: contents.len(),
+                        content_hash: crate::calculate_hash(&contents),
+                        needs_reparse: false,
+                    },
+                );
+                t
+            } else {
+                entry.tree.clone()
+            }
+        } else {
+            let t = parser.parse(&contents, None).unwrap();
+            crate::get_tree_cache().insert(
+                path,
+                crate::CachedTree {
+                    tree: t.clone(),
+                    content_len: contents.len(),
+                    content_hash: crate::calculate_hash(&contents),
+                    needs_reparse: false,
+                },
+            );
+            t
+        }
+    } else {
+        let t = parser.parse(&contents, None).unwrap();
+        crate::get_tree_cache().insert(
+            path,
+            crate::CachedTree {
+                tree: t.clone(),
+                content_len: contents.len(),
+                content_hash: crate::calculate_hash(&contents),
+                needs_reparse: false,
+            },
+        );
+        t
+    };
 
     let query_str = r#"
         (
@@ -82,16 +127,26 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
 
     let language = unsafe { super::tree_sitter_twxml() };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
+    parser.set_language(language).unwrap();
     let tree = parser.parse(&contents, None).unwrap();
 
     let root = tree.root_node();
-    for child in root.children(&mut root.walk()) {
+    // ponytail: Root is source_file → document_block; body/meta live under document_block
+    let container = if root.kind() == "source_file" {
+        root.child(0)
+    } else {
+        Some(root)
+    };
+    let children: Vec<_> = match container {
+        Some(node) => node.children(&mut node.walk()).collect(),
+        None => vec![],
+    };
+    for child in children {
         match child.kind() {
-            "metadata_block" => {
+            "meta_tag" => {
                 tags.push(crate::db::TwxmlTag::new(
                     db,
-                    "metadata".to_string(),
+                    "meta".to_string(),
                     file,
                     super::ts_range_to_lsp(child.range()),
                     Some("document".to_string()),
@@ -120,9 +175,9 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
             let node = capture.node;
             let tag_name = contents[node.byte_range()].to_string();
 
-            if let Some(start_tag_node) = node.parent() {
-                if start_tag_node.kind() == "start_tag" {
-                    if let Some(element_node) = start_tag_node.parent() {
+            if let Some(parent_node) = node.parent() {
+                if parent_node.kind() == "start_tag" {
+                    if let Some(element_node) = parent_node.parent() {
                         if element_node.kind() == "element" {
                             let parent_name = resolve_parent_tag(&element_node, &contents);
 
@@ -135,6 +190,16 @@ pub fn get_all_twxml_tags(db: &dyn Db, file: SourceFile) -> Vec<crate::db::Twxml
                             ));
                         }
                     }
+                } else if parent_node.kind() == "self_closing_element" {
+                    let parent_name = resolve_parent_tag(&parent_node, &contents);
+
+                    tags.push(crate::db::TwxmlTag::new(
+                        db,
+                        tag_name.clone(),
+                        file,
+                        super::ts_range_to_lsp(node.range()),
+                        parent_name,
+                    ));
                 }
             }
         }
@@ -156,7 +221,7 @@ fn resolve_parent_tag(element_node: &tree_sitter::Node, contents: &str) -> Optio
                 }
             }
             "body_block" => return Some("body".to_string()),
-            "metadata_block" => return Some("metadata".to_string()),
+            "meta_tag" => return Some("meta".to_string()),
             _ => {}
         }
     }
@@ -440,7 +505,7 @@ fn find_parent_tag_name(node: &tree_sitter::Node, contents: &str) -> Option<Stri
                     }
                 }
                 "body_block" => return Some("body".to_string()),
-                "metadata_block" => return Some("metadata".to_string()),
+                "meta_tag" => return Some("meta".to_string()),
                 "document_block" => return Some("document".to_string()),
                 _ => {}
             }

@@ -63,34 +63,36 @@ The document uses a custom XML vocabulary called **TauWriter XML** as its raw fo
 - **Human-readable and editable** — Like HTML, TWXML is plain text that writers and power users can read, version-control, and manually edit
 
 #### TWXML Vocabulary
-TWXML uses an **enforced tree hierarchy**: heading levels are derived from nesting depth, not explicit attributes. A `<heading>` directly under `<document>` is H1 (document title), one inside a `<section>` is H2, and deeper nesting produces H3+.
+TWXML uses an **enforced tree hierarchy**: heading levels are derived from nesting depth under the structural body.
 
-The vocabulary mirrors common structural elements used in writing:
+Much of the vocabulary mirrors common structural elements used in writing:
 
-| Element | Purpose |
-|---------|---------|
-| `<document>` | Root element wrapping a complete document or fragment |
-| `<meta />` | Document-level metadata (author, tags, status); placed inside `<document>` before block content |
-| `<section>` | Semantic divider for parts, chapters, scenes, etc.; carries `alias` attribute |
-| `<heading>` | Section heading; level is determined by nesting depth |
-| `<paragraph>` | Fundamental prose unit |
-| `<hr />` | Thematic break between paragraph-level elements |
-| `<hubref>` | Inline container for graph references; uses `id` attribute |
-| `<bold>`, `<italic>`, `<underline>` | Text styling (applied via nesting, not attributes) |
+| Element | Purpose | Attributes |
+|---------|---------|------------|
+| `<document>` | Root element wrapping a complete document or fragment | `id`, `class` |
+| `<meta />` | Document-level metadata (author, tags, status); placed directly inside `<document>` before `<body>` | `name`, `content` |
+| `<body>` | The content container wrapping all visible prose elements | `id`, `class` |
+| `<include />`| Runtime document fragmentation/stitching engine | `src` |
+| `<section>` | Semantic divider for parts, chapters, scenes, etc. | `alias`, `id`, `class` |
+| `<heading>` | Section heading; level is determined by nesting depth | `id`, `class`, `align` |
+| `<paragraph>` | Fundamental prose unit | `id`, `class`, `align` |
+| `<hubref>` | Inline container for graph references; supports wrapping and self-closing dynamic formats | `id`, `field` |
 
-Custom elements can be added as the system evolves. The vocabulary is intentionally minimal to keep files readable.
+The vocabulary is intentionally minimal to keep files readable.
 
 ### Document Structure Example
 ```xml
 <document>
   <meta name="author" content="J.R.R. Tolkien" />
-  <section alias="The Fellowship">
-    <heading>Departure</heading>
-    <paragraph>
-      <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
-      and looked across the field toward <hubref id="mordor">Mordor</hubref>.
-    </paragraph>
-  </section>
+  <body>
+    <section alias="The Fellowship">
+      <heading>Departure</heading>
+      <paragraph>
+        <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
+        and looked across the field toward <hubref id="mordor">Mordor</hubref>.
+      </paragraph>
+    </section>
+  </body>
 </document>
 ```
 
@@ -133,9 +135,9 @@ A HubGS file has three optional top-level sections:
 IMPORTS [ ... ]         // Optional — import schemas from other .hubgs files
 
 DEFINITIONS [           // Schema-level type definitions
-    FIELDS [...]
-    ENUMS [...]
-    HUBS [...]
+    FIELDS [...],
+    ENUMS [...],
+    HUBS [...],
 ]
 
 INSTANCES [...]         // Concrete Hub objects with assigned values
@@ -706,10 +708,9 @@ In this setup:
 
 | # | Question | Context |
 |---|----------|---------|
-| Q1 | **Document fragmentation details** | Documents can be split into directories of multiple TWXML fragments for corruption resilience. How does the stitch-together mechanism work at runtime? Should there be a manifest or index file that declares fragment order? Is the root `<document>` element always in one file with child fragments referenced, or is it purely conventional ordering (e.g., filename sorting)? |
+| Q1 | **Document fragmentation details**[cite: 1] | Solved via `<include src="..." />`[cite: 1]. The compiler/LSP pipeline swaps this tag with the targeted file's `<body>` children at runtime[cite: 1]. |
 | Q2 | **Collaboration architecture** | Future goal: Zed-inspired multiplayer editing and Discord-like server organization. Should the current architecture doc lay groundwork for this now (CRDTs, operational transforms, server-authoritative state), or keep it entirely aspirational? If groundwork is needed, what minimal abstractions should be in place today? |
 | Q3 | **Tauri vs. GPUI** | Both are viable desktop targets. Tauri enables web tech (e.g., Svelte) for the frontend with a Rust backend; GPUI is fully native Rust rendering. Does either choice have implications for how editor views or graph visualization should be architected? Is this decision deferred until prototype phase? |
-| Q4 | **HubGS schema imports — circular dependencies** | The IMPORTS mechanism allows splitting schemas across files. What happens with circular imports (File A imports from File B, which imports back from File A)? Should the system detect and reject cycles, or resolve them through a two-pass merge strategy? |
 
 ### Planned Features (Not Yet Specified)
 
@@ -718,7 +719,6 @@ In this setup:
 | **AI Assistant Server** | LSP-like integration for AI interactions. Enabled via hover settings; uses a RAG pipeline to generate summaries/descriptions of referenced hubs. Every LSP action could be configurable and mappable to an AI command. Local small model or API key configuration. Sufficient for simple tasks like hub description generation. |
 | **AI Provocations** | A second, more complex AI service that reads the current section and critiques highlighted passages — similar to collaborative document comments. Provides edit and/or commentary suggestions. Configurable for different tones, styles, or focuses (e.g., editing pass vs. creative brainstorming). |
 | **Traits (Abstract Hubs)** | Hub types that can be inherited from but not directly instantiated. Enables shared behavior patterns across unrelated hub types without requiring full inheritance chains. |
-| **EXTENDS Syntax** | Composite inheritance for Hub types. No diamond problem expected due to global field definitions and role conflict resolution at the schema level. Requires formal syntax and semantics specification. |
 | **Expanded Data Types** | Additional supported types beyond current set: `UUID`, structured records (`struct`), and other useful primitives. Formal type system expansion needed. |
 | **Expressive Strings / String Templates** | A template mechanism for constructing typed string values (e.g., date formatting, interpolated display names). Naming TBD — "expressive strings" is a working title. |
 | **Decorators Reference Section** | A dedicated documentation section enumerating all decorators (`@computed()`, `@default()`, `@metadata`, and any future additions) with formal syntax, semantics, and examples. |

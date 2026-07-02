@@ -22,6 +22,8 @@ pub struct HubFieldDef {
     pub range: super::LspRange,
     pub decorator: Option<String>,  // "@computed" or "@default"
     pub expression: Option<String>, // The expression inside the decorator
+    pub is_display: bool,
+    pub is_background: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -40,6 +42,9 @@ pub struct HubType<'db> {
     pub block_range: super::LspRange,
     pub fields: Vec<HubFieldDef>,
     pub roles: Vec<HubRoleDef>,
+    /// Parent type names from EXTENDS clause for polymorphic resolution.
+    pub extends_parents: Vec<String>,
+    pub constraints: Vec<String>,
 }
 
 #[salsa::tracked]
@@ -92,6 +97,7 @@ pub struct HubAssignment {
     pub name: String,
     pub range: super::LspRange,
     pub value: HubValue,
+    pub value_range: super::LspRange,
 }
 
 #[salsa::tracked]
