@@ -1,15 +1,3 @@
-<<<<<<< HEAD
-; Structural block boundaries (match the literal string tokens)
-"<document>" @keyword.control
-"</document>" @keyword.control
-"<metadata>" @keyword.control
-"</metadata>" @keyword.control
-"<body>" @keyword.control
-"</body>" @keyword.control
-=======
-; highlights.scm for TWXML (Zed)
->>>>>>> dev
-
 ; ----------------------------------------------------------------------
 ; Structural literal keywords — fixed, mandatory document shell
 ; ----------------------------------------------------------------------
@@ -139,13 +127,7 @@
 (attribute name: (attribute_name) @attribute)
 (attribute_value) @string
 
-<<<<<<< HEAD
-; Brackets (for generic inner elements)
-["<" ">" "</" "/>"] @punctuation.bracket
-
-=======
 ; ----------------------------------------------------------------------
->>>>>>> dev
 ; Comments
 ; ----------------------------------------------------------------------
 
