@@ -1,3 +1,4 @@
+use crate::parser;
 use tree_sitter::Parser;
 
 const MAX_LINE_LEN: usize = 100;
@@ -6,7 +7,7 @@ const MAX_LINE_LEN: usize = 100;
 // with a static schema lookup, making output independent of input content shape.
 // Ceiling: DTD/schema validation would catch misplaced elements before formatting.
 // Upgrade: load TagBehavior from a config file to reuse for other TWXML-dialect languages.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum TagBehavior {
     /// R1: Always multiline; children are block-level elements.
     ForcedExpandBlock,
@@ -47,9 +48,12 @@ fn tag_behavior(tag: &str) -> TagBehavior {
 }
 
 pub fn format_twxml(contents: &str) -> String {
-    let language = unsafe { super::tree_sitter_twxml() };
+    let language = match parser::get_language("twxml") {
+        Some(lang) => lang,
+        None => return contents.to_string(), // Graceful degradation
+    };
     let mut parser = Parser::new();
-    if parser.set_language(language).is_err() {
+    if parser.set_language(&language).is_err() {
         return contents.to_string();
     }
 
@@ -122,7 +126,6 @@ fn format_element(
     let attr_str = format_attrs(&attrs, &tag_name, indent);
 
     match tag_behavior(&tag_name) {
-        // ── R12: verbatim codeblock ──────────────────────────────────────────
         // ── R12: verbatim codeblock ──────────────────────────────────────────
         TagBehavior::CodeBlock => {
             let mut inner = String::new();
@@ -295,7 +298,10 @@ fn format_element(
                     }
                 }
 
-                _ => unreachable!(),
+                _ => unreachable!(
+                    "TagBehavior variant {:?} not handled in format_element",
+                    behavior
+                ),
             }
         }
     }

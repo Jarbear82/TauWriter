@@ -91,8 +91,7 @@ INSTANCES [
         theme_color = 0x000000,
         avatar = "hello.png",
         resides_in = [cave]
-    }
-
+    },
     // Creatures
     flies:Creature {
         name = "The Flies",
@@ -130,3 +129,4 @@ INSTANCES [
         owner = [tailor]
     }
 ]
+

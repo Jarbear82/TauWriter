@@ -7,6 +7,7 @@ pub mod types;
 pub mod validation;
 
 // Re-export everything at the module root for backward compatibility
+pub use evaluator::*;
 pub use resolution::*;
 pub use types::*;
 pub use validation::*;

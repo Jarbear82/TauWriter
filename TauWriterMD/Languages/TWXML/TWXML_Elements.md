@@ -23,21 +23,9 @@ Every `*.twxml` file follows this top-level structure:
 
 This means you never need to specify heading levels manually. The tree structure itself defines the outline.
 
-### Document
-The root element for any `*.twxml` file. Can wrap a complete document or a fragment of a larger stitched document. Direct children are zero or more `<meta />` tags followed by exactly one `<body>`.  
-Tags: `<document></document>` 
-
-### Meta
-A single key-value metadata entry.  
-
-Tags: `<meta />`  
-Tag Attributes:  
-- name: The metadata key.  
-- content: The metadata value.
-
-### Body
-The container for all document content. Placed after all `<meta/>` tags inside `<document>`. Contains `<section>`, `<heading>`, `<footnote>`, and other block-level elements.  
-Tags: `<body></body>`
+### Document Structure
+For `<document>`, `<meta>`, and `<body>` — see [TWXML.md](TWXML.md#the-root-skeleton).  
+`TWXML_Elements.md` covers the remaining elements below.
 
 ### Section
 A semantic divider element used to distinguish different sections and sub-sections within a document.

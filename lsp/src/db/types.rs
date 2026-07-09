@@ -71,23 +71,80 @@ pub struct GlobalField<'db> {
     pub type_name: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HubValue {
     Identifier(String),
-    Number(String),
-    String(String),
+    Number(f64),
     Boolean(bool),
+    Text(String),
+    ColorHex(String),
     Array(Vec<HubValue>),
 }
 
 impl std::fmt::Display for HubValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HubValue::String(s) => write!(f, "{}", s),
+            HubValue::Text(s) => write!(f, "{}", s),
+            HubValue::ColorHex(s) => write!(f, "color({})", s),
             HubValue::Number(n) => write!(f, "{}", n),
-            HubValue::Boolean(b) => write!(f, "{}", b),
             HubValue::Identifier(i) => write!(f, "{}", i),
+            HubValue::Boolean(b) => write!(f, "{}", b),
             HubValue::Array(_) => Ok(()),
+        }
+    }
+}
+
+impl std::cmp::PartialEq for HubValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (HubValue::Identifier(a), HubValue::Identifier(b)) => a == b,
+            (HubValue::Number(a), HubValue::Number(b)) => a.to_bits() == b.to_bits(),
+            (HubValue::Text(a), HubValue::Text(b)) => a == b,
+            (HubValue::Boolean(a), HubValue::Boolean(b)) => a == b,
+            (HubValue::Array(a), HubValue::Array(b)) => {
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter().zip(b.iter()).all(|(x, y)| x.eq(y))
+            }
+            (HubValue::ColorHex(a), HubValue::ColorHex(b)) => a == b,
+            _ => false, // Different variants are never equal
+        }
+    }
+}
+
+impl std::cmp::Eq for HubValue {}
+
+impl std::hash::Hash for HubValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            HubValue::Identifier(s) => {
+                0u8.hash(state);
+                s.hash(state);
+            }
+            HubValue::Number(n) => {
+                1u8.hash(state);
+                n.to_bits().hash(state);
+            }
+            HubValue::Boolean(b) => {
+                3u8.hash(state);
+                b.hash(state);
+            }
+            HubValue::Text(s) => {
+                5u8.hash(state);
+                s.hash(state);
+            }
+            HubValue::ColorHex(s) => {
+                6u8.hash(state);
+                s.hash(state);
+            }
+            HubValue::Array(a) => {
+                4u8.hash(state);
+                a.len().hash(state);
+                for item in a {
+                    item.hash(state);
+                }
+            }
         }
     }
 }

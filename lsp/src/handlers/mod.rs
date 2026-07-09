@@ -6,6 +6,7 @@ pub mod information;
 pub mod inlay_hints;
 pub mod navigation;
 pub mod symbols;
+pub mod uuid;
 
 pub use code_lens::*;
 pub use completion::*;
@@ -15,3 +16,4 @@ pub use information::*;
 pub use inlay_hints::*;
 pub use navigation::*;
 pub use symbols::*;
+pub use uuid::*;

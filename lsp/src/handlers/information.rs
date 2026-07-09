@@ -74,9 +74,21 @@ fn extract_source_snippet_type(
     super::documents::get_range_text(&contents, block_range.into())
 }
 
-fn format_hub_value(val: &crate::db::HubValue) -> String {
+pub fn format_hub_value(val: &crate::db::HubValue) -> String {
     match val {
-        crate::db::HubValue::String(s) => format!("\"{}\"", s),
+        crate::db::HubValue::Text(s) => format!("\"{}\"", s),
+        crate::db::HubValue::Array(items) => {
+            let formatted: Vec<String> = items
+                .iter()
+                .map(|item| match item {
+                    crate::db::HubValue::Number(n) => n.to_string(),
+                    crate::db::HubValue::Text(s) => format!("\"{}\"", s),
+                    crate::db::HubValue::Boolean(b) => b.to_string(),
+                    _ => item.to_string(),
+                })
+                .collect();
+            format!("[{}]", formatted.join(", "))
+        }
         other => other.to_string(),
     }
 }
@@ -274,7 +286,7 @@ fn hover_global_field(
 }
 
 /// Helper for building markdown content incrementally
-struct MarkdownContent {
+pub struct MarkdownContent {
     lines: Vec<String>,
 }
 
@@ -343,7 +355,7 @@ pub async fn code_action(
             let ws = &ws_val;
 
             if let Some(instance) = crate::db::resolve_reference(db, *ws, id_val.clone()) {
-                if let Some(eval_val) =
+                if let Ok(Some(eval_val)) =
                     crate::db::compute_field_value(db, *ws, instance, field_val.clone())
                 {
                     return code_action_impl(
@@ -420,3 +432,7 @@ fn code_action_impl(
 
     Ok(Some(actions))
 }
+
+#[cfg(test)]
+#[path = "information_tests.rs"]
+mod information_test_module;

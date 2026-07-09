@@ -6,16 +6,20 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}[1/3]${NC} Cleaning old local Linux binary target..."
+echo -e "${BLUE}[1/4]${NC} Cleaning old local Linux binary target..."
 mkdir -p extension/bin
 rm -f extension/bin/tauwriter-lsp-linux-x64
 
-echo -e "${BLUE}[2/3]${NC} Compiling local LSP sub-project in Release mode..."
+echo -e "${BLUE}[2/4]${NC} Compiling local LSP sub-project in Release mode..."
 cargo build --release --manifest-path lsp/Cargo.toml
 
-echo -e "${BLUE}[3/3]${NC} Moving build artifact to dev extension bin directory..."
+echo -e "${BLUE}[3/4]${NC} Moving build artifact to dev extension bin directory..."
 cp target/release/tauwriter-lsp extension/bin/tauwriter-lsp-linux-x64
 chmod +x extension/bin/tauwriter-lsp-linux-x64
+
+echo -e "${BLUE}[4/4]${NC} Building WASM extension (optional)..."
+cargo build --manifest-path extension/Cargo.toml --target wasm32-unknown-unknown --release 2>/dev/null \
+    || echo -e "${BLUE}[WARN]${NC} WASM build skipped (install target: rustup target add wasm32-unknown-unknown)"
 
 # NEW: Also copy to Zed's work directory so the extension can find it immediately
 ZED_WORK_DIR="$HOME/.local/share/zed/extensions/work/tauwriter/bin"

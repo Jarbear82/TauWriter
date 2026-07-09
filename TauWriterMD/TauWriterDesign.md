@@ -168,8 +168,8 @@ Fields are typed property declarations. They define what scalar data a Hub can h
 
 ```hubgs
 FIELDS [
-    name: String,
-    description: String,
+    name: Text,
+    description: Text,
     hit_points: Number,
     is_active: Boolean,
     realm_association: Realm,   // Enum type reference
@@ -180,7 +180,7 @@ FIELDS [
 #### Field Types
 | Type | Example | Description |
 |------|---------|-------------|
-| `String` | `"Aragorn"` | Free-form text |
+| `Text` | `Aragorn` | Free-form text |
 | `Number` | `42`, `3.14` | Integer or floating-point |
 | `Boolean` | `true`, `false` | True/false values |
 | `Date` | `2024-01-15` | Timestamp/date values |
@@ -480,14 +480,14 @@ IMPORTS [
 DEFINITIONS [
     FIELDS [
         access_systems: Array<AccessSystem>,
-        alt_name: String,
-        description: String,
+        alt_name: Text,
+        description: Text,
         essence_groups: Array<EssenceGroup>,
         essences: Array<Essence>,
-        first_name: String,
-        full_name: String,
-        last_name: String,
-        name: String,
+        first_name: Text,
+        full_name: Text,
+        last_name: Text,
+        name: Text,
         realm_association: Realm,
         worlds: Array<World>
     ],
@@ -641,8 +641,8 @@ IMPORTS [
 
 DEFINITIONS [
     FIELDS [
-        name: String,
-        description: String,
+        name: Text,
+        description: Text,
     ],
 
     HUBS [

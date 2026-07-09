@@ -41,32 +41,41 @@ impl db::Db for RootDatabase {
 
 pub struct Backend {
     pub client: Client,
-    pub db: Arc<std::sync::Mutex<RootDatabase>>,
+    pub db: SalsaThreadHandle,
     pub workspace_input: db::Workspace,
     pub open_files: Arc<DashMap<Url, Rope>>,
 }
 
-use std::sync::OnceLock;
+/// Thread-safe handle for the salsa database.
+/// Provides `.with_db()` to enter a salsa-attached context and `.clone_db()` to duplicate.
+pub struct SalsaThreadHandle(Arc<std::sync::Mutex<RootDatabase>>);
 
-#[derive(Clone)]
-pub struct CachedTree {
-    pub tree: tree_sitter::Tree,
-    pub content_len: usize,
-    pub content_hash: u64,
-    pub needs_reparse: bool,
+impl SalsaThreadHandle {
+    /// Create a new SalsaThreadHandle from a database.
+    pub fn new(db: RootDatabase) -> Self {
+        SalsaThreadHandle(Arc::new(std::sync::Mutex::new(db)))
+    }
+
+    /// Enter a salsa-attached context for the duration of the closure.
+    /// The database is accessible as `&mut RootDatabase` inside the closure.
+    /// All salsa tracked calls must occur within this scope while the lock is held.
+    pub fn with_db<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut RootDatabase) -> R,
+    {
+        let mut guard = self.0.lock().unwrap();
+        f(&mut *guard)
+    }
+
+    pub fn clone_db(&self) -> SalsaThreadHandle {
+        SalsaThreadHandle(self.0.clone())
+    }
 }
 
-pub fn calculate_hash(s: &str) -> u64 {
-    use std::hash::Hasher;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    hasher.write(s.as_bytes());
-    hasher.finish()
-}
-
-pub static TREE_CACHE: OnceLock<DashMap<String, CachedTree>> = OnceLock::new();
-
-pub fn get_tree_cache() -> &'static DashMap<String, CachedTree> {
-    TREE_CACHE.get_or_init(DashMap::new)
+impl Clone for SalsaThreadHandle {
+    fn clone(&self) -> Self {
+        self.clone_db()
+    }
 }
 
 pub fn utf16_idx_to_byte_idx(s: &str, utf16_idx: usize) -> usize {
@@ -100,7 +109,7 @@ impl Backend {
         };
 
         let mut ts_parser = tree_sitter::Parser::new();
-        ts_parser.set_language(language).ok()?;
+        ts_parser.set_language(&language).ok()?;
         let tree = ts_parser.parse(&content, None)?;
 
         let lines: Vec<&str> = content.lines().collect();
@@ -180,14 +189,29 @@ impl Backend {
         }
     }
 
+    /// Return a new Salsa handle and the workspace input.
+    /// Use this when handlers need to call salsa tracked queries.
+    pub fn db_handle(&self) -> SalsaThreadHandle {
+        self.db.clone()
+    }
+
+    /// Read the current database snapshot for inspection.
+    /// WARNING: The returned RootDatabase is NOT attached to a task context.
+    /// Do not call salsa tracked queries on it — use `db_handle()` instead.
+    pub fn peek_db(&self) -> RootDatabase {
+        self.db.0.lock().unwrap().clone()
+    }
+
+    /// Legacy helper for handlers that need both db and workspace.
+    /// For salsa query access, prefer `db_handle()` with `.with_db()`.
     pub fn read_db(&self) -> (RootDatabase, db::Workspace) {
-        let db = self.db.lock().unwrap();
-        (db.clone(), self.workspace_input)
+        let guard = self.db.0.lock().unwrap();
+        (guard.clone(), self.workspace_input)
     }
 
     async fn index_directory(
         client: Client,
-        db_mutex: Arc<std::sync::Mutex<RootDatabase>>,
+        db_handle: SalsaThreadHandle,
         ws: db::Workspace,
         root: std::path::PathBuf,
     ) {
@@ -217,23 +241,22 @@ impl Backend {
             .await;
 
         let mut files = Vec::new();
-        {
-            let mut db = db_mutex.lock().unwrap();
-            for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        db_handle.with_db(|db| {
+            for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if path.is_file() {
                     let ext = path.extension().and_then(|s| s.to_str());
                     if matches!(ext, Some("hubgs") | Some("twxml")) {
                         if let Ok(content) = std::fs::read_to_string(path) {
                             let path_str = path.to_string_lossy().to_string();
-                            let source = db::SourceFile::new(&mut *db, path_str, content);
+                            let source = db::SourceFile::new(db, path_str, content);
                             files.push(source);
                         }
                     }
                 }
             }
-            ws.set_files(&mut *db).to(files);
-        }
+            ws.set_files(db).to(files);
+        });
 
         let _ = client
             .send_notification::<Progress>(ProgressParams {
@@ -270,11 +293,10 @@ impl Backend {
         };
         let path = uri.to_file_path().unwrap().to_string_lossy().to_string();
 
-        let errors = {
-            let mut db = self.db.lock().unwrap();
-            let source_file = db::SourceFile::new(&mut *db, path, content.clone());
+        let errors = self.db.with_db(|db| {
+            let source_file = db::SourceFile::new(db, path, content.clone());
             db::validate_file(&*db, self.workspace_input, source_file)
-        };
+        });
 
         let diagnostics = errors
             .into_iter()
@@ -393,6 +415,7 @@ impl LanguageServer for Backend {
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
                 selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+                diagnostic_provider: None,
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -660,97 +683,15 @@ impl LanguageServer for Backend {
     async fn moniker(&self, _params: MonikerParams) -> Result<Option<Vec<Moniker>>> {
         Ok(None)
     }
+
+    async fn diagnostic(
+        &self,
+        _params: lsp_types::DocumentDiagnosticParams,
+    ) -> Result<lsp_types::DocumentDiagnosticReportResult> {
+        handlers::diagnostics::diagnostic_pull_handler(self).await
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_utf16_idx_to_byte_idx() {
-        // ASCII
-        assert_eq!(utf16_idx_to_byte_idx("hello", 0), 0);
-        assert_eq!(utf16_idx_to_byte_idx("hello", 2), 2);
-        assert_eq!(utf16_idx_to_byte_idx("hello", 10), 5);
-
-        // Multi-byte Unicode (curly quotes: 3 bytes each, 1 UTF-16 code unit each)
-        let s = "“hello”";
-        assert_eq!(utf16_idx_to_byte_idx(s, 0), 0);
-        assert_eq!(utf16_idx_to_byte_idx(s, 1), 3); // after “
-        assert_eq!(utf16_idx_to_byte_idx(s, 6), 8); // after o
-
-        // Surrogate pairs (smiley face: 4 bytes, 2 UTF-16 code units)
-        let smiley = "a😊b";
-        assert_eq!(utf16_idx_to_byte_idx(smiley, 0), 0);
-        assert_eq!(utf16_idx_to_byte_idx(smiley, 1), 1); // before 😊
-        assert_eq!(utf16_idx_to_byte_idx(smiley, 2), 5); // middle of 😊, snaps to after 😊
-        assert_eq!(utf16_idx_to_byte_idx(smiley, 3), 5); // after 😊
-        assert_eq!(utf16_idx_to_byte_idx(smiley, 4), 6); // after b
-    }
-
-    #[test]
-    fn test_incremental_parse_cache() {
-        let mut db = RootDatabase::default();
-        let path = "/test/file.hubgs".to_string();
-        get_tree_cache().remove(&path);
-
-        let source_file =
-            db::SourceFile::new(&mut db, path.clone(), "INSTANCES [ x:Y {} ]".to_string());
-
-        let _result = crate::db::parse_hubgs(&db, source_file);
-
-        assert!(get_tree_cache().contains_key(&path));
-
-        {
-            let entry = get_tree_cache().get(&path).unwrap();
-            assert!(!entry.needs_reparse);
-            assert_eq!(entry.content_len, 20);
-        }
-
-        let range = lsp_types::Range {
-            start: lsp_types::Position {
-                line: 0,
-                character: 14,
-            },
-            end: lsp_types::Position {
-                line: 0,
-                character: 15,
-            },
-        };
-        let rope = ropey::Rope::from_str("INSTANCES [ x:Y {} ]");
-        {
-            let mut entry = get_tree_cache().get_mut(&path).unwrap();
-            crate::handlers::documents::edit_tree(
-                &mut entry.value_mut().tree,
-                &rope,
-                range,
-                "Z",
-                14,
-                15,
-                0,
-                0,
-            );
-
-            let new_contents = "INSTANCES [ x:Z {} ]";
-            entry.value_mut().content_len = new_contents.len();
-            entry.value_mut().content_hash = calculate_hash(new_contents);
-            entry.value_mut().needs_reparse = true;
-        }
-
-        {
-            let entry = get_tree_cache().get(&path).unwrap();
-            assert!(entry.needs_reparse);
-            assert_eq!(entry.content_len, 20);
-        }
-
-        let source_file2 =
-            db::SourceFile::new(&mut db, path.clone(), "INSTANCES [ x:Z {} ]".to_string());
-        let _result2 = crate::db::parse_hubgs(&db, source_file2);
-
-        {
-            let entry = get_tree_cache().get(&path).unwrap();
-            assert!(!entry.needs_reparse);
-            assert_eq!(entry.content_len, 20);
-        }
-    }
-}
+#[path = "lib_tests.rs"]
+mod lib_test_module;

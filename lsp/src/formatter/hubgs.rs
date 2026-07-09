@@ -1,10 +1,21 @@
+use crate::parser;
 use tree_sitter::Parser;
 
+use super::expression::{format_expression, is_expression_kind};
+
 pub fn format_hubgs(contents: &str) -> String {
-    let language = unsafe { super::tree_sitter_hubgs() };
+    let language = match parser::get_language("hubgs") {
+        Some(lang) => lang,
+        None => return contents.to_string(), // Graceful degradation
+    };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
-    let tree = parser.parse(contents, None).unwrap();
+    if parser.set_language(&language).is_err() {
+        return contents.to_string();
+    }
+    let tree = match parser.parse(contents, None) {
+        Some(t) => t,
+        None => return contents.to_string(),
+    };
     let root = tree.root_node();
 
     if root.has_error() {
@@ -28,7 +39,11 @@ pub fn format_hubgs(contents: &str) -> String {
         }
     }
 
-    sections.join(",\n\n") + "\n"
+    let non_empty_sections: Vec<_> = sections
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    non_empty_sections.join(",\n\n") + "\n"
 }
 
 fn format_imports_section(node: tree_sitter::Node, contents: &str) -> String {
@@ -193,7 +208,8 @@ fn parse_hubs(block: tree_sitter::Node, contents: &str) -> Vec<String> {
                 for child in hub_def.children(&mut item_cursor) {
                     match child.kind() {
                         "hub_field" => {
-                            items.push(format!("            {}", format_hub_field(child, contents)));
+                            items
+                                .push(format!("            {}", format_hub_field(child, contents)));
                         }
                         "hub_role" => {
                             items.push(format!("            {}", format_hub_role(child, contents)));
@@ -223,7 +239,7 @@ fn format_hub_field(node: tree_sitter::Node, contents: &str) -> String {
     if let Some(id_node) = node.child(0) {
         let id_str = &contents[id_node.byte_range()];
         let mut parts = vec![id_str.to_string()];
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == "decorator" {
@@ -283,129 +299,16 @@ fn format_constraints_block(node: tree_sitter::Node, contents: &str) -> String {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let kind = child.kind();
-        if kind != "@constraints" && kind != "[" && kind != "]" && kind != "," && !child.is_missing() {
+        if kind != "@constraints"
+            && kind != "["
+            && kind != "]"
+            && kind != ","
+            && !child.is_missing()
+        {
             exprs.push(format_expression(child, contents));
         }
     }
     format!("@constraints [ {} ]", exprs.join(", "))
-}
-
-fn is_expression_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "binary_expression"
-            | "unary_expression"
-            | "member_expression"
-            | "call_expression"
-            | "arrow_function"
-            | "identifier"
-            | "number"
-            | "string"
-            | "template_string"
-            | "array"
-            | "boolean"
-            | "parenthesized_expression"
-    )
-}
-
-fn format_expression(node: tree_sitter::Node, contents: &str) -> String {
-    match node.kind() {
-        "identifier" | "number" | "boolean" | "string" => contents[node.byte_range()].to_string(),
-        "template_string" => {
-            let mut result = String::new();
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if is_expression_kind(child.kind()) {
-                    result.push_str(&format_expression(child, contents));
-                } else {
-                    result.push_str(&contents[child.byte_range()]);
-                }
-            }
-            result
-        }
-        "array" => {
-            let mut exprs = Vec::new();
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if is_expression_kind(child.kind()) {
-                    exprs.push(format_expression(child, contents));
-                }
-            }
-            format!("[{}]", exprs.join(", "))
-        }
-        "parenthesized_expression" => {
-            if let Some(expr_node) = node.child(1) {
-                format!("({})", format_expression(expr_node, contents))
-            } else {
-                contents[node.byte_range()].to_string()
-            }
-        }
-        "unary_expression" => {
-            let operator = node
-                .child_by_field_name("operator")
-                .map(|n| contents[n.byte_range()].to_string())
-                .unwrap_or_default();
-            let argument = node
-                .child_by_field_name("argument")
-                .map(|n| format_expression(n, contents))
-                .unwrap_or_default();
-            format!("{}{}", operator, argument)
-        }
-        "binary_expression" => {
-            let left = node
-                .child_by_field_name("left")
-                .map(|n| format_expression(n, contents))
-                .unwrap_or_default();
-            let operator = node
-                .child_by_field_name("operator")
-                .map(|n| contents[n.byte_range()].to_string())
-                .unwrap_or_default();
-            let right = node
-                .child_by_field_name("right")
-                .map(|n| format_expression(n, contents))
-                .unwrap_or_default();
-            format!("{} {} {}", left, operator, right)
-        }
-        "member_expression" => {
-            let object = node
-                .child_by_field_name("object")
-                .map(|n| format_expression(n, contents))
-                .unwrap_or_default();
-            let property = node
-                .child_by_field_name("property")
-                .map(|n| contents[n.byte_range()].to_string())
-                .unwrap_or_default();
-            format!("{}.{}", object, property)
-        }
-        "call_expression" => {
-            let function = node
-                .child_by_field_name("function")
-                .map(|n| format_expression(n, contents))
-                .unwrap_or_default();
-            let mut args = Vec::new();
-            let mut cursor = node.walk();
-            let func_node = node.child_by_field_name("function");
-            let func_id = func_node.map(|n| n.id());
-            for child in node.children(&mut cursor) {
-                if is_expression_kind(child.kind()) && Some(child.id()) != func_id {
-                    args.push(format_expression(child, contents));
-                }
-            }
-            format!("{}({})", function, args.join(", "))
-        }
-        "arrow_function" => {
-            let parameter = node
-                .child_by_field_name("parameter")
-                .map(|n| contents[n.byte_range()].to_string())
-                .unwrap_or_default();
-            let body = node
-                .child_by_field_name("body")
-                .map(|n| format_expression(n, contents))
-                .unwrap_or_default();
-            format!("{} => {}", parameter, body)
-        }
-        _ => contents[node.byte_range()].to_string(),
-    }
 }
 
 fn format_instances_section(node: tree_sitter::Node, contents: &str) -> String {
