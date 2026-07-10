@@ -130,30 +130,37 @@ HUBS [
 ```
 Note: Hub fields **must** be defined globally in a `FIELDS` block before being used in a Hub.
 
-#### @metadata
-A directive block that can appear inside a hub definition to provide visual and display hints for the editor:
+#### Visual Decoration Attributes (`@display`, `@background`)
+Visual configuration is declared directly on fields inside a Hub definition using the trailing attributes `@display` and `@background`:
+
+*   **`@display`**: Marks a field to be used as the primary display label/name for the Hub type.
+*   **`@background`**: Marks a field to be used as the source for the node's background styling (e.g., color hex or image path).
+
+```hubgs
+HUBS [
+    Character {
+        name @display,
+        description,
+        background_color @background,
+        resides_in -> (0..1) ALLOWS [Location]
+    }
+]
+```
+
+#### Constraints Block (`@constraints`)
+Validation constraints are defined using a separate `@constraints` block inside a Hub definition. The block contains a comma-separated list of expressions:
+
 ```hubgs
 HUBS [
     Character {
         name,
-        description,
-        resides_in -> (0..1) ALLOWS [Location],
-        background_color: Hex,
-
-        @metadata {
-            display: name,
-            background: background_color,
-            constraints: { name <= 50, color != 0xFFFFFF }
-        }
+        @constraints [
+            name != ""
+        ]
     }
 ]
 ```
-**Properties:**
-| Property | Type | Purpose |
-|---|---|---|
-| `display` | field name (e.g. `name`) | Which field to use as the primary display label for this hub type |
-| `background` | field name (e.g. `background_color`) | Which field provides the background; its Hub field type must be `Color` or `Image` |
-| `constraints` | constraint map | Field-level validation rules referencing other hub fields, using comparison operators (`<=`, `!=`, etc.) |
+
 
 ### Type Inheritance (`EXTENDS`)
 

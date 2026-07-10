@@ -328,20 +328,25 @@ INSTANCES [
 ```
 
 ### Hub Metadata (Visualization)
-Hubs can include a metadata section for controlling visual appearance in the graph view. This includes properties like node labels, colors, and background styling:
+Hub visual properties (display labels and background styling) are resolved dynamically from fields annotated with the `@display` and `@background` attributes in the Hub definition.
 
+For example, given the Hub definition:
 ```hubgs
-aragorn:Person {
-    first_name = "Aragorn",
-    last_name = "Elessar",
-    resides_in = [middle_earth],
-    
-    @metadata {
-        display = "Aragorn Elessar",       // Must be stringifiable; shown as node label
-        background = "#FFD700",            // Supported: color codes, image URLs of supported types
-    }
+Character {
+    name @display,
+    theme_color @background
 }
 ```
+
+The matching instance assignments provide the visual metadata values:
+```hubgs
+aragorn:Character {
+    name = "Aragorn",
+    theme_color = "#FFD700"
+}
+```
+Here, the LSP automatically determines that the display label is `"Aragorn"` and the background color is `"#FFD700"`.
+
 
 ---
 
@@ -721,6 +726,6 @@ In this setup:
 | **Traits (Abstract Hubs)** | Hub types that can be inherited from but not directly instantiated. Enables shared behavior patterns across unrelated hub types without requiring full inheritance chains. |
 | **Expanded Data Types** | Additional supported types beyond current set: `UUID`, structured records (`struct`), and other useful primitives. Formal type system expansion needed. |
 | **Expressive Strings / String Templates** | A template mechanism for constructing typed string values (e.g., date formatting, interpolated display names). Naming TBD — "expressive strings" is a working title. |
-| **Decorators Reference Section** | A dedicated documentation section enumerating all decorators (`@computed()`, `@default()`, `@metadata`, and any future additions) with formal syntax, semantics, and examples. |
+| **Decorators Reference Section** | A dedicated documentation section enumerating all decorators and attributes (`@computed()`, `@default()`, `@display`, `@background`, and any future additions) with formal syntax, semantics, and examples. |
 | **Schema Graph vs. Instance Graph** | Potential distinction between a "schema graph" (showing type relationships and inheritance) and an "instance graph" (showing concrete data). May partially reintroduce schema-level module concepts. Needs evaluation. |
 | **Enums as inline field types?** | Should Enums remain as top-level definitions in DEFINITIONS, or could they be defined inline as field types? E.g., `status: Enum { ACTIVE, INACTIVE }`. Trade-off between convenience and cross-hub type sharing. |

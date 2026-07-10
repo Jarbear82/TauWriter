@@ -84,7 +84,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 
 ### 1. Structural Enforcement & Validation Pipeline ⚠️
 Strict schema enforcement for document and graph structures to ensure data integrity.
-- [ ] **TWXML Skeleton Enforcement (Update Pending):** Update validation to enforce that all TWXML documents strictly adhere to the root `<document>` schema containing zero or more `<meta/>` tags directly, followed by exactly one `<body>` block (removing the deprecated `<metadata>` wrapper).
+- [x] **TWXML Skeleton Enforcement:** Update validation to enforce that all TWXML documents strictly adhere to the root `<document>` schema containing zero or more `<meta/>` tags directly, followed by exactly one `<body>` block (removing the deprecated `<metadata>` wrapper).
 - [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
 - [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
 - [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
@@ -95,33 +95,33 @@ Strict schema enforcement for document and graph structures to ensure data integ
 Robust engine for computed graph data.
 - [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
 - [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
-- [ ] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
+- [x] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
 - [x] Enforce `@default` override rules during instance instantiation.
 
 ### 3. Formatter Module (`lsp/src/formatter/`) ⚠️
 Tree-sitter based formatter for both TWXML and HubGS. Not a separate crate — lives inline in the LSP crate.
-- [ ] Update TWXML formatter to drop `format_metadata_block` and natively format `<meta />` tags directly under `<document>`.
+- [x] Update TWXML formatter to drop `format_metadata_block` and natively format `<meta />` tags directly under `<document>`.
 - [x] Standardized indentation (2-space) and line-breaking rules for nested TWXML blocks. Block-level elements indent children at `indent_level + 1`, self-closing tags respect indentation, inline content stays compact.
-- [ ] Add HubGS formatting support for the `EXTENDS` block, chained method calls, and arrow functions.
+- [x] Add HubGS formatting support for the `EXTENDS` block, chained method calls, and arrow functions.
 - [x] Full block tag coverage — 26 TWXML block tags known to the formatter (`section`, `heading`, `paragraph`, `table`, etc.).
 - [x] LSP `textDocument/formatting` handler wired up and JSON-RPC tested.
 
 ### 4. Editor Experience & LSP Capabilities (In Progress)
 Enhancing the writing and data-entry flow natively within the editor.
-- [ ] **TWXML Tag Auto-closing:** Update existing `onTypeFormatting` to stop inserting `</metadata>` and adjust autocomplete context to suggest `<meta />` at the root level.
+- [x] **TWXML Tag Auto-closing:** Update existing `onTypeFormatting` to stop inserting `</metadata>` and adjust autocomplete context to suggest `<meta />` at the root level.
 - [x] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). Triggered on `<`, filters out structurally invalid tags based on parent context.
 - [x] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
-- [ ] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
-- [ ] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting`.
+- [x] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
+- [x] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting`.
 - [x] Context-aware autocomplete for Hub IDs, fields, and roles.
 - [x] Inlay hints for HubGS instance types (`: TypeName`). Implemented, no test yet.
 - [x] Code actions for resolving `<review>` tags to `<hubref>`. Two quickfix actions implemented.
 
 ### 5. HubGS Inheritance & Extensibility (In Progress)
-- [ ] **EXTENDS AST Parsing:** Update AST extraction to support composite inheritance definitions.
-- [ ] **Set-Union Compilation:** Ensure child hubs correctly inherit all `FIELDS` and roles from `EXTENDS` parents.
-- [ ] **Polymorphism Rules:** Update type-checking so instances of a child type are valid targets for roles that `ALLOWS` the parent type.
-- [ ] **Decorator Precedence:** Enforce validation rules where a child type can override a parent's `@default()`, but cannot override a parent's `@computed()` field.
+- [x] **EXTENDS AST Parsing:** Update AST extraction to support composite inheritance definitions.
+- [x] **Set-Union Compilation:** Ensure child hubs correctly inherit all `FIELDS` and roles from `EXTENDS` parents.
+- [x] **Polymorphism Rules:** Update type-checking so instances of a child type are valid targets for roles that `ALLOWS` the parent type.
+- [x] **Decorator Precedence:** Enforce validation rules where a child type can override a parent's `@default()`, but cannot override a parent's `@computed()` field.
 
 ### 6. HubGS Language & Graph Capabilities (Planned)
 - [ ] **Role Metadata:** Support weighted edges and edge-properties (e.g., temporal bounds on a role like `owns { start: Date, end: Date }`).
@@ -476,25 +476,6 @@ Enhancing the writing and data-entry flow natively within the editor.
 
 ---
 
-## Current Focus: Structural Enforcement & Validation Pipeline ⚠️
-
-Strict schema enforcement for document and graph structures to ensure data integrity.
-
-- [x] **TWXML Skeleton Enforcement:** Update validation to enforce that all TWXML documents strictly adhere to the root `<document>` schema containing zero or more `<meta/>` tags directly, followed by exactly one `<body>` block (removing the deprecated `<metadata>` wrapper).
-- [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
-- [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
-- [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
-- [x] Implement TWXML Referential Integrity (Unresolved references for `<hubref>`)
-- [x] Implement HubGS Type & Multiplicity Enforcement
-
-## Dynamic Evaluation Engine ⚠️
-
-Robust engine for computed graph data.
-
-- [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
-- [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
-- [x] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
-- [x] Enforce `@default` override rules during instance instantiation.
 
 ## Things To Remove
 - [x] Deprecated `<metadata>` wrapper support — migration path from old TWXML schema is complete.
