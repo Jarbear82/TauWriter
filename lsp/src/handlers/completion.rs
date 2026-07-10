@@ -2,6 +2,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 
 use super::uuid::{generate_uuid_ref, generate_uuid_v4};
+use crate::db::TWXML_TAG_INFO;
 use crate::Backend;
 
 /// Which UUID completions to offer based on cursor context.
@@ -118,21 +119,7 @@ fn default_fallback_items(
     let instances = crate::db::all_hub_instances(db, ws);
     let items = instances
         .into_iter()
-        .map(|i| {
-            let detail = if let Some(disp) =
-                crate::db::resolution::hub_instance_metadata_display(db, ws, i)
-            {
-                format!("Hub Instance ({}) - {}", i.type_name(db), disp)
-            } else {
-                format!("Hub Instance ({})", i.type_name(db))
-            };
-            CompletionItem {
-                label: i.name(db),
-                kind: Some(CompletionItemKind::REFERENCE),
-                detail: Some(detail),
-                ..Default::default()
-            }
-        })
+        .map(|i| instance_completion_item(db, ws, i))
         .collect();
     (items, OfferUuid::None)
 }
@@ -223,79 +210,36 @@ fn complete_hubref_id_instances(
     let instances = crate::db::all_hub_instances(db, ws);
     instances
         .into_iter()
-        .map(|i| {
-            let detail = if let Some(disp) =
-                crate::db::resolution::hub_instance_metadata_display(db, ws, i)
-            {
-                format!("Hub Instance ({}) - {}", i.type_name(db), disp)
-            } else {
-                format!("Hub Instance ({})", i.type_name(db))
-            };
-            CompletionItem {
-                label: i.name(db),
-                kind: Some(CompletionItemKind::REFERENCE),
-                detail: Some(detail),
-                ..Default::default()
-            }
-        })
+        .map(|i| instance_completion_item(db, ws, i))
         .collect()
+}
+
+/// Build a completion item for a HubGS instance.
+fn instance_completion_item(
+    db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
+    i: crate::db::HubInstance<'_>,
+) -> CompletionItem {
+    let display = crate::db::resolution::hub_instance_metadata_display(db, ws, i);
+    let detail = if let Some(disp) = display {
+        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
+    } else {
+        format!("Hub Instance ({})", i.type_name(db))
+    };
+    CompletionItem {
+        label: i.name(db),
+        kind: Some(CompletionItemKind::REFERENCE),
+        detail: Some(detail),
+        ..Default::default()
+    }
 }
 
 /// Suggest TWXML structural tags based on the current parent context.
 fn complete_twxml_tags(parent: Option<&str>) -> CompletionResponse {
-    // ponytail: full nesting rules not yet implemented — suggest all known tags.
-    // Upgrade path: build a parent->allowed_children map from validation rules.
-    let all_tags: [(&str, CompletionItemKind, &str); 38] = [
-        // Structural
-        ("document", CompletionItemKind::CLASS, "TWXML Document"),
-        ("body", CompletionItemKind::CLASS, "Body Block"),
-        ("meta", CompletionItemKind::CLASS, "Meta Tag"),
-        // Content blocks
-        ("section", CompletionItemKind::CLASS, "Section"),
-        ("heading", CompletionItemKind::CLASS, "Heading"),
-        ("paragraph", CompletionItemKind::CLASS, "Paragraph"),
-        ("aside", CompletionItemKind::CLASS, "Aside"),
-        ("blockquote", CompletionItemKind::CLASS, "Blockquote"),
-        ("codeblock", CompletionItemKind::CLASS, "Code Block"),
-        // Lists
-        ("ul", CompletionItemKind::CLASS, "Unordered List"),
-        ("ol", CompletionItemKind::CLASS, "Ordered List"),
-        ("li", CompletionItemKind::CLASS, "List Item"),
-        ("dl", CompletionItemKind::CLASS, "Definition List"),
-        ("dt", CompletionItemKind::CLASS, "Definition Term"),
-        ("dd", CompletionItemKind::CLASS, "Definition Description"),
-        // Interactive
-        ("details", CompletionItemKind::CLASS, "Details"),
-        ("summary", CompletionItemKind::CLASS, "Summary"),
-        // Tables
-        ("table", CompletionItemKind::CLASS, "Table"),
-        ("tr", CompletionItemKind::CLASS, "Table Row"),
-        ("th", CompletionItemKind::CLASS, "Table Header"),
-        ("td", CompletionItemKind::CLASS, "Table Cell"),
-        // Inline
-        ("hubref", CompletionItemKind::REFERENCE, "Hub Reference"),
-        ("link", CompletionItemKind::REFERENCE, "Link"),
-        ("image", CompletionItemKind::VALUE, "Image"),
-        ("audio", CompletionItemKind::VALUE, "Audio"),
-        ("video", CompletionItemKind::VALUE, "Video"),
-        ("code", CompletionItemKind::VALUE, "Inline Code"),
-        ("bold", CompletionItemKind::VALUE, "Bold"),
-        ("italic", CompletionItemKind::VALUE, "Italic"),
-        ("underline", CompletionItemKind::VALUE, "Underline"),
-        ("strikethrough", CompletionItemKind::VALUE, "Strikethrough"),
-        ("super", CompletionItemKind::VALUE, "Superscript"),
-        ("sub", CompletionItemKind::VALUE, "Subscript"),
-        // Special
-        ("br", CompletionItemKind::VALUE, "Line Break"),
-        ("hr", CompletionItemKind::VALUE, "Horizontal Rule"),
-        ("fr", CompletionItemKind::REFERENCE, "Footnote Reference"),
-        ("footnote", CompletionItemKind::CLASS, "Footnote"),
-        ("review", CompletionItemKind::CLASS, "Review"),
-    ];
-
-    let items: Vec<CompletionItem> = all_tags
-        .into_iter()
-        .filter(|(name, _, _)| {
+    // Filter out root-level tags that don't belong inside a parent.
+    let items: Vec<CompletionItem> = TWXML_TAG_INFO
+        .iter()
+        .filter(|(name, _kind, _detail)| {
             if parent.is_some() && *name == "document" {
                 return false;
             }
@@ -306,7 +250,7 @@ fn complete_twxml_tags(parent: Option<&str>) -> CompletionResponse {
         })
         .map(|(name, kind, detail)| CompletionItem {
             label: name.to_string(),
-            kind: Some(kind),
+            kind: Some(*kind),
             detail: Some(detail.to_string()),
             ..Default::default()
         })

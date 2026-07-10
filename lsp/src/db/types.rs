@@ -1,5 +1,30 @@
 use serde::{Deserialize, Serialize};
 
+/// f64 bit-pattern wrapper enabling `Eq` + `Hash` for use in enums.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RawF64(u64);
+
+impl RawF64 {
+    pub fn from_f64(v: f64) -> Self {
+        Self(v.to_bits())
+    }
+    pub(crate) fn into_f64(self) -> f64 {
+        f64::from_bits(self.0)
+    }
+}
+
+impl serde::Serialize for RawF64 {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RawF64 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(deserializer)?))
+    }
+}
+
 #[salsa::db]
 pub trait Db: salsa::Database {
     fn find_file(&self, path: &str) -> Option<SourceFile>;
@@ -71,14 +96,59 @@ pub struct GlobalField<'db> {
     pub type_name: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HubValue {
     Identifier(String),
-    Number(f64),
+    Number(RawF64),
     Boolean(bool),
     Text(String),
     ColorHex(String),
     Array(Vec<HubValue>),
+}
+
+/// Error returned when coercing a [`HubValue`] to a target type fails.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HubValueConversionError {
+    NumberExpected,
+    StringExpected,
+}
+
+impl std::fmt::Display for HubValueConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HubValueConversionError::NumberExpected => write!(f, "HubValue is not a number"),
+            HubValueConversionError::StringExpected => {
+                write!(f, "HubValue cannot be converted to string")
+            }
+        }
+    }
+}
+
+impl std::error::Error for HubValueConversionError {}
+
+impl TryFrom<&HubValue> for f64 {
+    type Error = HubValueConversionError;
+
+    fn try_from(v: &HubValue) -> Result<Self, Self::Error> {
+        match v {
+            HubValue::Number(n) => Ok(n.into_f64()),
+            _ => Err(HubValueConversionError::NumberExpected),
+        }
+    }
+}
+
+impl TryFrom<&HubValue> for String {
+    type Error = HubValueConversionError;
+
+    fn try_from(v: &HubValue) -> Result<Self, Self::Error> {
+        match v {
+            HubValue::Text(s) => Ok(s.clone()),
+            HubValue::Number(n) => Ok(n.into_f64().to_string()),
+            HubValue::Boolean(b) => Ok(b.to_string()),
+            HubValue::Identifier(i) => Ok(i.clone()),
+            _ => Err(HubValueConversionError::StringExpected),
+        }
+    }
 }
 
 impl std::fmt::Display for HubValue {
@@ -86,7 +156,7 @@ impl std::fmt::Display for HubValue {
         match self {
             HubValue::Text(s) => write!(f, "{}", s),
             HubValue::ColorHex(s) => write!(f, "color({})", s),
-            HubValue::Number(n) => write!(f, "{}", n),
+            HubValue::Number(n) => write!(f, "{}", n.into_f64()),
             HubValue::Identifier(i) => write!(f, "{}", i),
             HubValue::Boolean(b) => write!(f, "{}", b),
             HubValue::Array(_) => Ok(()),
@@ -94,57 +164,13 @@ impl std::fmt::Display for HubValue {
     }
 }
 
-impl std::cmp::PartialEq for HubValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (HubValue::Identifier(a), HubValue::Identifier(b)) => a == b,
-            (HubValue::Number(a), HubValue::Number(b)) => a.to_bits() == b.to_bits(),
-            (HubValue::Text(a), HubValue::Text(b)) => a == b,
-            (HubValue::Boolean(a), HubValue::Boolean(b)) => a == b,
-            (HubValue::Array(a), HubValue::Array(b)) => {
-                if a.len() != b.len() {
-                    return false;
-                }
-                a.iter().zip(b.iter()).all(|(x, y)| x.eq(y))
-            }
-            (HubValue::ColorHex(a), HubValue::ColorHex(b)) => a == b,
-            _ => false, // Different variants are never equal
-        }
-    }
-}
-
-impl std::cmp::Eq for HubValue {}
-
-impl std::hash::Hash for HubValue {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl HubValue {
+    /// Extract instance reference names from this value (used for role assignments).
+    pub fn extract_refs(&self) -> Vec<String> {
         match self {
-            HubValue::Identifier(s) => {
-                0u8.hash(state);
-                s.hash(state);
-            }
-            HubValue::Number(n) => {
-                1u8.hash(state);
-                n.to_bits().hash(state);
-            }
-            HubValue::Boolean(b) => {
-                3u8.hash(state);
-                b.hash(state);
-            }
-            HubValue::Text(s) => {
-                5u8.hash(state);
-                s.hash(state);
-            }
-            HubValue::ColorHex(s) => {
-                6u8.hash(state);
-                s.hash(state);
-            }
-            HubValue::Array(a) => {
-                4u8.hash(state);
-                a.len().hash(state);
-                for item in a {
-                    item.hash(state);
-                }
-            }
+            HubValue::Identifier(s) => vec![s.clone()],
+            HubValue::Array(vals) => vals.iter().flat_map(|v| v.extract_refs()).collect(),
+            _ => Vec::new(),
         }
     }
 }

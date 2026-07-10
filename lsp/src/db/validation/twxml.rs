@@ -1,48 +1,65 @@
+use lsp_types::CompletionItemKind;
+
+use super::links;
 use super::ValidationError;
 /// TWXML structural validation rules.
 use crate::db::{resolution, HubValue};
 
-const VALID_TWXML_TAGS: &[&str] = &[
-    "document",
-    "body",
-    "meta",
-    "section",
-    "heading",
-    "paragraph",
-    "aside",
-    "blockquote",
-    "codeblock",
-    "br",
-    "hr",
-    "ul",
-    "ol",
-    "li",
-    "dl",
-    "dt",
-    "dd",
-    "details",
-    "summary",
-    "hubref",
-    "link",
-    "image",
-    "audio",
-    "video",
-    "code",
-    "fr",
-    "bold",
-    "italic",
-    "underline",
-    "strikethrough",
-    "super",
-    "sub",
-    "table",
-    "tr",
-    "th",
-    "td",
-    "footnote",
-    "review",
-    "include",
+/// Metadata for every valid TWXML tag — the single source of truth used by
+/// both validation and completion. Encoded as (name, CompletionItemKind, description).
+pub const TWXML_TAG_INFO: &[(&str, CompletionItemKind, &str)] = &[
+    // Structural
+    ("document", CompletionItemKind::CLASS, "TWXML Document"),
+    ("body", CompletionItemKind::CLASS, "Body Block"),
+    ("meta", CompletionItemKind::CLASS, "Meta Tag"),
+    // Content blocks
+    ("section", CompletionItemKind::CLASS, "Section"),
+    ("heading", CompletionItemKind::CLASS, "Heading"),
+    ("paragraph", CompletionItemKind::CLASS, "Paragraph"),
+    ("aside", CompletionItemKind::CLASS, "Aside"),
+    ("blockquote", CompletionItemKind::CLASS, "Blockquote"),
+    ("codeblock", CompletionItemKind::CLASS, "Code Block"),
+    // Lists
+    ("ul", CompletionItemKind::CLASS, "Unordered List"),
+    ("ol", CompletionItemKind::CLASS, "Ordered List"),
+    ("li", CompletionItemKind::CLASS, "List Item"),
+    ("dl", CompletionItemKind::CLASS, "Definition List"),
+    ("dt", CompletionItemKind::CLASS, "Definition Term"),
+    ("dd", CompletionItemKind::CLASS, "Definition Description"),
+    // Interactive
+    ("details", CompletionItemKind::CLASS, "Details"),
+    ("summary", CompletionItemKind::CLASS, "Summary"),
+    // Tables
+    ("table", CompletionItemKind::CLASS, "Table"),
+    ("tr", CompletionItemKind::CLASS, "Table Row"),
+    ("th", CompletionItemKind::CLASS, "Table Header"),
+    ("td", CompletionItemKind::CLASS, "Table Cell"),
+    // Inline
+    ("hubref", CompletionItemKind::REFERENCE, "Hub Reference"),
+    ("link", CompletionItemKind::REFERENCE, "Link"),
+    ("image", CompletionItemKind::VALUE, "Image"),
+    ("audio", CompletionItemKind::VALUE, "Audio"),
+    ("video", CompletionItemKind::VALUE, "Video"),
+    ("code", CompletionItemKind::VALUE, "Inline Code"),
+    ("bold", CompletionItemKind::VALUE, "Bold"),
+    ("italic", CompletionItemKind::VALUE, "Italic"),
+    ("underline", CompletionItemKind::VALUE, "Underline"),
+    ("strikethrough", CompletionItemKind::VALUE, "Strikethrough"),
+    ("super", CompletionItemKind::VALUE, "Superscript"),
+    ("sub", CompletionItemKind::VALUE, "Subscript"),
+    // Special
+    ("br", CompletionItemKind::VALUE, "Line Break"),
+    ("hr", CompletionItemKind::VALUE, "Horizontal Rule"),
+    ("fr", CompletionItemKind::REFERENCE, "Footnote Reference"),
+    ("footnote", CompletionItemKind::CLASS, "Footnote"),
+    ("review", CompletionItemKind::CLASS, "Review"),
+    ("include", CompletionItemKind::VALUE, "Include"),
 ];
+
+/// Returns true if *name* is a known TWXML tag.
+pub fn is_valid_twxml_tag(name: &str) -> bool {
+    TWXML_TAG_INFO.iter().any(|(n, _, _)| *n == name)
+}
 
 pub(crate) fn validate_twxml(
     db: &dyn crate::db::Db,
@@ -133,7 +150,7 @@ pub(crate) fn validate_twxml(
 
     // 2. Validate Tag Names
     for tag in tags.iter() {
-        if !VALID_TWXML_TAGS.contains(&tag.name(db).as_str()) {
+        if !is_valid_twxml_tag(tag.name(db).as_str()) {
             let message = if tag.name(db) == "metadata" {
                 "Unknown TWXML tag 'metadata'. Did you mean '<meta />' at the document root?"
                     .to_string()
@@ -180,12 +197,16 @@ pub(crate) fn validate_twxml(
 }
 
 /// Extract a tag name from an element or self_closing_element node.
-fn get_tag_name(node: &tree_sitter::Node, contents: &[u8]) -> String {
+pub(crate) fn get_tag_name(node: &tree_sitter::Node, contents: &[u8]) -> String {
     if node.kind() == "element" || node.kind() == "self_closing_element" {
-        let first = node.child(0);
-        if let Some(start_tag) = first {
-            if let Some(tag_name_node) = start_tag.child(1) {
-                return String::from_utf8_lossy(&contents[tag_name_node.byte_range()]).to_string();
+        let target = if node.kind() == "element" {
+            node.child(0)
+        } else {
+            Some(*node)
+        };
+        if let Some(t) = target {
+            if let Some(name_node) = t.child_by_field_name("name") {
+                return String::from_utf8_lossy(&contents[name_node.byte_range()]).to_string();
             }
         }
     }
@@ -209,55 +230,58 @@ fn validate_tag_structure(
                 metas.push(node);
             }
             "element" | "self_closing_element" => {
-                if let (Some(start_tag), Some(end_tag)) =
-                    (node.child(0), node.child((node.child_count() - 1) as u32))
-                {
-                    if start_tag.kind() == "start_tag" && end_tag.kind() == "end_tag" {
-                        // Get tag name based on node type
-                        let tag_name = get_tag_name(&node, &contents);
+                let tag_name = get_tag_name(&node, &contents);
 
-                        // Match end tag name
-                        let end_name = end_tag
-                            .child_by_field_name("name")
-                            .map(|n| String::from_utf8_lossy(&contents[n.byte_range()]).to_string())
-                            .unwrap_or_default();
+                if node.kind() == "element" {
+                    if let (Some(start_tag), Some(end_tag)) =
+                        (node.child(0), node.child((node.child_count() - 1) as u32))
+                    {
+                        if start_tag.kind() == "start_tag" && end_tag.kind() == "end_tag" {
+                            // Match end tag name
+                            let end_name = end_tag
+                                .child_by_field_name("name")
+                                .map(|n| String::from_utf8_lossy(&contents[n.byte_range()]).to_string())
+                                .unwrap_or_default();
 
-                        if tag_name != end_name {
-                            errors.push(ValidationError {
-                                range: crate::parser::ts_range_to_lsp(end_tag.range()),
-                                message: format!(
-                                    "Mismatched closing tag. Expected `</{}>`",
-                                    tag_name
-                                ),
-                            });
-                        }
-
-                        // Self-closing include check
-                        if node.kind() == "self_closing_element" && tag_name == "include" {
-                            if !has_attribute(&node, &contents, "src") {
+                            if tag_name != end_name {
                                 errors.push(ValidationError {
-                                    range: crate::parser::ts_range_to_lsp(node.range()),
-                                    message: "Invalid include: tag 'include' must have a non-empty 'src' attribute".to_string(),
+                                    range: crate::parser::ts_range_to_lsp(end_tag.range()),
+                                    message: format!(
+                                        "Mismatched closing tag. Expected `</{}>`",
+                                        tag_name
+                                    ),
                                 });
                             }
-                            if tag_name == "meta" {
-                                metas.push(node);
-                            }
                         }
+                    }
 
-                        // Block include check
-                        if node.kind() == "element" && tag_name == "include" {
+                    // Block include check
+                    if tag_name == "include" {
+                        errors.push(ValidationError {
+                            range: crate::parser::ts_range_to_lsp(node.range()),
+                            message: "Invalid include: tag 'include' must be self-closing"
+                                .to_string(),
+                        });
+                    }
+
+                    // Block meta tracking for nesting/positioning rules
+                    if tag_name == "meta" {
+                        metas.push(node);
+                    }
+                } else if node.kind() == "self_closing_element" {
+                    // Self-closing include check
+                    if tag_name == "include" {
+                        if !has_attribute(&node, &contents, "src") {
                             errors.push(ValidationError {
                                 range: crate::parser::ts_range_to_lsp(node.range()),
-                                message: "Invalid include: tag 'include' must be self-closing"
-                                    .to_string(),
+                                message: "Invalid include: tag 'include' must have a non-empty 'src' attribute".to_string(),
                             });
                         }
+                    }
 
-                        // Block meta tracking for nesting/positioning rules
-                        if node.kind() == "element" && tag_name == "meta" {
-                            metas.push(node);
-                        }
+                    // Self-closing meta tracking for nesting/positioning rules
+                    if tag_name == "meta" {
+                        metas.push(node);
                     }
                 }
             }
@@ -297,134 +321,14 @@ fn validate_tag_structure(
         }
     }
 
-    validate_links(db, workspace, file, errors);
-}
-
-fn anchor_exists(contents: &str, anchor: &str) -> bool {
-    let language = unsafe { crate::parser::tree_sitter_twxml() };
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&language).ok();
-    let tree = match parser.parse(contents, None) {
-        Some(t) => t,
-        None => return false,
-    };
-
-    fn walk(node: tree_sitter::Node, contents: &str, anchor: &str) -> bool {
-        if node.kind() == "anchor" {
-            let name_node = node.child_by_field_name("name");
-            if let Some(name_node) = name_node {
-                let name = &contents[name_node.byte_range()];
-                if name == anchor {
-                    return true;
-                }
-            }
-        }
-        let mut child_cursor = node.walk();
-        for child in node.children(&mut child_cursor) {
-            if walk(child, contents, anchor) {
-                return true;
-            }
-        }
-        false
-    }
-
-    walk(tree.root_node(), contents, anchor)
-}
-
-fn validate_links(
-    db: &dyn crate::db::Db,
-    workspace: crate::db::Workspace,
-    file: crate::db::SourceFile,
-    errors: &mut Vec<ValidationError>,
-) {
-    let contents = file.contents(db);
-    let language = unsafe { crate::parser::tree_sitter_twxml() };
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&language).ok();
-
-    if let Some(tree) = parser.parse(&contents, None) {
-        fn get_tag_name_for_href(node: &tree_sitter::Node, contents: &[u8]) -> String {
-            if node.kind() == "element" || node.kind() == "self_closing_element" {
-                let first = node.child(0);
-                if let Some(start_tag) = first {
-                    if let Some(tag_name_node) = start_tag.child(1) {
-                        return String::from_utf8_lossy(&contents[tag_name_node.byte_range()])
-                            .to_string();
-                    }
-                }
-            }
-            node.kind().to_string()
-        }
-
-        fn collect_link_hrefs<'a>(
-            node: tree_sitter::Node,
-            contents: &[u8],
-            found: &mut Vec<(String, tree_sitter::Range)>,
-        ) {
-            let tag_name = get_tag_name_for_href(&node, contents);
-
-            if (node.kind() == "element" || node.kind() == "self_closing_element")
-                && (tag_name == "link" || tag_name == "hubref")
-            {
-                let mut href = String::new();
-                for child in node.named_children(&mut node.walk()) {
-                    if child.kind() == "attribute" {
-                        if let (Some(name_nn), Some(val_nn)) = (child.child(0), child.child(2)) {
-                            let attr_name = &contents[name_nn.byte_range()];
-                            if attr_name == b"href" {
-                                let raw = String::from_utf8_lossy(&contents[val_nn.byte_range()]);
-                                let val = raw.trim_matches('"').trim_matches('\'');
-                                href.push_str(val);
-                            }
-                        }
-                    }
-                }
-                if !href.is_empty() {
-                    found.push((href, node.range()));
-                }
-            }
-
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                collect_link_hrefs(child, contents, found);
-            }
-        }
-
-        let mut links: Vec<(String, tree_sitter::Range)> = Vec::new();
-        collect_link_hrefs(tree.root_node(), contents.as_bytes(), &mut links);
-
-        for (href, range) in links {
-            let (file_part, anchor) = href.split_once('#').unwrap_or((href.as_str(), ""));
-
-            if !file_part.is_empty() && !file.path(db).ends_with(file_part) {
-                let target_exists = workspace
-                    .files(db)
-                    .into_iter()
-                    .any(|f| f.path(db).ends_with(file_part));
-
-                if !target_exists {
-                    errors.push(ValidationError {
-                        range: crate::parser::ts_range_to_lsp(range),
-                        message: format!("Target file '{}' not found", file_part),
-                    });
-                }
-            }
-
-            if !anchor.is_empty() && !anchor_exists(&contents, anchor) {
-                errors.push(ValidationError {
-                    range: crate::parser::ts_range_to_lsp(range),
-                    message: format!("Anchor '{}' not found", anchor),
-                });
-            }
-        }
-    }
+    links::validate_links(db, workspace, file, errors);
 }
 
 fn value_to_canonical(val: HubValue) -> String {
     val.to_string()
 }
 
-fn has_attribute(node: &tree_sitter::Node, contents: &[u8], attr_name: &str) -> bool {
+pub(crate) fn has_attribute(node: &tree_sitter::Node, contents: &[u8], attr_name: &str) -> bool {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "attribute" {
@@ -443,14 +347,32 @@ fn has_attribute(node: &tree_sitter::Node, contents: &[u8], attr_name: &str) -> 
     false
 }
 
-fn lsp_pos_to_byte_offset(contents: &[u8], pos: crate::db::LspPosition) -> usize {
-    let mut offset = 0;
-    for (i, line) in contents.split(|&b| b == b'\n').enumerate() {
-        if i == pos.line as usize {
-            offset += pos.character as usize;
-            break;
+pub(crate) fn lsp_pos_to_byte_offset(contents: &[u8], pos: crate::db::LspPosition) -> usize {
+    let mut current_line = 0;
+    let mut current_offset = 0;
+    
+    while current_line < pos.line as usize && current_offset < contents.len() {
+        if contents[current_offset] == b'\n' {
+            current_line += 1;
         }
-        offset += line.len(); // +1 for the newline will be added when we continue to next line
+        current_offset += 1;
     }
-    offset
+    
+    if current_line == pos.line as usize {
+        let remaining = &contents[current_offset..];
+        if let Ok(s) = std::str::from_utf8(remaining) {
+            let mut char_count = 0;
+            let mut byte_count = 0;
+            for c in s.chars() {
+                if char_count >= pos.character as usize || c == '\n' {
+                    break;
+                }
+                char_count += 1;
+                byte_count += c.len_utf8();
+            }
+            return current_offset + byte_count;
+        }
+    }
+    
+    contents.len()
 }

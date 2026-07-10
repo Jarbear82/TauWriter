@@ -145,7 +145,7 @@ fn validate_role_assignment(
         });
     }
 
-    let refs = get_refs_from_value(value);
+    let refs = value.extract_refs();
 
     for ref_name in &refs {
         if let Some(target_inst) =
@@ -227,15 +227,7 @@ fn check_missing_roles(
     }
 }
 
-fn get_refs_from_value(value: &HubValue) -> Vec<String> {
-    match value {
-        HubValue::Identifier(s) => vec![s.clone()],
-        HubValue::Array(vals) => vals.iter().flat_map(get_refs_from_value).collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn validate_value_type(
+pub(crate) fn validate_value_type(
     db: &dyn crate::db::Db,
     workspace: crate::db::Workspace,
     value: &HubValue,

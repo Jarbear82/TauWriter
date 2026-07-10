@@ -316,50 +316,119 @@ pub async fn document_symbol(
     Ok(None)
 }
 
+/// Parses TWXML references from each file, re-evaluates their canonical
+/// values, and returns a list of `TextEdit`s where the predicate matches.
+///
+/// * `files` — iterator over `[SourceFile]` to process
+/// * `workspace` — the workspace scope used for reference resolution
+/// * `only_reviewed` — if `true`, only processes refs whose `is_reviewed` is
+///   `true`; if `false`, only processes unreviewed refs
+/// * `override_content` — optional content string used to extract the original
+///   tag text via [`get_range_text`] when wrapping in `<review>` tags (used by
+///   the `.hubgs` handler); ignored for the `.twxml` single-file path
+/// * `predicate` — closure that decides whether a reference needs an edit:
+///   `(ref, canonical_string, stored_text) -> bool`
+///
+/// **Edit construction strategy:**
+/// - For unreviewed refs (only_reviewed=false): wraps the original tag text in
+///   `<review>...</review>` when the predicate returns `true`.
+/// - For reviewed refs (only_reviewed=true): replaces the review marker with the
+///   canonical `<hubref id="…" field="…">…</hubref>` when the predicate returns
+///   `true`.
+pub(crate) fn process_twxml_files<'a, I>(
+    db: &dyn crate::db::Db,
+    workspace: crate::db::Workspace,
+    files: I,
+    only_reviewed: bool,
+    override_content: Option<&str>,
+    predicate: impl Fn(&crate::db::HubReference, String, &str) -> bool + 'a,
+) -> Vec<TextEdit>
+where
+    I: Iterator<Item = crate::db::SourceFile>,
+{
+    let mut edits = Vec::new();
+    for file in files {
+        let refs = crate::db::parse_twxml(db, file);
+        for r in refs {
+            let is_reviewed = r.is_reviewed(db);
+            if only_reviewed != is_reviewed {
+                continue;
+            }
+            if let (Some(ref text_val), Some(ref field_name)) = (r.text(db), r.field(db)) {
+                let name = r.name(db);
+                if let Some(instance) = crate::db::resolve_reference(db, workspace, name.clone()) {
+                    if let Ok(Some(eval_val)) =
+                        crate::db::compute_field_value(db, workspace, instance, field_name.clone())
+                    {
+                        let canonical_str = eval_val.to_string();
+                        if predicate(&r, canonical_str.clone(), text_val) {
+                            let tag_range = r.tag_range(db);
+                            edits.push(if only_reviewed {
+                                // Ref is reviewed and now matches → remove review marker
+                                TextEdit {
+                                    range: tag_range.into(),
+                                    new_text: format!(
+                                        "<hubref id=\"{}\" field=\"{}\">{}</hubref>",
+                                        name, field_name, text_val
+                                    ),
+                                }
+                            } else {
+                                // Ref is unreviewed and differs → wrap with <review>
+                                if let Some(content) = override_content {
+                                    let original_text = get_range_text(content, tag_range.into());
+                                    if !original_text.is_empty() {
+                                        TextEdit {
+                                            range: tag_range.into(),
+                                            new_text: format!("<review>{}</review>", original_text),
+                                        }
+                                    } else {
+                                        continue;
+                                    }
+                                } else {
+                                    // No content override available — can't extract original text
+                                    continue;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    edits
+}
+
+/// Handles changes to `.twxml` files by spawning a background task that
+/// parses TWXML references, re-evaluates their canonical values, and applies
+/// workspace edits when the stored text differs (or matches, for already-reviewed
+/// refs).
+///
+/// **Sleep timer: 50ms** — debounces rapid edits from the editor so that a
+/// series of keystrokes doesn't trigger redundant re-evaluations. A TWXML
+/// file is typically edited incrementally; waiting half a centisecond lets
+/// the current edit batch complete before we act.
 async fn handle_twxml_change(server: &Backend, uri: &Url) {
     let self_client = server.client.clone();
     let (db, ws) = server.read_db();
     let uri_clone = uri.clone();
 
     tokio::spawn(async move {
+        // Debounce rapid edits so the current edit batch completes first.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let mut edits = Vec::new();
         if let Ok(path_buf) = uri_clone.to_file_path() {
             let path = path_buf.to_string_lossy().to_string();
             if let Some(file) = ws.files(&db).into_iter().find(|f| f.path(&db) == path) {
-                let refs = crate::db::parse_twxml(&db, file);
-                for r in refs {
-                    if r.is_reviewed(&db) {
-                        if let (Some(ref text_val), Some(ref field_name)) =
-                            (r.text(&db), r.field(&db))
-                        {
-                            let name = r.name(&db);
-                            if let Some(instance) =
-                                crate::db::resolve_reference(&db, ws, name.clone())
-                            {
-                                if let Ok(Some(eval_val)) = crate::db::compute_field_value(
-                                    &db,
-                                    ws,
-                                    instance,
-                                    field_name.clone(),
-                                ) {
-                                    let canonical_str = eval_val.to_string();
-                                    if canonical_str == *text_val {
-                                        let review_range = r.tag_range(&db);
-                                        let keep_text = format!(
-                                            r#"<hubref id="{}" field="{}">{}</hubref>"#,
-                                            name, field_name, text_val
-                                        );
-                                        edits.push(TextEdit {
-                                            range: review_range.into(),
-                                            new_text: keep_text,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                process_twxml_files(
+                    &db,
+                    ws,
+                    std::iter::once(file),
+                    true, // only reviewed refs
+                    None, // no content override for single-file path
+                    |_r, canonical_str: String, text_val: &str| canonical_str == *text_val,
+                )
+                .into_iter()
+                .for_each(|e| edits.push(e));
             }
         }
         if !edits.is_empty() {
@@ -374,68 +443,56 @@ async fn handle_twxml_change(server: &Backend, uri: &Url) {
     });
 }
 
+/// Processes `.hubgs` file changes by re-evaluating all workspace `.twxml`
+/// files. For *unreviewed* refs whose canonical value differs from the stored
+/// text, wraps the original tag in `<review>`.
+///
+/// **Sleep timer: 150ms** — hubgs edits trigger a full re-scan of every
+/// `.twxml` file in the workspace. The longer delay reduces contention when
+/// multiple files are saved together and gives the IDE time to flush pending
+/// document changes before we read their contents.
 async fn handle_hubgs_change(server: &Backend, _uri: &Url) {
     let self_client = server.client.clone();
     let (db, ws) = server.read_db();
     let open_files_clone = server.open_files.clone();
 
     tokio::spawn(async move {
+        // Debounce rapid edits; longer delay for full workspace re-scan.
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        let mut changes = std::collections::HashMap::new();
-        {
-            for file in ws.files(&db) {
-                let path = file.path(&db);
-                if path.ends_with(".twxml") {
-                    if let Ok(file_uri) = Url::from_file_path(&path) {
-                        let content = open_files_clone
-                            .get(&file_uri)
-                            .map(|r| r.to_string())
-                            .unwrap_or_else(|| file.contents(&db));
+        let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> =
+            std::collections::HashMap::new();
 
-                        let refs = crate::db::parse_twxml(&db, file);
-                        let mut edits = Vec::new();
-                        for r in refs {
-                            if r.is_reviewed(&db) {
-                                continue;
-                            }
-                            if let (Some(ref text_val), Some(ref field_name)) =
-                                (r.text(&db), r.field(&db))
-                            {
-                                let name = r.name(&db);
-                                if let Some(instance) =
-                                    crate::db::resolve_reference(&db, ws, name.clone())
-                                {
-                                    if let Ok(Some(eval_val)) = crate::db::compute_field_value(
-                                        &db,
-                                        ws,
-                                        instance,
-                                        field_name.clone(),
-                                    ) {
-                                        let canonical_str = eval_val.to_string();
-                                        if canonical_str != *text_val {
-                                            let tag_range = r.tag_range(&db);
-                                            let original_text =
-                                                get_range_text(&content, tag_range.into());
-                                            if !original_text.is_empty() {
-                                                let new_text =
-                                                    format!("<review>{}</review>", original_text);
-                                                edits.push(TextEdit {
-                                                    range: tag_range.into(),
-                                                    new_text,
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if !edits.is_empty() {
-                            changes.insert(file_uri, edits);
-                        }
-                    }
-                }
+        if ws.files(&db).is_empty() {
+            return;
+        }
+
+        for file in ws.files(&db) {
+            let path = file.path(&db);
+            if !path.ends_with(".twxml") {
+                continue;
+            }
+
+            if let Ok(file_uri) = Url::from_file_path(&path) {
+                let content = open_files_clone
+                    .get(&file_uri)
+                    .map(|r| r.to_string())
+                    .unwrap_or_else(|| file.contents(&db));
+
+                process_twxml_files(
+                    &db,
+                    ws,
+                    std::iter::once(file),
+                    false, // only unreviewed refs
+                    Some(content.as_str()),
+                    |_r, canonical_str: String, text_val: &str| canonical_str != *text_val,
+                )
+                .into_iter()
+                .for_each(|e| {
+                    changes.entry(file_uri.clone()).or_default().push(e);
+                });
             }
         }
+
         if !changes.is_empty() {
             let edit = WorkspaceEdit {
                 changes: Some(changes),

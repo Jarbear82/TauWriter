@@ -273,22 +273,34 @@ fn find_ref_in_value(
     }
 }
 
+/// Helper: find a metadata field on the instance's type and return its assignment.
+fn metadata_field_by_flag(
+    db: &dyn Db,
+    workspace: Workspace,
+    inst: HubInstance<'_>,
+    is_display: bool,
+    is_background: bool,
+) -> Option<HubAssignment> {
+    let type_name = inst.type_name(db);
+    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
+    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
+    let field = all_fields
+        .into_iter()
+        .find(|f| f.is_display == is_display && f.is_background == is_background)?;
+    inst.assignments(db)
+        .into_iter()
+        .find(|a| a.name == field.name)
+}
+
 pub fn hub_instance_metadata_display(
     db: &dyn Db,
     workspace: Workspace,
     inst: HubInstance<'_>,
 ) -> Option<String> {
-    let type_name = inst.type_name(db);
-    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
-    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
-    let display_field = all_fields.into_iter().find(|f| f.is_display)?;
-    let assign = inst
-        .assignments(db)
-        .into_iter()
-        .find(|a| a.name == display_field.name)?;
+    let assign = metadata_field_by_flag(db, workspace, inst, true, false)?;
     match &assign.value {
         crate::db::HubValue::Text(s) => Some(s.clone()),
-        crate::db::HubValue::Number(n) => Some(n.to_string()),
+        crate::db::HubValue::Number(n) => Some(n.into_f64().to_string()),
         crate::db::HubValue::Boolean(b) => Some(b.to_string()),
         crate::db::HubValue::Identifier(i) => Some(i.clone()),
         _ => None,
@@ -300,17 +312,10 @@ pub fn hub_instance_metadata_background(
     workspace: Workspace,
     inst: HubInstance<'_>,
 ) -> Option<String> {
-    let type_name = inst.type_name(db);
-    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
-    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
-    let bg_field = all_fields.into_iter().find(|f| f.is_background)?;
-    let assign = inst
-        .assignments(db)
-        .into_iter()
-        .find(|a| a.name == bg_field.name)?;
+    let assign = metadata_field_by_flag(db, workspace, inst, false, true)?;
     match &assign.value {
         crate::db::HubValue::Text(s) => Some(s.clone()),
-        crate::db::HubValue::Number(n) => Some(n.to_string()),
+        crate::db::HubValue::Number(n) => Some(n.into_f64().to_string()),
         crate::db::HubValue::Boolean(b) => Some(b.to_string()),
         crate::db::HubValue::Identifier(i) => Some(i.clone()),
         _ => None,
@@ -322,13 +327,6 @@ pub fn hub_instance_metadata_background_range(
     workspace: Workspace,
     inst: HubInstance<'_>,
 ) -> Option<super::LspRange> {
-    let type_name = inst.type_name(db);
-    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
-    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
-    let bg_field = all_fields.into_iter().find(|f| f.is_background)?;
-    let assign = inst
-        .assignments(db)
-        .into_iter()
-        .find(|a| a.name == bg_field.name)?;
+    let assign = metadata_field_by_flag(db, workspace, inst, false, true)?;
     Some(assign.value_range)
 }

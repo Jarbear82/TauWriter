@@ -1,6 +1,14 @@
 use crate::parser;
 use tree_sitter::Parser;
 
+/// Hard-wrap line-length budget for prose and inline content.
+///
+/// Rules affected: R2 (leaf block expansion), R7 (attribute expansion),
+/// R8 (prose hard-wrap), R9 (text-style element expansion).
+///
+/// Matches `maxLineLength` from the TWXML Formatting Rules spec
+/// (`TauWriterMD/Languages/TWXML/TWXML.md`). Default is 100 columns,
+/// excluding indentation prefix.
 const MAX_LINE_LEN: usize = 100;
 
 // ponytail: TagBehavior replaces the old runtime content-sniffing (has_direct_significant_text)
@@ -110,6 +118,7 @@ fn format_node(
     }
 }
 
+/// ── Dispatch: route to behavior-specific formatter ────────────────────────────
 fn format_element(
     node: tree_sitter::Node,
     contents: &str,
@@ -125,192 +134,248 @@ fn format_element(
     let ind_str = "  ".repeat(indent);
     let attr_str = format_attrs(&attrs, &tag_name, indent);
 
+    // All TagBehavior variants are exhaustively covered below.
     match tag_behavior(&tag_name) {
-        // ── R12: verbatim codeblock ──────────────────────────────────────────
-        TagBehavior::CodeBlock => {
-            let mut inner = String::new();
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() == "text" {
-                    inner.push_str(&contents[child.byte_range()]);
-                }
-            }
-            if inner.trim().is_empty() {
-                return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
-            }
+        TagBehavior::CodeBlock => format_code_block(&node, contents, &tag_name, &attr_str, indent),
+        TagBehavior::Br => format_br_element(&node, contents, indent, block_indent),
+        TagBehavior::Fr => format_fr_element(&attrs, indent, block_indent),
+        TagBehavior::SelfClosingBlock => {
+            format_self_closing(&tag_name, &attr_str, indent, block_indent)
+        }
+        TagBehavior::ForcedExpandBlock => format_forced_expand_block(
+            &node,
+            contents,
+            &tag_name,
+            &attr_str,
+            ind_str.as_str(),
+            indent + 1,
+        ),
+        TagBehavior::ForcedExpandInline => format_forced_expand_inline(
+            &node,
+            contents,
+            &tag_name,
+            &attr_str,
+            ind_str.as_str(),
+            indent + 1,
+        ),
+        TagBehavior::LeafBlock => format_leaf_block(
+            &node,
+            contents,
+            &tag_name,
+            &attr_str,
+            &ind_str,
+            indent,
+            block_indent,
+        ),
+    }
+}
 
-            // Strip the surrounding blank lines produced by the format string
-            // ("\n" after the opening tag, and "\n{ind_str}" before the closing tag).
-            // Whatever non-empty lines remain are the raw code content.
-            let all_lines: Vec<&str> = inner.split('\n').collect();
-            let start = all_lines
-                .iter()
-                .position(|l| !l.trim().is_empty())
-                .unwrap_or(0);
-            let end = all_lines
-                .iter()
-                .rposition(|l| !l.trim().is_empty())
-                .unwrap_or(start);
-            let content_lines = &all_lines[start..=end];
+/// R12: Format a `<codeblock>` — verbatim content preserved with relative indentation.
+fn format_code_block(
+    node: &tree_sitter::Node,
+    contents: &str,
+    tag_name: &str,
+    attr_str: &str,
+    indent: usize,
+) -> String {
+    let ind_str = "  ".repeat(indent);
 
-            // Compute signed shift: how many spaces to add (positive) or remove (negative)
-            // from every line so that line 0 lands exactly at indent+1.
-            let target_indent = "  ".repeat(indent + 1);
-            let first_leading = leading_spaces(content_lines[0]);
-            let shift: i64 = target_indent.len() as i64 - first_leading as i64;
+    let mut inner = String::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "text" {
+            inner.push_str(&contents[child.byte_range()]);
+        }
+    }
+    if inner.trim().is_empty() {
+        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
+    }
 
-            let mut padded = String::new();
-            for (i, line) in content_lines.iter().enumerate() {
-                if i > 0 {
-                    padded.push('\n');
-                }
-                if !line.trim().is_empty() {
-                    let new_spaces = (leading_spaces(line) as i64 + shift).max(0) as usize;
-                    padded.push_str(&" ".repeat(new_spaces));
-                    padded.push_str(line.trim_start_matches(' '));
-                }
-                // Blank interior lines: emit nothing — the '\n' above is enough.
-            }
+    // Strip the surrounding blank lines produced by the format string
+    // ("\n" after the opening tag, and "\n{ind_str}" before the closing tag).
+    // Whatever non-empty lines remain are the raw code content.
+    let all_lines: Vec<&str> = inner.split('\n').collect();
+    let start = all_lines
+        .iter()
+        .position(|l| !l.trim().is_empty())
+        .unwrap_or(0);
+    let end = all_lines
+        .iter()
+        .rposition(|l| !l.trim().is_empty())
+        .unwrap_or(start);
+    let content_lines = &all_lines[start..=end];
 
+    // Compute signed shift: how many spaces to add (positive) or remove (negative)
+    // from every line so that line 0 lands exactly at indent+1.
+    let target_indent = "  ".repeat(indent + 1);
+    let first_leading = leading_spaces(content_lines[0]);
+    let shift: i64 = target_indent.len() as i64 - first_leading as i64;
+
+    let mut padded = String::new();
+    for (i, line) in content_lines.iter().enumerate() {
+        if i > 0 {
+            padded.push('\n');
+        }
+        if !line.trim().is_empty() {
+            let new_spaces = (leading_spaces(line) as i64 + shift).max(0) as usize;
+            padded.push_str(&" ".repeat(new_spaces));
+            padded.push_str(line.trim_start_matches(' '));
+        }
+        // Blank interior lines: emit nothing — the '\n' above is enough.
+    }
+
+    format!(
+        "{}<{}{}>\n{}\n{}</{}>",
+        ind_str, tag_name, attr_str, padded, ind_str, tag_name
+    )
+}
+
+/// R5: Format a `<br/>` inline line-break sentinel.
+fn format_br_element(
+    node: &tree_sitter::Node,
+    contents: &str,
+    indent: usize,
+    block_indent: Option<usize>,
+) -> String {
+    let tag_name = get_tag_name(node, contents).unwrap_or_default();
+    if tag_name.is_empty() {
+        return String::new();
+    }
+
+    // In inline context, br is handled as a None sentinel by build_inline_atoms.
+    // This arm is only reached when br appears as a direct block-level child.
+    if let Some(lvl) = block_indent {
+        format!("<br/>\n{}", "  ".repeat(lvl + 1))
+    } else {
+        format!("{}<br/>", "  ".repeat(indent))
+    }
+}
+
+/// R14: Format a `<fr/>` — always inline, never on its own line.
+fn format_fr_element(attrs: &[String], indent: usize, block_indent: Option<usize>) -> String {
+    let fr_attrs = attrs_str_simple(attrs);
+    if block_indent.is_some() {
+        format!("<fr{}/>", fr_attrs)
+    } else {
+        format!("{}<fr{}/>", "  ".repeat(indent), fr_attrs)
+    }
+}
+
+/// R4: Format a self-closing block tag (`<hr/>`, `<image/>`, etc.).
+fn format_self_closing(
+    tag_name: &str,
+    attr_str: &str,
+    indent: usize,
+    block_indent: Option<usize>,
+) -> String {
+    if block_indent.is_some() {
+        format!("<{}{}/>", tag_name, attr_str)
+    } else {
+        format!("{}<{}{}/>", "  ".repeat(indent), tag_name, attr_str)
+    }
+}
+
+/// R1: Format a forced-expand block container (`<document>`, `<section>`, etc.).
+fn format_forced_expand_block(
+    node: &tree_sitter::Node,
+    contents: &str,
+    tag_name: &str,
+    attr_str: &str,
+    ind_str: &str,
+    child_indent: usize,
+) -> String {
+    if is_node_empty_of_content(node, contents) {
+        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
+    }
+    let mut children_out: Vec<String> = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(child.kind(), "start_tag" | "end_tag" | "tag_name" | "text") {
+            continue;
+        }
+        let c_str = format_node(child, contents, child_indent, None);
+        if !c_str.trim().is_empty() {
+            children_out.push(c_str);
+        }
+    }
+    if children_out.is_empty() {
+        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
+    }
+    let mut out = format!("{}<{}{}>\n", ind_str, tag_name, attr_str);
+    for c in &children_out {
+        out.push_str(c);
+        if !c.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    out.push_str(&format!("{}</{}>", ind_str, tag_name));
+    out
+}
+
+/// R1+R8: Format a forced-expand prose container (`<paragraph>`, `<aside>`, etc.).
+fn format_forced_expand_inline(
+    node: &tree_sitter::Node,
+    contents: &str,
+    tag_name: &str,
+    attr_str: &str,
+    ind_str: &str,
+    content_indent: usize,
+) -> String {
+    if is_node_empty_of_content(node, contents) {
+        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
+    }
+    let atoms = build_inline_atoms(*node, contents, content_indent);
+    let content = join_atoms_with_wrap(&atoms, MAX_LINE_LEN, content_indent);
+    if content.is_empty() {
+        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
+    }
+    format!(
+        "{}<{}{}>\n{}\n{}</{}>",
+        ind_str, tag_name, attr_str, content, ind_str, tag_name
+    )
+}
+
+/// R2/R9: Format a leaf block (`<heading>`, `<li>`, `<bold>`, etc.).
+/// Inline if content fits within MAX_LINE_LEN, else expands to multiline.
+fn format_leaf_block(
+    node: &tree_sitter::Node,
+    contents: &str,
+    tag_name: &str,
+    attr_str: &str,
+    ind_str: &str,
+    indent: usize,
+    block_indent: Option<usize>,
+) -> String {
+    if is_node_empty_of_content(node, contents) {
+        let compact = format!("<{}{}></{}>", tag_name, attr_str, tag_name);
+        return if block_indent.is_some() {
+            compact
+        } else {
+            format!("{}{}", ind_str, compact)
+        };
+    }
+    let child_indent = block_indent.unwrap_or(indent);
+    let atoms = build_inline_atoms(*node, contents, child_indent);
+    let flat = join_atoms_flat(&atoms);
+
+    if block_indent.is_some() {
+        // Inside inline context — render as a flat inline tag.
+        format!("<{}{}>{}</{}>", tag_name, attr_str, flat, tag_name)
+    } else {
+        // Block context: R2 measure excludes indentation prefix.
+        let single = format!("<{}{}>{}</{}>", tag_name, attr_str, flat, tag_name);
+        if single.len() <= MAX_LINE_LEN && !flat.contains('\n') {
+            format!("{}{}", ind_str, single)
+        } else {
+            let wrapped = join_atoms_with_wrap(&atoms, MAX_LINE_LEN, indent + 1);
             format!(
                 "{}<{}{}>\n{}\n{}</{}>",
-                ind_str, tag_name, attr_str, padded, ind_str, tag_name
+                ind_str, tag_name, attr_str, wrapped, ind_str, tag_name
             )
-        }
-
-        // ── R5: <br/> inline line-break ─────────────────────────────────────
-        // In inline context, br is handled as a None sentinel by build_inline_atoms.
-        // This arm is only reached when br appears as a direct block-level child.
-        TagBehavior::Br => {
-            if let Some(lvl) = block_indent {
-                format!("<br/>\n{}", "  ".repeat(lvl + 1))
-            } else {
-                format!("{}<br/>", ind_str)
-            }
-        }
-
-        // ── R14: <fr/> stays inline in all contexts ──────────────────────────
-        TagBehavior::Fr => {
-            let fr_attrs = attrs_str_simple(&attrs);
-            if block_indent.is_some() {
-                format!("<fr{}/>", fr_attrs)
-            } else {
-                format!("{}<fr{}/>", ind_str, fr_attrs)
-            }
-        }
-
-        // ── R4: self-closing block tags (hr, image, audio, video) ────────────
-        TagBehavior::SelfClosingBlock => {
-            if block_indent.is_some() {
-                format!("<{}{}/>", tag_name, attr_str)
-            } else {
-                format!("{}<{}{}/>", ind_str, tag_name, attr_str)
-            }
-        }
-
-        behavior => {
-            // Self-closing grammar nodes not in the explicit SelfClosingBlock list
-            // (e.g. <meta/>) still need self-closing treatment.
-            if node.kind() == "self_closing_element" {
-                return if block_indent.is_some() {
-                    format!("<{}{}/>", tag_name, attr_str)
-                } else {
-                    format!("{}<{}{}/>", ind_str, tag_name, attr_str)
-                };
-            }
-
-            match behavior {
-                // ── R1: always-expand block container ─────────────────────
-                TagBehavior::ForcedExpandBlock => {
-                    if is_node_empty_of_content(&node, contents) {
-                        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
-                    }
-                    let mut children_out: Vec<String> = Vec::new();
-                    let mut cursor = node.walk();
-                    for child in node.children(&mut cursor) {
-                        if matches!(child.kind(), "start_tag" | "end_tag" | "tag_name" | "text") {
-                            continue;
-                        }
-                        let c_str = format_node(child, contents, indent + 1, None);
-                        if !c_str.trim().is_empty() {
-                            children_out.push(c_str);
-                        }
-                    }
-                    if children_out.is_empty() {
-                        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
-                    }
-                    let mut out = format!("{}<{}{}>\n", ind_str, tag_name, attr_str);
-                    for c in &children_out {
-                        out.push_str(c);
-                        if !c.ends_with('\n') {
-                            out.push('\n');
-                        }
-                    }
-                    out.push_str(&format!("{}</{}>", ind_str, tag_name));
-                    out
-                }
-
-                // ── R1+R8: always-expand prose container ──────────────────
-                TagBehavior::ForcedExpandInline => {
-                    if is_node_empty_of_content(&node, contents) {
-                        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
-                    }
-                    let atoms = build_inline_atoms(node, contents, indent + 1);
-                    let content = join_atoms_with_wrap(&atoms, MAX_LINE_LEN, indent + 1);
-                    if content.is_empty() {
-                        return format!("{}<{}{}></{}>", ind_str, tag_name, attr_str, tag_name);
-                    }
-                    format!(
-                        "{}<{}{}>\n{}\n{}</{}>",
-                        ind_str, tag_name, attr_str, content, ind_str, tag_name
-                    )
-                }
-
-                // ── R2/R9: inline-if-fits, else expand ────────────────────
-                TagBehavior::LeafBlock => {
-                    if is_node_empty_of_content(&node, contents) {
-                        let compact = format!("<{}{}></{}>", tag_name, attr_str, tag_name);
-                        return if block_indent.is_some() {
-                            compact
-                        } else {
-                            format!("{}{}", ind_str, compact)
-                        };
-                    }
-                    let child_indent = block_indent.unwrap_or(indent);
-                    let atoms = build_inline_atoms(node, contents, child_indent);
-                    let flat = join_atoms_flat(&atoms);
-
-                    if block_indent.is_some() {
-                        // Inside inline context — render as a flat inline tag.
-                        format!("<{}{}>{}</{}>", tag_name, attr_str, flat, tag_name)
-                    } else {
-                        // Block context: R2 measure excludes indentation prefix.
-                        let single = format!("<{}{}>{}</{}>", tag_name, attr_str, flat, tag_name);
-                        if single.len() <= MAX_LINE_LEN && !flat.contains('\n') {
-                            format!("{}{}", ind_str, single)
-                        } else {
-                            let wrapped = join_atoms_with_wrap(&atoms, MAX_LINE_LEN, indent + 1);
-                            format!(
-                                "{}<{}{}>\n{}\n{}</{}>",
-                                ind_str, tag_name, attr_str, wrapped, ind_str, tag_name
-                            )
-                        }
-                    }
-                }
-
-                _ => unreachable!(
-                    "TagBehavior variant {:?} not handled in format_element",
-                    behavior
-                ),
-            }
         }
     }
 }
 
-/// Collect inline content as a flat list of atomic units for word-wrapping.
-/// `None` entries mark R5 `<br/>` line-break positions.
-/// Text nodes are split into individual words; child elements become single atoms.
-/// Comments are skipped — they are structurally meaningless inside inline content.
 fn build_inline_atoms(
     node: tree_sitter::Node,
     contents: &str,

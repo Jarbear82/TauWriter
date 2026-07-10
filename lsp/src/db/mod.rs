@@ -70,3 +70,6 @@ pub struct SemanticToken {
     pub token_type: u32,
     pub token_modifiers: u32,
 }
+
+#[cfg(test)]
+mod evaluator_tests;

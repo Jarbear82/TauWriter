@@ -399,7 +399,7 @@ fn evaluate_ast_impl(
     lambda_ctx: Option<(&str, &HubValue)>,
 ) -> Result<HubValue, EvalError> {
     match expr {
-        Expr::Literal(ExprValue::Number(n)) => Ok(HubValue::Number(*n)),
+        Expr::Literal(ExprValue::Number(n)) => Ok(HubValue::Number(RawF64::from_f64(*n))),
         Expr::Literal(ExprValue::String(s)) => Ok(HubValue::Text(s.clone())),
         Expr::Literal(ExprValue::Boolean(b)) => Ok(HubValue::Boolean(*b)),
 
@@ -474,7 +474,7 @@ fn evaluate_ast_impl(
                 match member.as_str() {
                     "len" => {
                         if let HubValue::Array(vals) = target_val {
-                            return Ok(HubValue::Number(vals.len() as f64));
+                            return Ok(HubValue::Number(RawF64::from_f64(vals.len() as f64)));
                         }
                     }
                     "map" => {
@@ -506,7 +506,7 @@ fn evaluate_ast_impl(
                                 if let HubValue::Text(delim) = delim_result {
                                     let mut string_parts = Vec::new();
                                     for val in vals {
-                                        if let Some(s) = hub_value_to_string(&val) {
+                                        if let Ok(s) = String::try_from(&val) {
                                             string_parts.push(s);
                                         }
                                     }
@@ -597,7 +597,7 @@ fn resolve_dot_member(
         HubValue::Array(vals) => {
             // .length on an array
             if member == "length" {
-                return Ok(Some(HubValue::Number(vals.len() as f64)));
+                return Ok(Some(HubValue::Number(RawF64::from_f64(vals.len() as f64))));
             }
             // For single-target roles (e.g. this.owner.name), resolve field on the first element
             if let Some(HubValue::Identifier(ref id)) = vals.first() {
@@ -633,7 +633,7 @@ fn resolve_role_targets(
     let assignments = instance.assignments(db);
     let assignment = assignments.iter().find(|a| a.name == role_name)?;
 
-    let refs = get_refs_from_value(&assignment.value);
+    let refs = assignment.value.extract_refs();
 
     let mut targets = Vec::new();
     for ref_name in refs {
@@ -666,55 +666,56 @@ fn resolve_role_targets(
     Some(HubValue::Array(targets))
 }
 
-/// Extract instance reference names from a HubValue (used for role assignments).
-fn get_refs_from_value(value: &HubValue) -> Vec<String> {
-    match value {
-        HubValue::Identifier(s) => vec![s.clone()],
-        HubValue::Array(vals) => vals.iter().flat_map(get_refs_from_value).collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// Apply a binary operator to two HubValues.
 fn apply_binary(op: &str, left: &HubValue, right: &HubValue) -> Result<HubValue, EvalError> {
     match op {
         "+" => {
             if matches!(left, HubValue::Text(_)) || matches!(right, HubValue::Text(_)) {
-                let ls = hub_value_to_string(left)
-                    .ok_or_else(|| EvalError::ParseError("Expected string".to_string()))?;
-                let rs = hub_value_to_string(right)
-                    .ok_or_else(|| EvalError::ParseError("Expected string".to_string()))?;
+                let ls: String = left
+                    .try_into()
+                    .map_err(|_| EvalError::ParseError("Expected string".to_string()))?;
+                let rs: String = right
+                    .try_into()
+                    .map_err(|_| EvalError::ParseError("Expected string".to_string()))?;
                 return Ok(HubValue::Text(format!("{}{}", ls, rs)));
             }
-            let ln = hub_value_to_number(left)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            let rn = hub_value_to_number(right)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            Ok(HubValue::Number(ln + rn))
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            Ok(HubValue::Number(RawF64::from_f64(ln + rn)))
         }
         "-" => {
-            let ln = hub_value_to_number(left)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            let rn = hub_value_to_number(right)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            Ok(HubValue::Number(ln - rn))
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            Ok(HubValue::Number(RawF64::from_f64(ln - rn)))
         }
         "*" => {
-            let ln = hub_value_to_number(left)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            let rn = hub_value_to_number(right)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            Ok(HubValue::Number(ln * rn))
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            Ok(HubValue::Number(RawF64::from_f64(ln * rn)))
         }
         "/" => {
-            let ln = hub_value_to_number(left)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
-            let rn = hub_value_to_number(right)
-                .ok_or_else(|| EvalError::ParseError("Expected number".to_string()))?;
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
             if rn == 0.0 {
                 return Err(EvalError::ParseError("Division by zero".to_string()));
             }
-            Ok(HubValue::Number(ln / rn))
+            Ok(HubValue::Number(RawF64::from_f64(ln / rn)))
         }
         _ => Err(EvalError::ParseError(format!("Unknown operator: {}", op))),
     }
@@ -723,36 +724,19 @@ fn apply_binary(op: &str, left: &HubValue, right: &HubValue) -> Result<HubValue,
 fn apply_unary(op: &str, val: &HubValue) -> Option<HubValue> {
     match op {
         "-" => {
-            let n = hub_value_to_number(val)?;
-            Some(HubValue::Number(-n))
+            let n = f64::try_from(val).ok()?;
+            Some(HubValue::Number(RawF64::from_f64(-n)))
         }
         "!" => match val {
             HubValue::Boolean(b) => Some(HubValue::Boolean(!b)),
             HubValue::Number(_) => {
-                let n = hub_value_to_number(val)?;
+                let n = f64::try_from(val).ok()?;
                 Some(HubValue::Boolean(n == 0.0))
             }
             _ => None,
         },
         _ => None,
     }
-}
-
-fn hub_value_to_number(v: &HubValue) -> Option<f64> {
-    match v {
-        HubValue::Number(n) => Some(*n),
-        _ => None,
-    }
-}
-
-fn hub_value_to_string(v: &HubValue) -> Option<String> {
-    Some(match v {
-        HubValue::Text(s) => s.clone(),
-        HubValue::Number(n) => n.to_string(),
-        HubValue::Boolean(b) => b.to_string(),
-        HubValue::Identifier(i) => i.clone(),
-        _ => return None,
-    })
 }
 
 /// Check if a field definition has @default and the instance did NOT assign it.

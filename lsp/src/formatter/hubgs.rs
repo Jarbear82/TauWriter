@@ -1,7 +1,7 @@
 use crate::parser;
 use tree_sitter::Parser;
 
-use super::expression::{format_expression, is_expression_kind};
+use super::expression::format_expression;
 
 pub fn format_hubgs(contents: &str) -> String {
     let language = match parser::get_language("hubgs") {
@@ -128,19 +128,29 @@ fn parse_fields(block: tree_sitter::Node, contents: &str) -> Vec<String> {
     fields
 }
 
+/// Collect identifier names from a definition node, excluding the name node.
+fn collect_identifiers_excluding(
+    def: &tree_sitter::Node,
+    exclude_id: usize,
+    contents: &str,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cursor = def.walk();
+    for child in def.children(&mut cursor) {
+        if child.kind() == "identifier" && child.id() != exclude_id {
+            names.push(contents[child.byte_range()].to_string());
+        }
+    }
+    names
+}
+
 fn parse_enums(block: tree_sitter::Node, contents: &str) -> Vec<String> {
     let mut enums = Vec::new();
     let mut cursor = block.walk();
     for enum_def in block.children(&mut cursor) {
         if enum_def.kind() == "enum_definition" {
             if let Some(name_node) = enum_def.child(0) {
-                let mut variants = Vec::new();
-                let mut v_cursor = enum_def.walk();
-                for child in enum_def.children(&mut v_cursor) {
-                    if child.kind() == "identifier" && child.id() != name_node.id() {
-                        variants.push(contents[child.byte_range()].to_string());
-                    }
-                }
+                let variants = collect_identifiers_excluding(&enum_def, name_node.id(), contents);
                 enums.push(format!(
                     "        {} {{ {} }}",
                     &contents[name_node.byte_range()],
@@ -158,13 +168,8 @@ fn parse_structs(block: tree_sitter::Node, contents: &str) -> Vec<String> {
     for struct_def in block.children(&mut cursor) {
         if struct_def.kind() == "struct_definition" {
             if let Some(name_node) = struct_def.child(0) {
-                let mut field_names = Vec::new();
-                let mut f_cursor = struct_def.walk();
-                for child in struct_def.children(&mut f_cursor) {
-                    if child.kind() == "identifier" && child.id() != name_node.id() {
-                        field_names.push(contents[child.byte_range()].to_string());
-                    }
-                }
+                let field_names =
+                    collect_identifiers_excluding(&struct_def, name_node.id(), contents);
                 structs.push(format!(
                     "        {} {{\n            {}\n        }}",
                     &contents[name_node.byte_range()],
@@ -184,15 +189,14 @@ fn parse_hubs(block: tree_sitter::Node, contents: &str) -> Vec<String> {
             if let Some(name_node) = hub_def.child(0) {
                 // ponytail: Extract parent types from optional EXTENDS clause
                 let mut extends_parts: Vec<String> = Vec::new();
-                let ext_clauses: Vec<_> = hub_def
-                    .children(&mut hub_def.walk())
-                    .filter(|c| c.kind() == "extension_clause")
-                    .collect();
-                for ext in &ext_clauses {
-                    let mut child_cur = ext.walk();
-                    for child in ext.children(&mut child_cur) {
-                        if child.kind() == "identifier" {
-                            extends_parts.push(contents[child.byte_range()].to_string());
+                let mut ext_cursor = hub_def.walk();
+                for ext in hub_def.children(&mut ext_cursor) {
+                    if ext.kind() == "extension_clause" {
+                        let mut child_cursor = ext.walk();
+                        for child in ext.children(&mut child_cursor) {
+                            if child.kind() == "identifier" {
+                                extends_parts.push(contents[child.byte_range()].to_string());
+                            }
                         }
                     }
                 }

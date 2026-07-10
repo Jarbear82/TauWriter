@@ -6,7 +6,7 @@ use crate::handlers::{format_hub_value, MarkdownContent};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::HubValue;
+    use crate::db::{HubValue, RawF64};
 
     // ===== MarkdownContent builder tests =====
 
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_format_hub_value_number() {
-        let val = HubValue::Number(42.0);
+        let val = HubValue::Number(RawF64::from_f64(42.0));
         assert_eq!(format_hub_value(&val), "42");
     }
 
@@ -175,7 +175,10 @@ mod tests {
 
     #[test]
     fn test_format_hub_value_array() {
-        let val = HubValue::Array(vec![HubValue::Number(1.0), HubValue::Text("a".to_string())]);
+        let val = HubValue::Array(vec![
+            HubValue::Number(RawF64::from_f64(1.0)),
+            HubValue::Text("a".to_string()),
+        ]);
         assert_eq!(format_hub_value(&val), "[1, \"a\"]");
     }
 

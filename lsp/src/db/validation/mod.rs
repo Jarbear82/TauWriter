@@ -1,5 +1,8 @@
 mod hubgs;
+mod links;
 mod twxml;
+
+use lsp_types::CompletionItemKind;
 
 // Re-export types used by downstream consumers via db::*
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +58,12 @@ impl Multiplicity {
     }
 }
 
+// Re-export tag metadata for downstream consumers (e.g. completion).
+pub const TWXML_TAG_INFO: &[(&str, CompletionItemKind, &str)] = twxml::TWXML_TAG_INFO;
+pub fn is_valid_twxml_tag(name: &str) -> bool {
+    twxml::is_valid_twxml_tag(name)
+}
+
 /// Validate a single workspace file for structural and semantic correctness.
 pub fn validate_file(
     db: &dyn crate::db::Db,
@@ -71,3 +80,9 @@ pub fn validate_file(
 
     errors
 }
+
+#[cfg(test)]
+mod twxml_tests;
+
+#[cfg(test)]
+mod hubgs_tests;

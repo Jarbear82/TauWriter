@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 
+pub use super::colors_util::{format_hex_color, parse_hex_color};
 use crate::parser;
 use crate::Backend;
 
@@ -60,74 +61,6 @@ pub async fn color_presentation(
         additional_text_edits: None,
     };
     Ok(Some(vec![presentation]))
-}
-
-fn parse_hex_color(s: &str) -> Option<Color> {
-    let s = s.trim().strip_prefix('#')?;
-    if !s.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    match s.len() {
-        3 => {
-            let r = u8::from_str_radix(&s[0..1], 16).ok()? as f32 / 15.0;
-            let g = u8::from_str_radix(&s[1..2], 16).ok()? as f32 / 15.0;
-            let b = u8::from_str_radix(&s[2..3], 16).ok()? as f32 / 15.0;
-            Some(Color {
-                red: r,
-                green: g,
-                blue: b,
-                alpha: 1.0,
-            })
-        }
-        4 => {
-            let r = u8::from_str_radix(&s[0..1], 16).ok()? as f32 / 15.0;
-            let g = u8::from_str_radix(&s[1..2], 16).ok()? as f32 / 15.0;
-            let b = u8::from_str_radix(&s[2..3], 16).ok()? as f32 / 15.0;
-            let a = u8::from_str_radix(&s[3..4], 16).ok()? as f32 / 15.0;
-            Some(Color {
-                red: r,
-                green: g,
-                blue: b,
-                alpha: a,
-            })
-        }
-        6 => {
-            let r = u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0;
-            let g = u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0;
-            let b = u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0;
-            Some(Color {
-                red: r,
-                green: g,
-                blue: b,
-                alpha: 1.0,
-            })
-        }
-        8 => {
-            let r = u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0;
-            let g = u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0;
-            let b = u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0;
-            let a = u8::from_str_radix(&s[6..8], 16).ok()? as f32 / 255.0;
-            Some(Color {
-                red: r,
-                green: g,
-                blue: b,
-                alpha: a,
-            })
-        }
-        _ => None,
-    }
-}
-
-fn format_hex_color(color: Color) -> String {
-    let r = (color.red * 255.0).round().clamp(0.0, 255.0) as u8;
-    let g = (color.green * 255.0).round().clamp(0.0, 255.0) as u8;
-    let b = (color.blue * 255.0).round().clamp(0.0, 255.0) as u8;
-    let a = (color.alpha * 255.0).round().clamp(0.0, 255.0) as u8;
-    if a == 255 {
-        format!("\"#{:02x}{:02x}{:02x}\"", r, g, b)
-    } else {
-        format!("\"#{:02x}{:02x}{:02x}{:02x}\"", r, g, b, a)
-    }
 }
 
 pub async fn document_link(

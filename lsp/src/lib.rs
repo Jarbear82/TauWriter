@@ -47,7 +47,18 @@ pub struct Backend {
 }
 
 /// Thread-safe handle for the salsa database.
-/// Provides `.with_db()` to enter a salsa-attached context and `.clone_db()` to duplicate.
+///
+/// All `SalsaThreadHandle` instances share a single underlying `Mutex<RootDatabase>`,
+/// so concurrent requests are serialized by that mutex. This is correct but limits
+/// throughput — slow operations (directory walks, bulk file scans) hold the lock
+/// and block all other LSP handlers.
+///
+/// For true parallelism you'd need either:
+///  - splitting the index across multiple databases (one per file set),
+///  - or moving to a multi-database architecture.
+/// Note: `salsa::parallel` was removed in salsa 0.25, so this limitation is by design.
+/// `.clone_db()` still shares the same underlying mutex — it doesn't create parallelism,
+/// just a separate entry point to the same lock.
 pub struct SalsaThreadHandle(Arc<std::sync::Mutex<RootDatabase>>);
 
 impl SalsaThreadHandle {

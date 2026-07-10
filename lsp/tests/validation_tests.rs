@@ -1,4 +1,5 @@
 use tauwriter_lsp::db;
+use tauwriter_lsp::db::RawF64;
 use tauwriter_lsp::RootDatabase;
 
 /// Wrap TWXML content in the required skeleton: <document><body>...</body></document>
@@ -725,7 +726,10 @@ INSTANCES [
     let instance = instances[0];
 
     let total_val = db::compute_field_value(&db, workspace, instance, "total".to_string());
-    assert_eq!(total_val, Ok(Some(db::HubValue::Number(15.0_f64))));
+    assert_eq!(
+        total_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(15.0))))
+    );
 }
 
 #[test]
@@ -764,10 +768,16 @@ INSTANCES [
     let instance = instances[0];
 
     let diff_val = db::compute_field_value(&db, workspace, instance, "diff".to_string());
-    assert_eq!(diff_val, Ok(Some(db::HubValue::Number(20.0_f64))));
+    assert_eq!(
+        diff_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(20.0))))
+    );
 
     let half_val = db::compute_field_value(&db, workspace, instance, "half_diff".to_string());
-    assert_eq!(half_val, Ok(Some(db::HubValue::Number(10.0_f64))));
+    assert_eq!(
+        half_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(10.0))))
+    );
 }
 
 #[test]
@@ -847,7 +857,10 @@ INSTANCES [
 
     // (2 + 3) * 4 = 20
     let result_val = db::compute_field_value(&db, workspace, instance, "result".to_string());
-    assert_eq!(result_val, Ok(Some(db::HubValue::Number(20.0_f64))));
+    assert_eq!(
+        result_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(20.0))))
+    );
 }
 
 #[test]
@@ -882,7 +895,10 @@ INSTANCES [
     let instance = instances[0];
 
     let neg_val = db::compute_field_value(&db, workspace, instance, "negated".to_string());
-    assert_eq!(neg_val, Ok(Some(db::HubValue::Number(-42.0_f64))));
+    assert_eq!(
+        neg_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(-42.0))))
+    );
 }
 
 #[test]
@@ -924,7 +940,10 @@ INSTANCES [
     let tailor = instances[0];
 
     let count_val = db::compute_field_value(&db, workspace, tailor, "companion_count".to_string());
-    assert_eq!(count_val, Ok(Some(db::HubValue::Number(2.0_f64))));
+    assert_eq!(
+        count_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(2.0))))
+    );
 }
 
 #[test]
@@ -1101,7 +1120,10 @@ INSTANCES [
     let a1 = instances[0];
 
     let version_val = db::compute_field_value(&db, workspace, a1, "version".to_string());
-    assert_eq!(version_val, Ok(Some(db::HubValue::Number(1.0_f64))));
+    assert_eq!(
+        version_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(1.0))))
+    );
 }
 
 // ============================================================
@@ -1458,7 +1480,10 @@ INSTANCES [
         "companions_joined".to_string(),
     );
 
-    assert_eq!(count_val, Ok(Some(db::HubValue::Number(2.0_f64))));
+    assert_eq!(
+        count_val,
+        Ok(Some(db::HubValue::Number(RawF64::from_f64(2.0))))
+    );
     assert_eq!(
         joined_val,
         Ok(Some(db::HubValue::Text("Gandalf, Legolas".to_string())))

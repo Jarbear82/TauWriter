@@ -514,7 +514,7 @@ fn node_to_hub_value(node: tree_sitter::Node, contents: &str) -> Option<crate::d
             contents[node.byte_range()].to_string(),
         )),
         "number" => match contents[node.byte_range()].parse::<f64>() {
-            Ok(n) => Some(crate::db::HubValue::Number(n)),
+            Ok(n) => Some(crate::db::HubValue::Number(crate::db::RawF64::from_f64(n))),
             Err(_) => None,
         },
         "string" | "template_string" => Some(crate::db::HubValue::Text(

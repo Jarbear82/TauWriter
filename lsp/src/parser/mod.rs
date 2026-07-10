@@ -1,5 +1,6 @@
 mod features;
 mod hubgs;
+pub(crate) mod language;
 mod twxml;
 
 pub use features::*;
@@ -12,27 +13,15 @@ pub use twxml::{get_twxml_completion_context, TwxmlCompletionContext};
 // Attribute parsing utility shared across TWXML consumers.
 pub use twxml::{get_all_attributes, get_attribute};
 
-// Safe wrappers for tree-sitter extern "C" language getters.
-// The grammar must be loaded; callers check set_language() result for safety.
-pub fn get_language(name: &str) -> Option<tree_sitter::Language> {
-    match name {
-        "hubgs" => get_hubgs_language(),
-        "twxml" => get_twxml_language(),
-        _ => None,
-    }
-}
+// Re-export tree-sitter language bindings from the canonical module.
+pub use language::{get_language, tree_sitter_hubgs, tree_sitter_twxml};
 
+// Thin wrappers for internal callers that prefer typed helpers over string lookup.
 pub(crate) fn get_hubgs_language() -> Option<tree_sitter::Language> {
-    Some(unsafe { tree_sitter_hubgs() })
+    get_language("hubgs")
 }
 pub(crate) fn get_twxml_language() -> Option<tree_sitter::Language> {
-    Some(unsafe { tree_sitter_twxml() })
-}
-
-// C-linked tree-sitter language getters — callers must wrap in `unsafe {}`
-extern "C" {
-    pub fn tree_sitter_hubgs() -> tree_sitter::Language;
-    pub fn tree_sitter_twxml() -> tree_sitter::Language;
+    get_language("twxml")
 }
 
 pub(crate) fn ts_range_to_lsp(range: tree_sitter::Range) -> crate::db::LspRange {
