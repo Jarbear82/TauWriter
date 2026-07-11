@@ -1,4 +1,4 @@
-use crate::parser::{Block, TextRun, ListItem};
+use crate::parser::{Block, TextRun};
 use crate::ui::DocumentHome;
 use gpui::{
     Context, Entity, Render, Window, div, prelude::*, px, rgb,
@@ -230,6 +230,9 @@ fn render_block(block: &Block) -> impl IntoElement {
 }
 
 fn render_run(run: &TextRun) -> impl IntoElement {
+    if run.text == "\n" {
+        return div().w_full();
+    }
     let mut text_el = div().child(run.text.clone());
 
     if run.bold {

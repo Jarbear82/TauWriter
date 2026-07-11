@@ -133,16 +133,13 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
             text,
         });
     } else if node.has_tag_name("paragraph") {
-        let mut runs = Vec::new();
-        collect_runs(node, &mut runs, &Style::default());
+        let runs = collect_and_normalize_runs(node);
         blocks.push(Block::Paragraph { runs });
     } else if node.has_tag_name("blockquote") {
-        let mut runs = Vec::new();
-        collect_runs(node, &mut runs, &Style::default());
+        let runs = collect_and_normalize_runs(node);
         blocks.push(Block::BlockQuote { runs });
     } else if node.has_tag_name("aside") {
-        let mut runs = Vec::new();
-        collect_runs(node, &mut runs, &Style::default());
+        let runs = collect_and_normalize_runs(node);
         blocks.push(Block::Aside { runs });
     } else if node.has_tag_name("codeblock") {
         let language = node.attribute("language").unwrap_or("").to_string();
@@ -156,8 +153,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
                 let checked = child
                     .attribute("checked")
                     .and_then(|v| v.parse::<bool>().ok());
-                let mut runs = Vec::new();
-                collect_runs(child, &mut runs, &Style::default());
+                let runs = collect_and_normalize_runs(child);
                 items.push(ListItem { checked, runs });
             }
         }
@@ -169,8 +165,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
             if child.has_tag_name("dt") {
                 current_term = collect_text(child);
             } else if child.has_tag_name("dd") {
-                let mut runs = Vec::new();
-                collect_runs(child, &mut runs, &Style::default());
+                let runs = collect_and_normalize_runs(child);
                 items.push((current_term.clone(), runs));
             }
         }
@@ -185,8 +180,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
                     if cell.has_tag_name("th") {
                         headers.push(collect_text(cell));
                     } else if cell.has_tag_name("td") {
-                        let mut runs = Vec::new();
-                        collect_runs(cell, &mut runs, &Style::default());
+                        let runs = collect_and_normalize_runs(cell);
                         row_cells.push(runs);
                     }
                 }
@@ -223,13 +217,18 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
 
 /// Extract all text content from a node and its descendants.
 fn collect_text(node: roxmltree::Node) -> String {
-    let mut text = String::new();
-    for desc in node.descendants() {
-        if desc.is_text() {
-            text.push_str(desc.text().unwrap_or(""));
-        }
-    }
-    text
+    let mut runs = Vec::new();
+    collect_runs(node, &mut runs, &Style::default());
+    normalize_runs(&mut runs);
+    runs.into_iter().map(|r| r.text).collect()
+}
+
+/// Helper to collect and normalize runs for a node.
+fn collect_and_normalize_runs(node: roxmltree::Node) -> Vec<TextRun> {
+    let mut runs = Vec::new();
+    collect_runs(node, &mut runs, &Style::default());
+    normalize_runs(&mut runs);
+    runs
 }
 
 /// Recursively collect styled `TextRun` segments, threading the inline style
@@ -253,29 +252,159 @@ fn collect_runs(node: roxmltree::Node, runs: &mut Vec<TextRun>, current_style: &
                 });
             }
         } else if child.is_element() {
-            let mut next_style = current_style.clone();
-            if child.has_tag_name("bold") {
-                next_style.bold = true;
-            } else if child.has_tag_name("italic") {
-                next_style.italic = true;
-            } else if child.has_tag_name("underline") {
-                next_style.underline = true;
-            } else if child.has_tag_name("strikethrough") {
-                next_style.strikethrough = true;
-            } else if child.has_tag_name("code") {
-                next_style.code = true;
-            } else if child.has_tag_name("super") {
-                next_style.superscript = true;
-            } else if child.has_tag_name("sub") {
-                next_style.subscript = true;
-            } else if child.has_tag_name("hubref") {
-                next_style.hubref = child.attribute("id").map(|s| s.to_string());
-            } else if child.has_tag_name("link") {
-                next_style.link = child.attribute("href").map(|s| s.to_string());
+            if child.has_tag_name("br") {
+                runs.push(TextRun {
+                    text: "\n".to_string(),
+                    bold: current_style.bold,
+                    italic: current_style.italic,
+                    underline: current_style.underline,
+                    strikethrough: current_style.strikethrough,
+                    code: current_style.code,
+                    superscript: current_style.superscript,
+                    subscript: current_style.subscript,
+                    hubref: current_style.hubref.clone(),
+                    link: current_style.link.clone(),
+                });
+            } else {
+                let mut next_style = current_style.clone();
+                if child.has_tag_name("bold") {
+                    next_style.bold = true;
+                } else if child.has_tag_name("italic") {
+                    next_style.italic = true;
+                } else if child.has_tag_name("underline") {
+                    next_style.underline = true;
+                } else if child.has_tag_name("strikethrough") {
+                    next_style.strikethrough = true;
+                } else if child.has_tag_name("code") {
+                    next_style.code = true;
+                } else if child.has_tag_name("super") {
+                    next_style.superscript = true;
+                } else if child.has_tag_name("sub") {
+                    next_style.subscript = true;
+                } else if child.has_tag_name("hubref") {
+                    next_style.hubref = child.attribute("id").map(|s| s.to_string());
+                } else if child.has_tag_name("link") {
+                    next_style.link = child.attribute("href").map(|s| s.to_string());
+                }
+                collect_runs(child, runs, &next_style);
             }
-            collect_runs(child, runs, &next_style);
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NextElement {
+    Char(char),
+    LineBreak,
+    None,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PrevElement {
+    Char(char),
+    LineBreak,
+    None,
+}
+
+fn find_next_semantic_element(runs: &[TextRun], start_run_idx: usize, start_char_idx: usize) -> NextElement {
+    for (r_idx, run) in runs.iter().enumerate().skip(start_run_idx) {
+        if run.text == "\n" {
+            return NextElement::LineBreak;
+        }
+        let chars = run.text.chars();
+        for (c_idx, c) in chars.enumerate() {
+            if r_idx == start_run_idx && c_idx < start_char_idx {
+                continue;
+            }
+            if !c.is_whitespace() {
+                return NextElement::Char(c);
+            }
+        }
+    }
+    NextElement::None
+}
+
+fn find_prev_semantic_element(runs: &[TextRun], start_run_idx: usize, start_char_idx: usize) -> PrevElement {
+    let mut r_idx = start_run_idx;
+    let mut first = true;
+    loop {
+        let run = &runs[r_idx];
+        if run.text == "\n" {
+            return PrevElement::LineBreak;
+        }
+        let chars: Vec<char> = run.text.chars().collect();
+        let start = if first {
+            first = false;
+            if start_char_idx > chars.len() {
+                chars.len()
+            } else {
+                start_char_idx
+            }
+        } else {
+            chars.len()
+        };
+        for c_idx in (0..start).rev() {
+            let c = chars[c_idx];
+            if !c.is_whitespace() {
+                return PrevElement::Char(c);
+            }
+        }
+        if r_idx == 0 {
+            break;
+        }
+        r_idx -= 1;
+    }
+    PrevElement::None
+}
+
+fn normalize_runs(runs: &mut Vec<TextRun>) {
+    let num_runs = runs.len();
+    let mut new_texts = Vec::with_capacity(num_runs);
+
+    for r_idx in 0..num_runs {
+        let run = &runs[r_idx];
+        if run.text == "\n" {
+            new_texts.push("\n".to_string());
+            continue;
+        }
+
+        let chars: Vec<char> = run.text.chars().collect();
+        let mut normalized = String::new();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '\n' {
+                let prev_el = find_prev_semantic_element(runs, r_idx, i);
+                let next_el = find_next_semantic_element(runs, r_idx, i + 1);
+
+                // Skip the newline and all subsequent whitespaces in this run.
+                while i < chars.len() && chars[i].is_whitespace() {
+                    i += 1;
+                }
+
+                if let (PrevElement::Char(_), NextElement::Char(next_c)) = (prev_el, next_el) {
+                    let is_punctuation = ['.', ',', ':', ';', '!', '?', ')', ']', '}'].contains(&next_c);
+                    if !is_punctuation {
+                        normalized.push(' ');
+                    }
+                }
+            } else {
+                normalized.push(c);
+                i += 1;
+            }
+        }
+        new_texts.push(normalized);
+    }
+
+    let mut updated_runs = Vec::with_capacity(num_runs);
+    for (mut run, new_text) in runs.drain(..).zip(new_texts) {
+        if !new_text.is_empty() {
+            run.text = new_text;
+            updated_runs.push(run);
+        }
+    }
+    *runs = updated_runs;
 }
 
 #[cfg(test)]
@@ -320,4 +449,43 @@ mod tests {
             _ => panic!("Expected Paragraph"),
         }
     }
+
+    #[test]
+    fn test_parser_whitespace_normalization_and_br_handling_succeeds() {
+        let xml = r#"
+        <document>
+          <body>
+            <paragraph>
+              This is a very long paragraph that has
+              been split across multiple lines for source
+              readability.
+              It also contains  intentional  double spaces.
+              And punctuation,
+              like this!
+              Here is a line break:<br/>
+              And another line break:<br />
+              And some <bold>bold
+              text</bold> on multiple lines.
+            </paragraph>
+          </body>
+        </document>
+        "#;
+        let (_, _, blocks) = parse_twxml(xml).unwrap();
+        assert_eq!(blocks.len(), 1);
+
+        match &blocks[0] {
+            Block::Paragraph { runs } => {
+                let text_content: String = runs.iter().map(|r| r.text.as_str()).collect();
+                // Check if newlines are removed, double spaces preserved, br tags are \n, and punctuation has no extra space.
+                let expected = "This is a very long paragraph that has been split across multiple lines for source readability. It also contains  intentional  double spaces. And punctuation, like this! Here is a line break:\nAnd another line break:\nAnd some bold text on multiple lines.";
+                assert_eq!(text_content, expected);
+
+                // Verify that bold style run was correctly normalized and preserved.
+                let bold_run = runs.iter().find(|r| r.bold).unwrap();
+                assert_eq!(bold_run.text, "bold text");
+            }
+            _ => panic!("Expected Paragraph"),
+        }
+    }
 }
+
