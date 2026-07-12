@@ -25,7 +25,7 @@ pub(crate) fn render_graph_panels(
     sidebar_bg: &gpui::Hsla,
     active_accent: &gpui::Hsla,
     theme_muted_foreground: &Hsla,
-) -> gpui::Div {
+) -> impl IntoElement {
     let border_color = *border_color;
     let sidebar_bg = *sidebar_bg;
     let fg_color = *fg_color;
@@ -48,11 +48,9 @@ pub(crate) fn render_graph_panels(
         theme_muted_foreground,
     );
 
-    div()
-        .size_full()
-        .flex()
-        .child(left_content)
-        .child(right_content)
+    gpui_component::resizable::h_resizable("graph-panels-group")
+        .child(gpui_component::resizable::resizable_panel().child(left_content))
+        .child(gpui_component::resizable::resizable_panel().child(right_content))
 }
 
 fn render_single_panel(

@@ -23,7 +23,11 @@ mod graph_sim_tests;
 
 use lsp_client::{Diagnostic, LspClient};
 use parser::load_and_parse_twxml;
-use ui::{build_file_tree, ActiveTab, DemoView, DocumentHome};
+use ui::{build_file_tree, ActiveTab, DemoView, DocumentHome, ParseState};
+
+extern "C" {
+    fn tree_sitter_twxml() -> tree_sitter::Language;
+}
 
 fn main() {
     env_logger::init();
@@ -60,16 +64,20 @@ fn open_window(twxml_path: String, cx: &mut App) {
         move |window, cx| {
             // Load and parse twxml
             let path = PathBuf::from(&twxml_path);
-            let (title, author, blocks) = match load_and_parse_twxml(&twxml_path) {
+            let (title, author, metadata, blocks) = match load_and_parse_twxml(&twxml_path) {
                 Ok(data) => data,
                 Err(err) => {
                     eprintln!("Warning: Failed to load twxml: {err:#}. Using empty placeholder.");
                     (
-                        "Error Loading Document".to_string(),
-                        "System".to_string(),
-                        vec![Block::Paragraph {
-                            runs: vec![TextRun::new(format!("Could not load document: {err:#}"))],
-                        }],
+                         "Error Loading Document".to_string(),
+                         "System".to_string(),
+                         Vec::new(),
+                         vec![Block::Paragraph {
+                             runs: vec![TextRun::new(format!("Could not load document: {err:#}"))],
+                             id: None,
+                             attributes: Vec::new(),
+                             range: None,
+                         }],
                     )
                 }
             };
@@ -77,10 +85,11 @@ fn open_window(twxml_path: String, cx: &mut App) {
             let document_home = cx.new(|_| DocumentHome {
                 title,
                 author,
+                metadata,
                 blocks,
+                parse_state: ParseState::Synced,
+                hubgs_instances: std::collections::HashMap::new(),
             });
-
-            let view = cx.new(|cx| ui::DocumentView::new(document_home.clone(), cx));
 
             // Build file tree — use fallible path resolution
             let workspace_root = resolve_workspace_root().unwrap_or_else(|| PathBuf::from("."));
@@ -90,13 +99,29 @@ fn open_window(twxml_path: String, cx: &mut App) {
             let themes_dir = workspace_root.join("themes");
             let _ = gpui_component::ThemeRegistry::watch_dir(themes_dir, cx, |_| {});
 
+            // Register custom tree-sitter language for twxml
+            let language_ptr = unsafe { tree_sitter_twxml() };
+            let language: tree_sitter::Language = unsafe { std::mem::transmute(language_ptr) };
+            let highlights = include_str!("../../extension/languages/twxml/highlights.scm");
+            let config = gpui_component::highlighter::LanguageConfig::new(
+                "twxml",
+                language,
+                vec![],
+                highlights,
+                "",
+                "",
+            );
+            gpui_component::highlighter::LanguageRegistry::singleton().register("twxml", &config);
+
             // Initialize input state for XML Editor
             let input_state = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
                     .multi_line(true)
-                    .code_editor("xml")
+                    .code_editor("twxml")
                     .line_number(true)
             });
+
+            let view = cx.new(|cx| ui::DocumentView::new(document_home.clone(), input_state.clone(), cx));
 
             // Set initial XML Editor content
             let xml_content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -174,14 +199,23 @@ fn open_window(twxml_path: String, cx: &mut App) {
                                     client.notify_change(p, &text);
                                 }
                             }
-                            if let Ok((title, author, blocks)) = parser::load_and_parse_twxml(&text)
-                            {
-                                document_home.update(cx, |doc, cx| {
-                                    doc.title = title;
-                                    doc.author = author;
-                                    doc.blocks = blocks;
-                                    cx.notify();
-                                });
+                            match parser::parse_twxml(&text) {
+                                Ok((title, author, metadata, blocks)) => {
+                                    document_home.update(cx, |doc, cx| {
+                                        doc.title = title;
+                                        doc.author = author;
+                                        doc.metadata = metadata;
+                                        doc.blocks = blocks;
+                                        doc.parse_state = ParseState::Synced;
+                                        cx.notify();
+                                    });
+                                }
+                                Err(err) => {
+                                    document_home.update(cx, |doc, cx| {
+                                        doc.parse_state = ParseState::OutOfSync { error: err.to_string() };
+                                        cx.notify();
+                                    });
+                                }
                             }
                         }
                         _ => {}

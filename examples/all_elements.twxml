@@ -22,7 +22,9 @@
         This belt would get the tailor into all sorts of trouble. Pride goes before the fall, as they say.
       </aside>
       <blockquote>
-        "Seven at one blow." - <italic>The Brave Little Tailor</italic><br />
+        "Seven at one blow."
+        <br/>
+        - <italic>The Brave Little Tailor</italic><br />
         <italic>A belt made of pride and jam.</italic>
       </blockquote>
       <hr/>
@@ -91,11 +93,10 @@
       </paragraph>
     </section>
     <footnote id="1">
-      <super>2</super>
+     <paragraph> footnote provides more details not explained in the text that a reader might want to know.<br/>It might also provide links for further study.</paragraph>
     </footnote>
     <review>
       <paragraph>This passage needs review before publication. Verify accuracy against the original Brothers Grimm text.</paragraph>
     </review>
   </body>
 </document>
-

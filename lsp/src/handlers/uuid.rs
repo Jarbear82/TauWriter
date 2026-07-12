@@ -23,12 +23,23 @@ pub fn get_pseudorandom_bytes(len: usize) -> Vec<u8> {
     buf
 }
 
-/// Generate a standard UUID v4 string (with hyphens).
+/// Generate a standard UUID v7 string (with hyphens).
 pub fn generate_uuid_v4() -> String {
-    let mut bytes = get_pseudorandom_bytes(16);
-    // Set version to 4
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    // Set variant to RFC 4122
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let mut bytes = [0u8; 16];
+    // Write 48-bit timestamp
+    bytes[0..6].copy_from_slice(&ms.to_be_bytes()[2..8]);
+    
+    // Fill the remaining 10 bytes with pseudorandom data
+    let rand = get_pseudorandom_bytes(10);
+    bytes[6..16].copy_from_slice(&rand);
+    
+    // Set version to 7
+    bytes[6] = (bytes[6] & 0x0f) | 0x70;
+    // Set variant to RFC 4122 (0x80)
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
     format!(
@@ -41,19 +52,9 @@ pub fn generate_uuid_v4() -> String {
     )
 }
 
-/// Generate a HubGS ref-style UUID (no hyphens, underscore prefix).
+/// Generate a HubGS ref-style UUID (hyphenated standard UUID v7 to unify layout).
 pub fn generate_uuid_ref() -> String {
-    let mut bytes = get_pseudorandom_bytes(16);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = format!(
-        "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5], bytes[6], bytes[7],
-        bytes[8], bytes[9], bytes[10], bytes[11],
-        bytes[12], bytes[13], bytes[14], bytes[15]
-    );
-    format!("_{}", hex)
+    generate_uuid_v4()
 }
 
 #[cfg(test)]

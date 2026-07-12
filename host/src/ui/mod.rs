@@ -4,8 +4,8 @@
 //! eliminate near-duplicate logic and reduce file length.
 //! [user-review: split required] 1103-line monolith split per refactoring task ticket.
 
-use gpui::{div, prelude::*, Entity, Hsla, Subscription};
-use gpui_component::input::InputState;
+use gpui::{prelude::*, Entity, Hsla, Subscription};
+use gpui_component::input::{InputState, Position};
 use crate::parser::{Block, TextRun};
 use std::path::Path;
 
@@ -50,12 +50,21 @@ pub(crate) struct DemoView {
     pub(crate) diagnostics: Vec<Diagnostic>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ParseState {
+    Synced,
+    OutOfSync { error: String },
+}
+
 // ─── DocumentHome & traits ──────────────────────────────────────────────────
 
 pub(crate) struct DocumentHome {
     pub(crate) title: String,
     pub(crate) author: String,
+    pub(crate) metadata: Vec<(String, String)>,
     pub(crate) blocks: Vec<Block>,
+    pub(crate) parse_state: ParseState,
+    pub(crate) hubgs_instances: std::collections::HashMap<String, (String, String, Vec<(String, String)>)>,
 }
 
 
@@ -80,36 +89,6 @@ impl DemoView {
             }
             self.diagnostics.clear();
 
-            // Update Document Home
-            let is_twxml = path.extension().map_or(false, |ext| ext == "twxml");
-            if is_twxml {
-                if let Ok((title, author, blocks)) =
-                    super::parser::load_and_parse_twxml(&path.to_string_lossy())
-                {
-                    self.document_home.update(cx, |doc, cx| {
-                        doc.title = title;
-                        doc.author = author;
-                        doc.blocks = blocks;
-                        cx.notify();
-                    });
-                }
-            } else {
-                self.document_home.update(cx, |doc, cx| {
-                    doc.title = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    doc.author = "System".to_string();
-                    doc.blocks = vec![Block::Paragraph {
-                        runs: vec![TextRun::new(
-                            "Visual preview is only available for .twxml documents.",
-                        )],
-                    }];
-                    cx.notify();
-                });
-            }
-
             self.selected_path = Some(path.clone());
 
             // Try to find and load matching hubgs
@@ -124,8 +103,16 @@ impl DemoView {
                 super::graph_sim::find_any_hubgs(&workspace_root)
             };
 
-            if let Some(hp) = target_hubgs {
-                if let Ok((defs, instances)) = super::graph_sim::parse_hubgs_file(&hp) {
+            let mut hubgs_map = std::collections::HashMap::new();
+            if let Some(ref hp) = target_hubgs {
+                if let Ok((defs, instances)) = super::graph_sim::parse_hubgs_file(hp) {
+                    for inst in &instances {
+                        hubgs_map.insert(
+                            inst.id.clone(),
+                            (inst.type_name.clone(), inst.name.clone(), inst.links.clone()),
+                        );
+                    }
+
                     let (nodes, edges) =
                         super::graph_sim::run_graph_simulation(&instances, 500.0, 500.0);
                     self.graph_nodes = nodes;
@@ -141,6 +128,61 @@ impl DemoView {
                 self.graph_edges.clear();
                 self.def_nodes.clear();
                 self.def_edges.clear();
+            }
+
+            // Update Document Home
+            let is_twxml = path.extension().map_or(false, |ext| ext == "twxml");
+            if is_twxml {
+                match super::parser::load_and_parse_twxml(&path.to_string_lossy()) {
+                    Ok((title, author, metadata, blocks)) => {
+                        self.document_home.update(cx, |doc, cx| {
+                            doc.title = title;
+                            doc.author = author;
+                            doc.metadata = metadata;
+                            doc.blocks = blocks;
+                            doc.hubgs_instances = hubgs_map;
+                            doc.parse_state = ParseState::Synced;
+                            cx.notify();
+                        });
+                    }
+                    Err(err) => {
+                        self.document_home.update(cx, |doc, cx| {
+                            doc.title = "Error Loading Document".to_string();
+                            doc.author = "System".to_string();
+                            doc.metadata = Vec::new();
+                            doc.blocks = vec![Block::Paragraph {
+                                runs: vec![TextRun::new(format!("Could not load document: {err:#}"))],
+                                id: None,
+                                attributes: Vec::new(),
+                                range: None,
+                            }];
+                            doc.hubgs_instances = std::collections::HashMap::new();
+                            doc.parse_state = ParseState::Synced;
+                            cx.notify();
+                        });
+                    }
+                }
+            } else {
+                self.document_home.update(cx, |doc, cx| {
+                    doc.title = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    doc.author = "System".to_string();
+                    doc.metadata = Vec::new();
+                    doc.blocks = vec![Block::Paragraph {
+                        runs: vec![TextRun::new(
+                            "Visual preview is only available for .twxml documents.",
+                        )],
+                        id: None,
+                        attributes: Vec::new(),
+                        range: None,
+                    }];
+                    doc.hubgs_instances = std::collections::HashMap::new();
+                    doc.parse_state = ParseState::Synced;
+                    cx.notify();
+                });
             }
 
             cx.notify();
@@ -225,7 +267,9 @@ impl gpui::Render for DemoView {
                 &theme_muted_foreground,
                 &theme_primary,
                 &theme_foreground,
-            ),
+                _window,
+                cx,
+            ).into_any_element(),
             ActiveTab::Graph => self.render_graph_content(
                 &bg_color,
                 &fg_color,
@@ -234,7 +278,7 @@ impl gpui::Render for DemoView {
                 &active_accent,
                 &theme_muted_foreground,
                 &theme_foreground,
-            ),
+            ).into_any_element(),
         };
 
         // Workspace panel
@@ -244,14 +288,20 @@ impl gpui::Render for DemoView {
             .flex()
             .flex_col()
             .child(tab_bar)
-            .child(content_pane);
+            .child(
+                div()
+                    .flex_1()
+                    .h(gpui::px(0.))
+                    .child(content_pane)
+            );
 
-        let mut workspace_children = div()
-            .flex_1()
-            .h(gpui::px(0.)) // Force height constraint in flex layout
-            .flex()
-            .child(file_explorer)
-            .child(workspace_panel);
+        let viewport_width = _window.viewport_size().width;
+        let explorer_min = viewport_width * 0.15;
+        let explorer_max = viewport_width * 0.5;
+
+        let mut workspace_group = gpui_component::resizable::h_resizable("explorer-workspace")
+            .child(gpui_component::resizable::resizable_panel().size(gpui::px(250.)).size_range(explorer_min..explorer_max).child(file_explorer))
+            .child(gpui_component::resizable::resizable_panel().child(workspace_panel));
 
         // Settings panel (optional right sidebar)
         if self.settings_open {
@@ -264,7 +314,7 @@ impl gpui::Render for DemoView {
                 &theme_foreground,
                 cx,
             );
-            workspace_children = workspace_children.child(settings_panel);
+            workspace_group = workspace_group.child(gpui_component::resizable::resizable_panel().size(gpui::px(300.)).child(settings_panel));
         }
 
         // Title bar (CSD)
@@ -323,7 +373,14 @@ impl gpui::Render for DemoView {
             .bg(bg_color)
             .text_color(fg_color)
             .child(title_bar)
-            .child(workspace_children)
+            .child(
+                div()
+                    .flex_1()
+                    .h(gpui::px(0.))
+                    .overflow_hidden()
+                    .w_full()
+                    .child(workspace_group)
+            )
             .child(bottom_bar)
     }
 }
@@ -341,7 +398,9 @@ impl DemoView {
         theme_muted_foreground: &Hsla,
         _theme_primary: &Hsla,
         theme_foreground: &Hsla,
-    ) -> gpui::Div {
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let border_color = *border_color;
         let sidebar_bg = *sidebar_bg;
 
@@ -366,13 +425,24 @@ impl DemoView {
                     };
                     let line_val = diag.line + 1;
                     let message = diag.message.clone();
+                    let input_state = self.input_state.clone();
+                    let diag_line = diag.line;
                     gpui::div()
                         .id(("diag", idx))
                         .flex()
                         .gap_2()
                         .py_1()
+                        .px_2()
+                        .rounded(gpui::px(4.))
                         .text_size(gpui::px(11.))
                         .text_color(*theme_foreground)
+                        .hover(|s| s.bg(gpui::rgb(0xe5e7eb)))
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                            let pos = Position::new(diag_line as u32, 0);
+                            input_state.update(cx, |state, cx| {
+                                state.set_cursor_position(pos, window, cx);
+                            });
+                        })
                         .child(gpui::div().text_color(color).child(severity_icon))
                         .child(
                             gpui::div()
@@ -385,49 +455,90 @@ impl DemoView {
                 .collect::<Vec<_>>()
         };
 
-        // Document tab: split between XML Editor (left) and WASM Preview (right)
-        div()
-            .flex_1()
-            .flex()
-            .size_full()
-            .child(
-                // Left Pane: XML Editor & Diagnostics
+        let viewport_width = window.viewport_size().width;
+        let preview_min = viewport_width * 0.2;
+
+        let active_file = self.selected_path.as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "No File".to_string());
+        let editor_header = format!("RAW EDITOR: {}", active_file);
+
+        let metadata_doc = self.document_home.read(cx);
+        let preview_header = if metadata_doc.title.is_empty() && metadata_doc.author.is_empty() {
+            "RENDERED PREVIEW".to_string()
+        } else {
+            format!("PREVIEW: {} by {}", metadata_doc.title, metadata_doc.author)
+        };
+
+        // Frontmatter
+        let mut frontmatter = String::new();
+        if !metadata_doc.metadata.is_empty() {
+            frontmatter.push_str("---\n");
+            for (key, val) in &metadata_doc.metadata {
+                frontmatter.push_str(&format!("{}: {}\n", key, val));
+            }
+            frontmatter.push_str("---");
+        }
+        let frontmatter_el = if !frontmatter.is_empty() {
+            Some(
                 gpui::div()
-                    .flex_1()
-                    .h_full()
-                    .border_r(gpui::px(1.))
+                    .mb_4()
+                    .p_3()
+                    .bg(sidebar_bg)
+                    .border(gpui::px(1.))
                     .border_color(border_color)
-                    .flex()
-                    .flex_col()
+                    .rounded(gpui::px(4.))
+                    .font_family("Courier New")
+                    .text_xs()
+                    .text_color(*theme_foreground)
+                    .child(frontmatter)
+            )
+        } else {
+            None
+        };
+
+        let left_pane = gpui_component::resizable::v_resizable("editor-diagnostics")
+            .child(
+                gpui_component::resizable::resizable_panel()
                     .child(
                         gpui::div()
-                            .p_2()
-                            .bg(sidebar_bg)
-                            .border_b(gpui::px(1.))
-                            .border_color(border_color)
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(*theme_muted_foreground)
-                            .child("XML SOURCE EDITOR"),
-                    )
-                    .child(
-                        gpui::div()
-                            .id("source_editor_container")
-                            .flex_1()
-                            .h(gpui::px(0.)) // Force height constraint for editor container
-                            .overflow_y_scroll()
-                            .p_4()
-                            .bg(*theme_group_box)
+                            .size_full()
+                            .flex()
+                            .flex_col()
                             .child(
                                 gpui::div()
-                                    .size_full()
-                                    .child(gpui_component::input::Input::new(&self.input_state).size_full()),
-                            ),
+                                    .p_2()
+                                    .bg(sidebar_bg)
+                                    .border_b(gpui::px(1.))
+                                    .border_color(border_color)
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(*theme_muted_foreground)
+                                    .child(editor_header),
+                            )
+                            .child(
+                                gpui::div()
+                                    .id("source_editor_container")
+                                    .flex_1()
+                                    .p_4()
+                                    .bg(*theme_group_box)
+                                    .child(
+                                        gpui::div()
+                                            .size_full()
+                                            .children(frontmatter_el)
+                                            .child(gpui_component::input::Input::new(&self.input_state).size_full()),
+                                    ),
+                            )
                     )
+            )
+            .child(
+                gpui_component::resizable::resizable_panel()
+                    .size(gpui::px(180.))
+                    .size_range(gpui::px(80.)..gpui::px(400.))
                     .child(
-                        // LSP Diagnostics Pane at the bottom of the editor
                         gpui::div()
-                            .h(gpui::px(180.))
+                            .size_full()
                             .border_t(gpui::px(1.))
                             .border_color(border_color)
                             .bg(sidebar_bg)
@@ -451,35 +562,39 @@ impl DemoView {
                                     .overflow_y_scroll()
                                     .p_2()
                                     .children(diagnostics_content),
-                            ),
-                    ),
+                            )
+                    )
+            );
+
+        let right_pane = gpui::div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                gpui::div()
+                    .p_2()
+                    .bg(sidebar_bg)
+                    .border_b(gpui::px(1.))
+                    .border_color(border_color)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(*theme_muted_foreground)
+                    .child(preview_header),
             )
             .child(
-                // Right Pane: WASM Preview
                 gpui::div()
+                    .id("preview_container")
                     .flex_1()
-                    .h_full()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        gpui::div()
-                            .p_2()
-                            .bg(sidebar_bg)
-                            .border_b(gpui::px(1.))
-                            .border_color(border_color)
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(*theme_muted_foreground)
-                            .child("RENDERED PREVIEW"),
-                    )
-                    .child(
-                        gpui::div()
-                            .id("preview_container")
-                            .flex_1()
-                            .h(gpui::px(0.)) // Force height constraint for preview container
-                            .overflow_y_scroll()
-                            .child(self.view.clone()),
-                    ),
+                    .child(self.view.clone()),
+            );
+
+        gpui::div()
+            .flex_1()
+            .size_full()
+            .child(
+                gpui_component::resizable::h_resizable("editor-preview")
+                    .child(gpui_component::resizable::resizable_panel().child(left_pane))
+                    .child(gpui_component::resizable::resizable_panel().size_range(preview_min..gpui::Pixels::MAX).child(right_pane))
             )
     }
 
@@ -492,7 +607,7 @@ impl DemoView {
         active_accent: &Hsla,
         theme_muted_foreground: &Hsla,
         _theme_foreground: &Hsla,
-    ) -> gpui::Div {
+    ) -> impl IntoElement {
         let left_panel = graph_pane::GraphPanel {
             nodes: self.def_nodes.clone(),
             edges: self.def_edges.clone(),
@@ -514,5 +629,51 @@ impl DemoView {
             active_accent,
             theme_muted_foreground,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ui_document_home_state_transitions_correctly() {
+        // Setup initial DocumentHome state (Synced)
+        let mut doc = DocumentHome {
+            title: "Test".to_string(),
+            author: "Author".to_string(),
+            metadata: Vec::new(),
+            blocks: vec![],
+            parse_state: ParseState::Synced,
+            hubgs_instances: std::collections::HashMap::new(),
+        };
+        assert_eq!(doc.parse_state, ParseState::Synced);
+
+        // Exercise: Transition to OutOfSync due to a parse error
+        doc.parse_state = ParseState::OutOfSync {
+            error: "Unclosed tag <bold>".to_string(),
+        };
+
+        // Verify: Ensure state is OutOfSync with the correct error payload
+        match &doc.parse_state {
+            ParseState::OutOfSync { error } => {
+                assert_eq!(error, "Unclosed tag <bold>");
+            }
+            _ => panic!("Expected OutOfSync state"),
+        }
+
+        // Exercise: Transition back to Synced
+        doc.blocks = vec![Block::Heading {
+            level: 1,
+            text: "Hello".to_string(),
+            id: None,
+            attributes: Vec::new(),
+            range: None,
+        }];
+        doc.parse_state = ParseState::Synced;
+
+        // Verify: Ensure state is Synced and blocks updated
+        assert_eq!(doc.parse_state, ParseState::Synced);
+        assert_eq!(doc.blocks.len(), 1);
     }
 }

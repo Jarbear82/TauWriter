@@ -80,7 +80,7 @@ pub(crate) fn render_file_explorer(
     render_nodes(file_tree, 0, selected_path, cx, &mut file_items);
 
     gpui::div()
-        .w(gpui::px(250.))
+        .w_full()
         .h_full()
         .bg(*sidebar_bg)
         .border_r(gpui::px(1.))
