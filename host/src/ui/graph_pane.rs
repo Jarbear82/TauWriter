@@ -4,9 +4,11 @@
 //! between the definitions and instances graph panels, and to reduce `mod.rs` file length.
 //! [user-review: split required] See task ticket for splitting rationale.
 
-use gpui::{div, prelude::*, Hsla};
+use gpui::{div, prelude::*, Hsla, Entity, Render, Context, Window};
+use std::path::Path;
 
-use super::super::graph_sim::GraphNode;
+use super::super::graph_sim::{GraphNode, run_graph_simulation, run_def_simulation, parse_hubgs_file};
+use super::Workspace;
 
 /// A single graph panel containing nodes, edges, and a label.
 pub(crate) struct GraphPanel {
@@ -14,6 +16,127 @@ pub(crate) struct GraphPanel {
     pub(crate) edges: Vec<(usize, usize, String)>,
     pub(crate) label: &'static str,
 }
+
+// ─── GraphPaneView View ──────────────────────────────────────────────────────
+
+pub(crate) struct GraphPaneView {
+    _workspace: Entity<Workspace>,
+    graph_nodes: Vec<GraphNode>,
+    graph_edges: Vec<(usize, usize, String)>,
+    def_nodes: Vec<GraphNode>,
+    def_edges: Vec<(usize, usize, String)>,
+}
+
+impl GraphPaneView {
+    pub(crate) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
+        let ws = workspace.clone();
+        cx.observe(&workspace, move |this, _, cx| {
+            this.recalculate_layout(&ws, cx);
+        }).detach();
+
+        let mut this = Self {
+            _workspace: workspace.clone(),
+            graph_nodes: Vec::new(),
+            graph_edges: Vec::new(),
+            def_nodes: Vec::new(),
+            def_edges: Vec::new(),
+        };
+        this.recalculate_layout(&workspace, cx);
+        this
+    }
+
+    fn recalculate_layout(&mut self, workspace: &Entity<Workspace>, cx: &mut Context<Self>) {
+        let selected_path = workspace.read(cx).selected_path.clone();
+
+        cx.spawn(move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let layout_data = cx.background_executor().spawn(async move {
+                    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .parent()
+                        .unwrap()
+                        .to_path_buf();
+
+                    let hubgs_path = selected_path.as_ref()
+                        .map(|p| p.with_extension("hubgs"));
+
+                    let target_hubgs = if let Some(ref hp) = hubgs_path {
+                        if hp.exists() {
+                            Some(hp.clone())
+                        } else {
+                            crate::graph_sim::find_any_hubgs(&workspace_root)
+                        }
+                    } else {
+                        crate::graph_sim::find_any_hubgs(&workspace_root)
+                    };
+
+                    let mut graph_nodes = Vec::new();
+                    let mut graph_edges = Vec::new();
+                    let mut def_nodes = Vec::new();
+                    let mut def_edges = Vec::new();
+
+                    if let Some(hp) = target_hubgs {
+                        if let Ok((defs, instances)) = parse_hubgs_file(&hp) {
+                            let (n, e) = run_graph_simulation(&instances, 500.0, 500.0);
+                            graph_nodes = n;
+                            graph_edges = e;
+
+                            let (dn, de) = run_def_simulation(&defs, 500.0, 500.0);
+                            def_nodes = dn;
+                            def_edges = de;
+                        }
+                    }
+
+                    (graph_nodes, graph_edges, def_nodes, def_edges)
+                }).await;
+
+                let _ = this.update(&mut cx, |this, cx| {
+                    this.graph_nodes = layout_data.0;
+                    this.graph_edges = layout_data.1;
+                    this.def_nodes = layout_data.2;
+                    this.def_edges = layout_data.3;
+                    cx.notify();
+                });
+            }
+        }).detach();
+    }
+}
+
+impl Render for GraphPaneView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = gpui_component::Theme::global(cx);
+        let bg_color = theme.background;
+        let fg_color = theme.foreground;
+        let border_color = theme.border;
+        let sidebar_bg = theme.sidebar;
+        let active_accent = theme.primary;
+        let theme_muted_foreground = theme.muted_foreground;
+
+        let left_panel = GraphPanel {
+            nodes: self.def_nodes.clone(),
+            edges: self.def_edges.clone(),
+            label: "DEFINITIONS SCHEMA GRAPH",
+        };
+        let right_panel = GraphPanel {
+            nodes: self.graph_nodes.clone(),
+            edges: self.graph_edges.clone(),
+            label: "INSTANCES RELATION GRAPH",
+        };
+
+        render_graph_panels(
+            left_panel,
+            right_panel,
+            &bg_color,
+            &fg_color,
+            &border_color,
+            &sidebar_bg,
+            &active_accent,
+            &theme_muted_foreground,
+        )
+    }
+}
+
+// ─── Rendering helpers ───────────────────────────────────────────────────────
 
 /// Render a pair of graph panels (definitions + instances) as a split layout.
 pub(crate) fn render_graph_panels(

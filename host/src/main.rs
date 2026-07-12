@@ -6,7 +6,7 @@
 //! - `graph_sim` — HubGS force-directed layout engine
 //! - `lsp_client` — tauwriter-lsp subprocess management
 
-use gpui::{prelude::*, px, size, App, Application, Bounds, Entity, WindowBounds, WindowOptions};
+use gpui::{prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
 use parser::{Block, TextRun};
 use std::path::{Path, PathBuf};
 
@@ -23,7 +23,7 @@ mod graph_sim_tests;
 
 use lsp_client::{Diagnostic, LspClient};
 use parser::load_and_parse_twxml;
-use ui::{build_file_tree, ActiveTab, DemoView, DocumentHome, ParseState};
+use ui::{DemoView, DocumentHome, ParseState};
 
 extern "C" {
     fn tree_sitter_twxml() -> tree_sitter::Language;
@@ -91,9 +91,9 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 hubgs_instances: std::collections::HashMap::new(),
             });
 
-            // Build file tree — use fallible path resolution
+            // Build workspace model
             let workspace_root = resolve_workspace_root().unwrap_or_else(|| PathBuf::from("."));
-            let file_tree = build_file_tree(&workspace_root);
+            let workspace = cx.new(|_| ui::Workspace::new(workspace_root.clone()));
 
             // Load and watch themes from local themes directory
             let themes_dir = workspace_root.join("themes");
@@ -121,7 +121,9 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     .line_number(true)
             });
 
-            let view = cx.new(|cx| ui::DocumentView::new(document_home.clone(), input_state.clone(), cx));
+            let sidebar = cx.new(|cx| ui::SidebarView::new(workspace.clone(), cx));
+            let document_view = cx.new(|cx| ui::DocumentView::new(workspace.clone(), document_home.clone(), input_state.clone(), cx));
+            let graph_pane = cx.new(|cx| ui::GraphPaneView::new(workspace.clone(), cx));
 
             // Set initial XML Editor content
             let xml_content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -129,50 +131,28 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 state.set_value(xml_content.clone(), window, cx);
             });
 
-            // Initialize Graph data
-            let mut graph_nodes = Vec::new();
-            let mut graph_edges = Vec::new();
-            let mut def_nodes = Vec::new();
-            let mut def_edges = Vec::new();
-            let hubgs_path = path.with_extension("hubgs");
-            let target_hubgs = if hubgs_path.exists() {
-                Some(hubgs_path)
-            } else {
-                graph_sim::find_any_hubgs(&workspace_root)
-            };
-
-            if let Some(hp) = target_hubgs {
-                if let Ok((defs, instances)) = graph_sim::parse_hubgs_file(&hp) {
-                    let (n, e) = graph_sim::run_graph_simulation(&instances, 500.0, 500.0);
-                    graph_nodes = n;
-                    graph_edges = e;
-
-                    let (dn, de) = graph_sim::run_def_simulation(&defs, 500.0, 500.0);
-                    def_nodes = dn;
-                    def_edges = de;
-                }
-            }
-
             let (diag_tx, mut diag_rx) =
                 tokio::sync::mpsc::unbounded_channel::<(String, Vec<Diagnostic>)>();
-            let demo_view_handle: std::sync::Arc<std::sync::Mutex<Option<Entity<DemoView>>>> =
-                std::sync::Arc::new(std::sync::Mutex::new(None));
             let lsp_client =
                 LspClient::new(workspace_root.clone(), diag_tx).map(std::sync::Arc::new);
 
-            let demo_view_handle_clone = demo_view_handle.clone();
+            workspace.update(cx, |w, _| {
+                w.lsp_client = lsp_client.clone();
+                w.selected_path = Some(path.clone());
+            });
+
+            let workspace_clone = workspace.clone();
             cx.spawn(|cx: &mut gpui::AsyncApp| {
                 let cx = (*cx).clone();
+                let workspace = workspace_clone;
                 async move {
                     while let Some((_uri, diags)) = diag_rx.recv().await {
-                        if let Some(view) = &*demo_view_handle_clone.lock().unwrap() {
-                            let _ = cx.update(|cx| {
-                                let _ = view.update(cx, |this, cx| {
-                                    this.diagnostics = diags;
-                                    cx.notify();
-                                });
+                        let _ = cx.update(|cx| {
+                            workspace.update(cx, |this, cx| {
+                                this.diagnostics = diags;
+                                cx.notify();
                             });
-                        }
+                        });
                     }
                 }
             })
@@ -181,19 +161,34 @@ fn open_window(twxml_path: String, cx: &mut App) {
             let demo_view = cx.new(|cx| {
                 cx.observe(&document_home, |_, _, cx| cx.notify()).detach();
 
+                // Subscribe to SidebarView file selection event
+                let sidebar_sub = cx.subscribe_in(&sidebar, window, {
+                    move |this: &mut DemoView, _sidebar, ev: &ui::sidebar::SidebarEvent, window, cx| {
+                        match ev {
+                            ui::sidebar::SidebarEvent::FileSelected(path) => {
+                                this.select_file(path.clone(), window, cx);
+                            }
+                        }
+                    }
+                });
+
                 // Subscribe to InputEvent::Change to sync XML edits to the Preview
-                let subscriptions = vec![cx.subscribe_in(&input_state, window, {
+                let input_sub = cx.subscribe_in(&input_state, window, {
                     let input_state = input_state.clone();
                     let document_home = document_home.clone();
-                    let lsp_client = lsp_client.clone();
-                    move |this: &mut DemoView,
+                    let workspace = workspace.clone();
+                    move |_this: &mut DemoView,
                           _,
                           ev: &gpui_component::input::InputEvent,
                           _window,
                           cx| match ev {
                         gpui_component::input::InputEvent::Change => {
                             let text = input_state.read(cx).value().to_string();
-                            if let Some(ref p) = this.selected_path {
+                            let (selected_path, lsp_client) = workspace.update(cx, |w, _| {
+                                (w.selected_path.clone(), w.lsp_client.clone())
+                            });
+
+                            if let Some(ref p) = selected_path {
                                 let _ = std::fs::write(p, &text);
                                 if let Some(ref client) = lsp_client {
                                     client.notify_change(p, &text);
@@ -220,27 +215,20 @@ fn open_window(twxml_path: String, cx: &mut App) {
                         }
                         _ => {}
                     }
-                })];
+                });
 
                 DemoView {
-                    document_home,
-                    view,
-                    selected_path: Some(path.clone()),
-                    file_tree,
+                    workspace,
+                    sidebar,
+                    document_view,
+                    graph_pane,
+                    active_tab: ui::ActiveTab::Document,
                     settings_open: false,
-                    active_tab: ActiveTab::Document,
+                    document_home,
                     input_state,
-                    _subscriptions: subscriptions,
-                    graph_nodes,
-                    graph_edges,
-                    def_nodes,
-                    def_edges,
-                    lsp_client: lsp_client.clone(),
-                    diagnostics: Vec::new(),
+                    _subscriptions: vec![sidebar_sub, input_sub],
                 }
             });
-
-            *demo_view_handle.lock().unwrap() = Some(demo_view.clone());
 
             if let Some(ref client) = lsp_client {
                 client.notify_open(&path, &xml_content);
