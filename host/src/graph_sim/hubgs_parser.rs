@@ -104,7 +104,7 @@ fn update_state(state: &mut ParserState, trimmed: &str) -> bool {
 fn parse_definition_line(
     trimmed: &str,
     current_hub_name: &mut Option<String>,
-    current_hub_links: &mut Vec<(String, String)>,
+    current_hub_links: &mut Vec<(String, String, String)>,
     definitions: &mut Vec<HubgsDefinition>,
 ) -> anyhow::Result<()> {
     if trimmed.ends_with('{') && !trimmed.contains(':') {
@@ -124,19 +124,19 @@ fn parse_definition_line(
     }
 
     if trimmed.contains("ALLOWS [") {
-        let (arrow_end, rel_name) = if let Some(double_arrow_idx) = trimmed.find("<->") {
-            (double_arrow_idx + 3, trimmed[..double_arrow_idx].trim().to_string())
+        let (arrow_end, rel_name, arrow_str) = if let Some(double_arrow_idx) = trimmed.find("<->") {
+            (double_arrow_idx + 3, trimmed[..double_arrow_idx].trim().to_string(), "<->".to_string())
         } else if let Some(arrow_idx) = trimmed.find("->") {
-            (arrow_idx + 2, trimmed[..arrow_idx].trim().to_string())
+            (arrow_idx + 2, trimmed[..arrow_idx].trim().to_string(), "->".to_string())
         } else if let Some(rarrow_idx) = trimmed.find("<-") {
-            (rarrow_idx + 2, trimmed[..rarrow_idx].trim().to_string())
+            (rarrow_idx + 2, trimmed[..rarrow_idx].trim().to_string(), "<-".to_string())
         } else if let Some(dash_idx) = trimmed.find(" - ") {
-            (dash_idx + 3, trimmed[..dash_idx].trim().to_string())
+            (dash_idx + 3, trimmed[..dash_idx].trim().to_string(), "-".to_string())
         } else if let Some(dash_idx) = trimmed.find('-') {
             let before = &trimmed[..dash_idx];
             let after = &trimmed[dash_idx + 1..];
             if (before.ends_with(' ') || before.is_empty()) && (after.starts_with(' ') || after.starts_with('(')) {
-                (dash_idx + 1, before.trim().to_string())
+                (dash_idx + 1, before.trim().to_string(), "-".to_string())
             } else {
                 return Ok(());
             }
@@ -166,7 +166,7 @@ fn parse_definition_line(
             let target_part = &trimmed[allows_idx + 8..];
             if let Some(end_bracket) = target_part.find(']') {
                 let target_hub = target_part[..end_bracket].trim().to_string();
-                current_hub_links.push((rel_name, target_hub));
+                current_hub_links.push((rel_name, arrow_str, target_hub));
             } else {
                 anyhow::bail!("Invalid HubGS syntax: missing closing bracket in target: {}", trimmed);
             }
@@ -263,7 +263,7 @@ INSTANCES [
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "Character");
         assert_eq!(defs[0].links.len(), 1);
-        assert_eq!(defs[0].links[0], ("friend".to_string(), "Character".to_string()));
+        assert_eq!(defs[0].links[0], ("friend".to_string(), "->".to_string(), "Character".to_string()));
 
         assert_eq!(insts.len(), 1);
         assert_eq!(insts[0].id, "hero");
@@ -319,8 +319,8 @@ DEFINITIONS [
         assert_eq!(defs.len(), 1);
         let links = &defs[0].links;
         assert_eq!(links.len(), 3);
-        assert_eq!(links[0], ("friend".to_string(), "Character".to_string()));
-        assert_eq!(links[1], ("boss".to_string(), "Character".to_string()));
-        assert_eq!(links[2], ("peer".to_string(), "Character".to_string()));
+        assert_eq!(links[0], ("friend".to_string(), "<->".to_string(), "Character".to_string()));
+        assert_eq!(links[1], ("boss".to_string(), "<-".to_string(), "Character".to_string()));
+        assert_eq!(links[2], ("peer".to_string(), "-".to_string(), "Character".to_string()));
     }
 }

@@ -21,7 +21,7 @@ fn test_parse_hubgs_file_valid() {
     assert!(instances.iter().any(|i| i.id == "workshop"));
     
     // Check simulator layout coordinate bounds
-    let (nodes, _edges) = run_graph_simulation(&instances, 500.0, 500.0);
+    let (nodes, _edges) = run_graph_simulation(&instances, &defs, 500.0, 500.0);
     assert_eq!(nodes.len(), instances.len());
     for node in &nodes {
         assert!(node.x >= 24.0 && node.x <= 476.0, "Node x out of bounds: {}", node.x);

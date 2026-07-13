@@ -37,7 +37,7 @@ pub(crate) struct GraphNode {
 
 pub(crate) struct HubgsDefinition {
     pub(crate) name: String,
-    pub(crate) links: Vec<(String, String)>,
+    pub(crate) links: Vec<(String, String, String)>, // (relation, arrow, target_hub)
 }
 
 pub(crate) struct HubgsInstance {
@@ -59,6 +59,7 @@ pub(crate) struct GraphEdge {
 /// Run a force-directed layout over instance nodes.
 pub(crate) fn run_graph_simulation(
     instances: &[HubgsInstance],
+    definitions: &[HubgsDefinition],
     width: f32,
     height: f32,
 ) -> (Vec<GraphNode>, Vec<GraphEdge>) {
@@ -94,6 +95,14 @@ pub(crate) fn run_graph_simulation(
         })
         .collect();
 
+    // Map relation names to their defined arrow type
+    let mut relation_arrows = std::collections::HashMap::new();
+    for def in definitions {
+        for (rel_name, arrow, _) in &def.links {
+            relation_arrows.insert(rel_name.as_str(), arrow.as_str());
+        }
+    }
+
     let id_to_index: std::collections::HashMap<&str, usize> = instances
         .iter()
         .enumerate()
@@ -102,12 +111,13 @@ pub(crate) fn run_graph_simulation(
 
     let mut edges = Vec::new();
     for (src_idx, inst) in instances.iter().enumerate() {
-        for (_, target_id) in &inst.links {
+        for (rel_name, target_id) in &inst.links {
             if let Some(&tgt_idx) = id_to_index.get(target_id.as_str()) {
+                let arrow = relation_arrows.get(rel_name.as_str()).copied().unwrap_or("-");
                 edges.push(GraphEdge {
                     source: src_idx,
                     target: tgt_idx,
-                    label: String::new(),
+                    label: arrow.to_string(),
                 });
             }
         }
@@ -161,12 +171,12 @@ pub(crate) fn run_def_simulation(
 
     let mut edges = Vec::new();
     for (src_idx, def) in definitions.iter().enumerate() {
-        for (_, target_hub) in &def.links {
+        for (_, arrow, target_hub) in &def.links {
             if let Some(&tgt_idx) = name_to_index.get(target_hub.as_str()) {
                 edges.push(GraphEdge {
                     source: src_idx,
                     target: tgt_idx,
-                    label: String::new(),
+                    label: arrow.clone(),
                 });
             }
         }

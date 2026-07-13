@@ -77,7 +77,7 @@ impl GraphPaneView {
 
                     if let Some(hp) = target_hubgs {
                         if let Ok((defs, instances)) = parse_hubgs_file(&hp) {
-                            let (n, e) = run_graph_simulation(&instances, 500.0, 500.0);
+                            let (n, e) = run_graph_simulation(&instances, &defs, 500.0, 500.0);
                             graph_nodes = n;
                             graph_edges = e;
 
@@ -202,13 +202,21 @@ fn render_single_panel(
                 let src_idx = edge.source;
                 let tgt_idx = edge.target;
                 if src_idx < node_ref.len() && tgt_idx < node_ref.len() {
+                    let x1 = node_ref[src_idx].x;
+                    let y1 = node_ref[src_idx].y;
+                    let x2 = node_ref[tgt_idx].x;
+                    let y2 = node_ref[tgt_idx].y;
+                    let dx = x2 - x1;
+                    let dy = y2 - y1;
+                    let dist = (dx * dx + dy * dy).sqrt();
+
                     let p1 = gpui::point(
-                        bounds.origin.x + gpui::px(node_ref[src_idx].x),
-                        bounds.origin.y + gpui::px(node_ref[src_idx].y),
+                        bounds.origin.x + gpui::px(x1),
+                        bounds.origin.y + gpui::px(y1),
                     );
                     let p2 = gpui::point(
-                        bounds.origin.x + gpui::px(node_ref[tgt_idx].x),
-                        bounds.origin.y + gpui::px(node_ref[tgt_idx].y),
+                        bounds.origin.x + gpui::px(x2),
+                        bounds.origin.y + gpui::px(y2),
                     );
 
                     let mut builder = gpui::PathBuilder::stroke(gpui::px(2.0));
@@ -216,6 +224,52 @@ fn render_single_panel(
                     builder.line_to(p2);
                     if let Ok(path) = builder.build() {
                         window.paint_path(path, border_color);
+                    }
+
+                    if dist > 0.001 {
+                        let ux = dx / dist;
+                        let uy = dy / dist;
+                        let px = -uy;
+                        let py = ux;
+
+                        let draw_arrowhead = |window: &mut gpui::Window, tip_x: f32, tip_y: f32, base_x: f32, base_y: f32| {
+                            let left_x = base_x + 6.0 * px;
+                            let left_y = base_y + 6.0 * py;
+                            let right_x = base_x - 6.0 * px;
+                            let right_y = base_y - 6.0 * py;
+
+                            let mut arrow_builder = gpui::PathBuilder::stroke(gpui::px(2.0));
+                            arrow_builder.move_to(gpui::point(
+                                bounds.origin.x + gpui::px(left_x),
+                                bounds.origin.y + gpui::px(left_y),
+                            ));
+                            arrow_builder.line_to(gpui::point(
+                                bounds.origin.x + gpui::px(tip_x),
+                                bounds.origin.y + gpui::px(tip_y),
+                            ));
+                            arrow_builder.line_to(gpui::point(
+                                bounds.origin.x + gpui::px(right_x),
+                                bounds.origin.y + gpui::px(right_y),
+                            ));
+                            if let Ok(arrow_path) = arrow_builder.build() {
+                                window.paint_path(arrow_path, border_color);
+                            }
+                        };
+
+                        if edge.label == "->" || edge.label == "<->" {
+                            let tip_x = x2 - 26.0 * ux;
+                            let tip_y = y2 - 26.0 * uy;
+                            let base_x = tip_x - 10.0 * ux;
+                            let base_y = tip_y - 10.0 * uy;
+                            draw_arrowhead(window, tip_x, tip_y, base_x, base_y);
+                        }
+                        if edge.label == "<-" || edge.label == "<->" {
+                            let tip_x = x1 + 26.0 * ux;
+                            let tip_y = y1 + 26.0 * uy;
+                            let base_x = tip_x + 10.0 * ux;
+                            let base_y = tip_y + 10.0 * uy;
+                            draw_arrowhead(window, tip_x, tip_y, base_x, base_y);
+                        }
                     }
                 }
             }
