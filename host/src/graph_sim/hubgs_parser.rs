@@ -128,6 +128,18 @@ fn parse_definition_line(
             (double_arrow_idx + 3, trimmed[..double_arrow_idx].trim().to_string())
         } else if let Some(arrow_idx) = trimmed.find("->") {
             (arrow_idx + 2, trimmed[..arrow_idx].trim().to_string())
+        } else if let Some(rarrow_idx) = trimmed.find("<-") {
+            (rarrow_idx + 2, trimmed[..rarrow_idx].trim().to_string())
+        } else if let Some(dash_idx) = trimmed.find(" - ") {
+            (dash_idx + 3, trimmed[..dash_idx].trim().to_string())
+        } else if let Some(dash_idx) = trimmed.find('-') {
+            let before = &trimmed[..dash_idx];
+            let after = &trimmed[dash_idx + 1..];
+            if (before.ends_with(' ') || before.is_empty()) && (after.starts_with(' ') || after.starts_with('(')) {
+                (dash_idx + 1, before.trim().to_string())
+            } else {
+                return Ok(());
+            }
         } else {
             return Ok(());
         };
@@ -288,5 +300,27 @@ DEFINITIONS [
         "#;
         let res = parse_hubgs(sample);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_hubgs_parser_supports_all_directionalities() {
+        let sample = r#"
+DEFINITIONS [
+    HUBS [
+        Character {
+            friend <-> (0..*) ALLOWS [Character],
+            boss <- (0..1) ALLOWS [Character],
+            peer - (1..1) ALLOWS [Character]
+        }
+    ]
+]
+        "#;
+        let (defs, _) = parse_hubgs(sample).unwrap();
+        assert_eq!(defs.len(), 1);
+        let links = &defs[0].links;
+        assert_eq!(links.len(), 3);
+        assert_eq!(links[0], ("friend".to_string(), "Character".to_string()));
+        assert_eq!(links[1], ("boss".to_string(), "Character".to_string()));
+        assert_eq!(links[2], ("peer".to_string(), "Character".to_string()));
     }
 }
