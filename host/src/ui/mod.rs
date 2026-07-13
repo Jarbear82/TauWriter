@@ -7,6 +7,7 @@
 use gpui::{prelude::*, Entity, Subscription, div};
 use gpui_component::input::InputState;
 use crate::parser::{Block, TextRun};
+use crate::graph_sim::InstanceLink;
 use std::path::{Path, PathBuf};
 
 mod document_view;
@@ -80,7 +81,7 @@ pub(crate) struct DocumentHome {
     pub(crate) metadata: Vec<(String, String)>,
     pub(crate) blocks: Vec<Block>,
     pub(crate) parse_state: ParseState,
-    pub(crate) hubgs_instances: std::collections::HashMap<String, (String, String, Vec<(String, String)>)>,
+    pub(crate) hubgs_instances: std::collections::HashMap<String, (String, String, Vec<InstanceLink>)>,
 }
 
 // ─── DemoView methods ───────────────────────────────────────────────────────

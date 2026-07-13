@@ -101,10 +101,12 @@ fn update_state(state: &mut ParserState, trimmed: &str) -> bool {
     false
 }
 
+use crate::graph_sim::{HubgsLink, InstanceLink};
+
 fn parse_definition_line(
     trimmed: &str,
     current_hub_name: &mut Option<String>,
-    current_hub_links: &mut Vec<(String, String, String)>,
+    current_hub_links: &mut Vec<HubgsLink>,
     definitions: &mut Vec<HubgsDefinition>,
 ) -> anyhow::Result<()> {
     if trimmed.ends_with('{') && !trimmed.contains(':') {
@@ -166,7 +168,11 @@ fn parse_definition_line(
             let target_part = &trimmed[allows_idx + 8..];
             if let Some(end_bracket) = target_part.find(']') {
                 let target_hub = target_part[..end_bracket].trim().to_string();
-                current_hub_links.push((rel_name, arrow_str, target_hub));
+                current_hub_links.push(HubgsLink {
+                    name: rel_name,
+                    arrow: arrow_str,
+                    target: target_hub,
+                });
             } else {
                 anyhow::bail!("Invalid HubGS syntax: missing closing bracket in target: {}", trimmed);
             }
@@ -181,7 +187,7 @@ fn parse_instance_line(
     current_type: &mut Option<String>,
     current_name: &mut String,
     current_color: &mut Option<u32>,
-    current_links: &mut Vec<(String, String)>,
+    current_links: &mut Vec<InstanceLink>,
     instances: &mut Vec<HubgsInstance>,
 ) {
     if trimmed.contains(':') && trimmed.ends_with('{') {
@@ -232,7 +238,10 @@ fn parse_instance_line(
             for t_id in inside.split(',') {
                 let cleaned = t_id.trim();
                 if !cleaned.is_empty() {
-                    current_links.push((key.to_string(), cleaned.to_string()));
+                    current_links.push(InstanceLink {
+                        relation: key.to_string(),
+                        target: cleaned.to_string(),
+                    });
                 }
             }
         }
@@ -263,7 +272,9 @@ INSTANCES [
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "Character");
         assert_eq!(defs[0].links.len(), 1);
-        assert_eq!(defs[0].links[0], ("friend".to_string(), "->".to_string(), "Character".to_string()));
+        assert_eq!(defs[0].links[0].name, "friend");
+        assert_eq!(defs[0].links[0].arrow, "->");
+        assert_eq!(defs[0].links[0].target, "Character");
 
         assert_eq!(insts.len(), 1);
         assert_eq!(insts[0].id, "hero");
@@ -319,8 +330,14 @@ DEFINITIONS [
         assert_eq!(defs.len(), 1);
         let links = &defs[0].links;
         assert_eq!(links.len(), 3);
-        assert_eq!(links[0], ("friend".to_string(), "<->".to_string(), "Character".to_string()));
-        assert_eq!(links[1], ("boss".to_string(), "<-".to_string(), "Character".to_string()));
-        assert_eq!(links[2], ("peer".to_string(), "-".to_string(), "Character".to_string()));
+        assert_eq!(links[0].name, "friend");
+        assert_eq!(links[0].arrow, "<->");
+        assert_eq!(links[0].target, "Character");
+        assert_eq!(links[1].name, "boss");
+        assert_eq!(links[1].arrow, "<-");
+        assert_eq!(links[1].target, "Character");
+        assert_eq!(links[2].name, "peer");
+        assert_eq!(links[2].arrow, "-");
+        assert_eq!(links[2].target, "Character");
     }
 }

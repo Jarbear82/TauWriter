@@ -35,9 +35,22 @@ pub(crate) struct GraphNode {
     pub(crate) vy: f32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct HubgsLink {
+    pub(crate) name: String,
+    pub(crate) arrow: String,
+    pub(crate) target: String,
+}
+
 pub(crate) struct HubgsDefinition {
     pub(crate) name: String,
-    pub(crate) links: Vec<(String, String, String)>, // (relation, arrow, target_hub)
+    pub(crate) links: Vec<HubgsLink>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct InstanceLink {
+    pub(crate) relation: String,
+    pub(crate) target: String,
 }
 
 pub(crate) struct HubgsInstance {
@@ -45,7 +58,7 @@ pub(crate) struct HubgsInstance {
     pub(crate) type_name: String,
     pub(crate) name: String,
     pub(crate) theme_color: Option<u32>,
-    pub(crate) links: Vec<(String, String)>, // (relation, target_id)
+    pub(crate) links: Vec<InstanceLink>,
 }
 
 #[derive(Clone)]
@@ -98,8 +111,8 @@ pub(crate) fn run_graph_simulation(
     // Map relation names to their defined arrow type
     let mut relation_arrows = std::collections::HashMap::new();
     for def in definitions {
-        for (rel_name, arrow, _) in &def.links {
-            relation_arrows.insert(rel_name.as_str(), arrow.as_str());
+        for link in &def.links {
+            relation_arrows.insert(link.name.as_str(), link.arrow.as_str());
         }
     }
 
@@ -111,9 +124,9 @@ pub(crate) fn run_graph_simulation(
 
     let mut edges = Vec::new();
     for (src_idx, inst) in instances.iter().enumerate() {
-        for (rel_name, target_id) in &inst.links {
-            if let Some(&tgt_idx) = id_to_index.get(target_id.as_str()) {
-                let arrow = relation_arrows.get(rel_name.as_str()).copied().unwrap_or("-");
+        for link in &inst.links {
+            if let Some(&tgt_idx) = id_to_index.get(link.target.as_str()) {
+                let arrow = relation_arrows.get(link.relation.as_str()).copied().unwrap_or("-");
                 edges.push(GraphEdge {
                     source: src_idx,
                     target: tgt_idx,
@@ -171,12 +184,12 @@ pub(crate) fn run_def_simulation(
 
     let mut edges = Vec::new();
     for (src_idx, def) in definitions.iter().enumerate() {
-        for (_, arrow, target_hub) in &def.links {
-            if let Some(&tgt_idx) = name_to_index.get(target_hub.as_str()) {
+        for link in &def.links {
+            if let Some(&tgt_idx) = name_to_index.get(link.target.as_str()) {
                 edges.push(GraphEdge {
                     source: src_idx,
                     target: tgt_idx,
-                    label: arrow.clone(),
+                    label: link.arrow.clone(),
                 });
             }
         }

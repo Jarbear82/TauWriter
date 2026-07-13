@@ -551,8 +551,8 @@ pub(crate) fn render_run(
         let mut tooltip_text = format!("HubRef: {}", hub_id);
         if let Some((type_name, name, links)) = hubgs_instances.get(&hub_id) {
             tooltip_text = format!("Hub: {}\nname: \"{}\"", type_name, name);
-            for (rel, target) in links {
-                tooltip_text.push_str(&format!("\n- {} -> {}", rel, target));
+            for link in links {
+                tooltip_text.push_str(&format!("\n- {} -> {}", link.relation, link.target));
             }
         }
         run_tooltip = tooltip_text;
