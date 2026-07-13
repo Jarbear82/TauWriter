@@ -11,9 +11,9 @@ use super::super::graph_sim::{GraphNode, GraphEdge, run_graph_simulation, run_de
 use super::Workspace;
 
 /// A single graph panel containing nodes, edges, and a label.
-pub(crate) struct GraphPanel {
-    pub(crate) nodes: Vec<GraphNode>,
-    pub(crate) edges: Vec<GraphEdge>,
+pub(crate) struct GraphPanel<'a> {
+    pub(crate) nodes: &'a [GraphNode],
+    pub(crate) edges: &'a [GraphEdge],
     pub(crate) label: &'static str,
 }
 
@@ -113,13 +113,13 @@ impl Render for GraphPaneView {
         let theme_muted_foreground = theme.muted_foreground;
 
         let left_panel = GraphPanel {
-            nodes: self.def_nodes.clone(),
-            edges: self.def_edges.clone(),
+            nodes: &self.def_nodes,
+            edges: &self.def_edges,
             label: "DEFINITIONS SCHEMA GRAPH",
         };
         let right_panel = GraphPanel {
-            nodes: self.graph_nodes.clone(),
-            edges: self.graph_edges.clone(),
+            nodes: &self.graph_nodes,
+            edges: &self.graph_edges,
             label: "INSTANCES RELATION GRAPH",
         };
 
@@ -140,8 +140,8 @@ impl Render for GraphPaneView {
 
 /// Render a pair of graph panels (definitions + instances) as a split layout.
 pub(crate) fn render_graph_panels(
-    left_panel: GraphPanel,
-    right_panel: GraphPanel,
+    left_panel: GraphPanel<'_>,
+    right_panel: GraphPanel<'_>,
     _bg_color: &gpui::Hsla,
     fg_color: &gpui::Hsla,
     border_color: &gpui::Hsla,
@@ -177,7 +177,7 @@ pub(crate) fn render_graph_panels(
 }
 
 fn render_single_panel(
-    panel: GraphPanel,
+    panel: GraphPanel<'_>,
     border_color: &Hsla,
     sidebar_bg: &Hsla,
     fg_color: &Hsla,
@@ -192,9 +192,9 @@ fn render_single_panel(
     let edges = panel.edges;
     let label = panel.label;
 
-    // Canvas that draws edges as paths (needs owned data via clone)
-    let edge_data = edges.clone();
-    let node_ref = nodes.clone();
+    // Canvas that draws edges as paths (needs owned data via to_vec)
+    let edge_data = edges.to_vec();
+    let node_ref = nodes.to_vec();
     let canvas = gpui::canvas(
         move |_, _, _| {},
         move |bounds, _, window, _| {

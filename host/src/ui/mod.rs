@@ -10,6 +10,8 @@ use crate::parser::{Block, TextRun};
 use crate::graph_sim::InstanceLink;
 use std::path::{Path, PathBuf};
 
+gpui::actions!(tauwriter, [ToggleSettings, SelectDocumentTab, SelectGraphTab]);
+
 mod document_view;
 mod graph_pane;
 pub(crate) mod sidebar;
@@ -56,6 +58,7 @@ impl Workspace {
 // ─── DemoView struct ────────────────────────────────────────────────────────
 
 pub(crate) struct DemoView {
+    pub(crate) focus_handle: gpui::FocusHandle,
     pub(crate) workspace: Entity<Workspace>,
     pub(crate) sidebar: Entity<sidebar::SidebarView>,
     pub(crate) document_view: Entity<DocumentView>,
@@ -76,8 +79,8 @@ pub(crate) enum ParseState {
 // ─── DocumentHome & traits ──────────────────────────────────────────────────
 
 pub(crate) struct DocumentHome {
-    pub(crate) title: String,
-    pub(crate) author: String,
+    pub(crate) title: gpui::SharedString,
+    pub(crate) author: gpui::SharedString,
     pub(crate) metadata: Vec<(String, String)>,
     pub(crate) blocks: Vec<Block>,
     pub(crate) parse_state: ParseState,
@@ -87,6 +90,21 @@ pub(crate) struct DocumentHome {
 // ─── DemoView methods ───────────────────────────────────────────────────────
 
 impl DemoView {
+    pub(crate) fn toggle_settings(&mut self, _: &ToggleSettings, _: &mut gpui::Window, cx: &mut Context<Self>) {
+        self.settings_open = !self.settings_open;
+        cx.notify();
+    }
+
+    pub(crate) fn select_document_tab(&mut self, _: &SelectDocumentTab, _: &mut gpui::Window, cx: &mut Context<Self>) {
+        self.active_tab = ActiveTab::Document;
+        cx.notify();
+    }
+
+    pub(crate) fn select_graph_tab(&mut self, _: &SelectGraphTab, _: &mut gpui::Window, cx: &mut Context<Self>) {
+        self.active_tab = ActiveTab::Graph;
+        cx.notify();
+    }
+
     pub(crate) fn select_file(
         &mut self,
         path: std::path::PathBuf,
@@ -110,21 +128,21 @@ impl DemoView {
             async move {
                 let path_clone = path.clone();
                 
-                // 1. Read file and parse TWXML in background thread
-                let (xml_content, parsed_twxml) = cx.background_executor().spawn(async move {
+                // 1. Spawn file reading and parsing task in background thread
+                let task_twxml = cx.background_executor().spawn(async move {
                     let content = std::fs::read_to_string(&path_clone).unwrap_or_default();
                     let parsed = crate::parser::load_and_parse_twxml(&path_clone.to_string_lossy()).ok();
                     (content, parsed)
-                }).await;
+                });
 
-                // 2. Load HubGS definitions & instances in background thread
+                // 2. Spawn HubGS definitions & instances loading task in background thread
                 let hubgs_path = path.with_extension("hubgs");
                 let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
                     .parent()
                     .unwrap()
                     .to_path_buf();
                     
-                let hubgs_data = cx.background_executor().spawn(async move {
+                let task_hubgs = cx.background_executor().spawn(async move {
                     let target_hubgs = if hubgs_path.exists() {
                         Some(hubgs_path)
                     } else {
@@ -143,7 +161,11 @@ impl DemoView {
                         }
                     }
                     hubgs_map
-                }).await;
+                });
+
+                // Await both tasks in parallel
+                let (xml_content, parsed_twxml) = task_twxml.await;
+                let hubgs_data = task_hubgs.await;
 
                 // 3. Update main UI state on the GUI thread
                 let _ = cx.update(|cx| {
@@ -166,14 +188,14 @@ impl DemoView {
                         doc.hubgs_instances = hubgs_data;
                         if is_twxml {
                             if let Some((title, author, metadata, blocks)) = parsed_twxml {
-                                doc.title = title;
-                                doc.author = author;
+                                doc.title = title.into();
+                                doc.author = author.into();
                                 doc.metadata = metadata;
                                 doc.blocks = blocks;
                                 doc.parse_state = ParseState::Synced;
                             } else {
-                                doc.title = "Error Loading Document".to_string();
-                                doc.author = "System".to_string();
+                                doc.title = "Error Loading Document".into();
+                                doc.author = "System".into();
                                 doc.metadata = Vec::new();
                                 doc.blocks = vec![Block::Paragraph {
                                     runs: vec![TextRun::new("Could not parse TWXML document.")],
@@ -184,8 +206,8 @@ impl DemoView {
                                 doc.parse_state = ParseState::Synced;
                             }
                         } else {
-                            doc.title = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                            doc.author = "System".to_string();
+                            doc.title = path.file_name().unwrap_or_default().to_string_lossy().to_string().into();
+                            doc.author = "System".into();
                             doc.metadata = Vec::new();
                             doc.blocks = vec![Block::Paragraph {
                                 runs: vec![TextRun::new("Visual preview is only available for .twxml documents.")],
@@ -303,6 +325,11 @@ impl gpui::Render for DemoView {
             );
 
         div()
+            .key_context("DemoView")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::toggle_settings))
+            .on_action(cx.listener(Self::select_document_tab))
+            .on_action(cx.listener(Self::select_graph_tab))
             .size_full()
             .flex()
             .flex_col()
@@ -329,8 +356,8 @@ mod tests {
     fn test_ui_document_home_state_transitions_correctly() {
         // Setup initial DocumentHome state (Synced)
         let mut doc = DocumentHome {
-            title: "Test".to_string(),
-            author: "Author".to_string(),
+            title: "Test".into(),
+            author: "Author".into(),
             metadata: Vec::new(),
             blocks: vec![],
             parse_state: ParseState::Synced,

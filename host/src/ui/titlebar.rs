@@ -73,7 +73,7 @@ impl RenderOnce for SettingsPanel {
         }
 
         gpui::div()
-            .id("theme_list")
+            .id("theme_settings_panel")
             .w(gpui::px(250.))
             .h_full()
             .bg(sidebar_bg)
@@ -106,7 +106,7 @@ impl RenderOnce for SettingsPanel {
 #[derive(IntoElement)]
 pub(crate) struct TitleBar {
     pub(crate) settings_open: bool,
-    pub(crate) title: String,
+    pub(crate) title: gpui::SharedString,
     pub(crate) view: Entity<crate::ui::DemoView>,
 }
 

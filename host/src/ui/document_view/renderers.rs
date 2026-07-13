@@ -10,9 +10,9 @@ pub(crate) fn render_block(
     input_state: &Entity<gpui_component::input::InputState>,
     block: &Block,
     idx: usize,
+    doc_blocks: &[Block],
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
-    let doc_blocks = document_home.read(cx).blocks.clone();
 
     match block {
         Block::Heading { level, text, id: _, attributes: _, range: _ } => {
@@ -438,6 +438,7 @@ pub(crate) fn render_block(
                         input_state,
                         inner_block,
                         idx + 1000 * inner_idx,
+                        doc_blocks,
                         cx,
                     ));
                 }
@@ -494,6 +495,7 @@ pub(crate) fn render_block(
                     input_state,
                     inner_block,
                     idx + 1000 * inner_idx,
+                    doc_blocks,
                     cx,
                 ));
             }
@@ -566,10 +568,9 @@ pub(crate) fn render_run(
             });
     } else if let Some(ref fn_id) = run.footnote_ref {
         let fn_id = fn_id.clone();
-        let blocks_clone = blocks.to_vec();
 
         // Build Footnote Ref tooltip
-        let footnote_content = find_footnote_content(&blocks_clone, &fn_id);
+        let footnote_content = find_footnote_content(blocks, &fn_id);
         run_tooltip = format!("Footnote Ref: {}\n{}", fn_id, footnote_content);
 
         text_el = text_el
@@ -581,7 +582,6 @@ pub(crate) fn render_run(
             });
     } else if let Some(ref link) = run.link {
         let link = link.clone();
-        let blocks_clone = blocks.to_vec();
         let input_state = input_state.clone();
         let doc_home = document_home.clone();
 
@@ -589,7 +589,7 @@ pub(crate) fn render_run(
         let mut tooltip_text = format!("Link: {}", link);
         if link.starts_with('#') {
             let target_id = &link[1..];
-            if let Some(target_type) = find_block_type_by_id(&blocks_clone, target_id) {
+            if let Some(target_type) = find_block_type_by_id(blocks, target_id) {
                 tooltip_text = format!("Jump to element: {}\nType: {}", target_id, target_type);
             }
         }

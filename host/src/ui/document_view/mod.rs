@@ -107,7 +107,7 @@ impl Render for DocumentView {
             .unwrap_or_else(|| "No File".to_string());
         let editor_header = format!("RAW EDITOR: {}", active_file);
 
-        let (parse_state, blocks, title, author, metadata) = {
+        let (parse_state_owned, blocks_owned, title_owned, author_owned, metadata_owned) = {
             let doc = self.document_home.read(cx);
             (
                 doc.parse_state.clone(),
@@ -117,6 +117,11 @@ impl Render for DocumentView {
                 doc.metadata.clone(),
             )
         };
+        let parse_state = &parse_state_owned;
+        let blocks = &blocks_owned;
+        let title = &title_owned;
+        let author = &author_owned;
+        let metadata = &metadata_owned;
 
         let preview_header = if title.is_empty() && author.is_empty() {
             "RENDERED PREVIEW".to_string()
@@ -128,7 +133,7 @@ impl Render for DocumentView {
         let mut frontmatter = String::new();
         if !metadata.is_empty() {
             frontmatter.push_str("---\n");
-            for (key, val) in &metadata {
+            for (key, val) in metadata {
                 frontmatter.push_str(&format!("{}: {}\n", key, val));
             }
             frontmatter.push_str("---");
@@ -253,7 +258,7 @@ impl Render for DocumentView {
         // Separate footnotes from other blocks
         let mut main_blocks = Vec::new();
         let mut footnote_blocks = Vec::new();
-        for block in &blocks {
+        for block in blocks {
             if let Block::Footnote { .. } = block {
                 footnote_blocks.push(block);
             } else {
@@ -283,6 +288,7 @@ impl Render for DocumentView {
                                 &self.input_state,
                                 block,
                                 block_idx,
+                                blocks,
                                 cx,
                             )))
                             .child(div().w(gpui::relative(0.25)).child(renderers::render_block(
@@ -291,6 +297,7 @@ impl Render for DocumentView {
                                 &self.input_state,
                                 aside_block,
                                 aside_idx,
+                                blocks,
                                 cx,
                             )))
                     );
@@ -303,6 +310,7 @@ impl Render for DocumentView {
                 &self.input_state,
                 block,
                 block_idx,
+                blocks,
                 cx,
             ));
         }
@@ -327,6 +335,7 @@ impl Render for DocumentView {
                     &self.input_state,
                     footnote,
                     block_idx,
+                    blocks,
                     cx,
                 ));
             }

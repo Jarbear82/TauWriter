@@ -79,6 +79,8 @@ impl Render for SidebarView {
                     .hover(|s| s.bg(theme_accent));
 
                 if !node.is_dir {
+                    // path is cloned to be moved into the listener closure, and cloned
+                    // again inside the closure because the listener can be invoked multiple times.
                     item = item.on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |_, _, _, cx| {

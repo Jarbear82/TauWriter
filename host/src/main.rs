@@ -23,7 +23,7 @@ mod graph_sim_tests;
 
 use lsp_client::{Diagnostic, LspClient};
 use parser::load_and_parse_twxml;
-use ui::{DemoView, DocumentHome, ParseState};
+use ui::{DemoView, DocumentHome, ParseState, ToggleSettings, SelectDocumentTab, SelectGraphTab};
 
 unsafe extern "C" {
     /// Safety: The function is safe to call as it returns a static, read-only
@@ -73,6 +73,13 @@ fn open_window(twxml_path: String, cx: &mut App) {
             ..Default::default()
         },
         move |window, cx| {
+            // Bind global/view keys
+            cx.bind_keys([
+                gpui::KeyBinding::new("ctrl-s", ToggleSettings, None),
+                gpui::KeyBinding::new("ctrl-1", SelectDocumentTab, None),
+                gpui::KeyBinding::new("ctrl-2", SelectGraphTab, None),
+            ]);
+
             // Load and parse twxml
             let path = PathBuf::from(&twxml_path);
             let (title, author, metadata, blocks) = match load_and_parse_twxml(&twxml_path) {
@@ -94,8 +101,8 @@ fn open_window(twxml_path: String, cx: &mut App) {
             };
 
             let document_home = cx.new(|_| DocumentHome {
-                title,
-                author,
+                title: title.into(),
+                author: author.into(),
                 metadata,
                 blocks,
                 parse_state: ParseState::Synced,
@@ -157,7 +164,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
 
             let workspace_clone = workspace.clone();
             cx.spawn(|cx: &mut gpui::AsyncApp| {
-                let cx = (*cx).clone();
+                let cx = cx.clone();
                 let workspace = workspace_clone;
                 async move {
                     while let Some((_uri, diags)) = diag_rx.recv().await {
@@ -174,6 +181,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
 
             let demo_view = cx.new(|cx| {
                 cx.observe(&document_home, |_, _, cx| cx.notify()).detach();
+                cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
 
                 // Subscribe to SidebarView file selection event
                 let sidebar_sub = cx.subscribe_in(&sidebar, window, {
@@ -211,8 +219,8 @@ fn open_window(twxml_path: String, cx: &mut App) {
                             match parser::parse_twxml(&text) {
                                 Ok((title, author, metadata, blocks)) => {
                                     document_home.update(cx, |doc, cx| {
-                                        doc.title = title;
-                                        doc.author = author;
+                                        doc.title = title.into();
+                                        doc.author = author.into();
                                         doc.metadata = metadata;
                                         doc.blocks = blocks;
                                         doc.parse_state = ParseState::Synced;
@@ -232,6 +240,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 });
 
                 DemoView {
+                    focus_handle: cx.focus_handle(),
                     workspace,
                     sidebar,
                     document_view,
