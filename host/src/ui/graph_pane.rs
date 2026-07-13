@@ -7,13 +7,13 @@
 use gpui::{div, prelude::*, Hsla, Entity, Render, Context, Window};
 use std::path::Path;
 
-use super::super::graph_sim::{GraphNode, run_graph_simulation, run_def_simulation, parse_hubgs_file};
+use super::super::graph_sim::{GraphNode, GraphEdge, run_graph_simulation, run_def_simulation, parse_hubgs_file};
 use super::Workspace;
 
 /// A single graph panel containing nodes, edges, and a label.
 pub(crate) struct GraphPanel {
     pub(crate) nodes: Vec<GraphNode>,
-    pub(crate) edges: Vec<(usize, usize, String)>,
+    pub(crate) edges: Vec<GraphEdge>,
     pub(crate) label: &'static str,
 }
 
@@ -22,9 +22,9 @@ pub(crate) struct GraphPanel {
 pub(crate) struct GraphPaneView {
     _workspace: Entity<Workspace>,
     graph_nodes: Vec<GraphNode>,
-    graph_edges: Vec<(usize, usize, String)>,
+    graph_edges: Vec<GraphEdge>,
     def_nodes: Vec<GraphNode>,
-    def_edges: Vec<(usize, usize, String)>,
+    def_edges: Vec<GraphEdge>,
 }
 
 impl GraphPaneView {
@@ -198,7 +198,9 @@ fn render_single_panel(
     let canvas = gpui::canvas(
         move |_, _, _| {},
         move |bounds, _, window, _| {
-            for &(src_idx, tgt_idx, _) in &edge_data {
+            for edge in &edge_data {
+                let src_idx = edge.source;
+                let tgt_idx = edge.target;
                 if src_idx < node_ref.len() && tgt_idx < node_ref.len() {
                     let p1 = gpui::point(
                         bounds.origin.x + gpui::px(node_ref[src_idx].x),

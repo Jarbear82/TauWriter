@@ -48,12 +48,20 @@ pub(crate) struct HubgsInstance {
     pub(crate) links: Vec<(String, String)>, // (relation, target_id)
 }
 
+#[derive(Clone)]
+#[allow(dead_code)]
+pub(crate) struct GraphEdge {
+    pub(crate) source: usize,
+    pub(crate) target: usize,
+    pub(crate) label: String,
+}
+
 /// Run a force-directed layout over instance nodes.
 pub(crate) fn run_graph_simulation(
     instances: &[HubgsInstance],
     width: f32,
     height: f32,
-) -> (Vec<GraphNode>, Vec<(usize, usize, String)>) {
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut rng = SimpleRng::new(12345);
 
     let mut nodes: Vec<GraphNode> = instances
@@ -96,7 +104,11 @@ pub(crate) fn run_graph_simulation(
     for (src_idx, inst) in instances.iter().enumerate() {
         for (_, target_id) in &inst.links {
             if let Some(&tgt_idx) = id_to_index.get(target_id.as_str()) {
-                edges.push((src_idx, tgt_idx, String::new()));
+                edges.push(GraphEdge {
+                    source: src_idx,
+                    target: tgt_idx,
+                    label: String::new(),
+                });
             }
         }
     }
@@ -111,7 +123,7 @@ pub(crate) fn run_def_simulation(
     definitions: &[HubgsDefinition],
     width: f32,
     height: f32,
-) -> (Vec<GraphNode>, Vec<(usize, usize, String)>) {
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut rng = SimpleRng::new(54321);
 
     let mut nodes: Vec<GraphNode> = definitions
@@ -151,7 +163,11 @@ pub(crate) fn run_def_simulation(
     for (src_idx, def) in definitions.iter().enumerate() {
         for (_, target_hub) in &def.links {
             if let Some(&tgt_idx) = name_to_index.get(target_hub.as_str()) {
-                edges.push((src_idx, tgt_idx, String::new()));
+                edges.push(GraphEdge {
+                    source: src_idx,
+                    target: tgt_idx,
+                    label: String::new(),
+                });
             }
         }
     }
@@ -165,7 +181,7 @@ pub(crate) fn run_def_simulation(
 /// Kamada-Kawai / repulsion-attraction model from main.rs.
 fn simulate(
     nodes: &mut [GraphNode],
-    edges: &[(usize, usize, String)],
+    edges: &[GraphEdge],
     width: f32,
     height: f32,
     k: f32,
@@ -193,7 +209,9 @@ fn simulate(
             }
         }
 
-        for &(src, tgt, _) in edges {
+        for edge in edges {
+            let src = edge.source;
+            let tgt = edge.target;
             let dx = nodes[tgt].x - nodes[src].x;
             let dy = nodes[tgt].y - nodes[src].y;
             let dist = (dx * dx + dy * dy + 0.1).sqrt();
