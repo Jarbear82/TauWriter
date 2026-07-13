@@ -32,8 +32,20 @@ impl LspClient {
             .spawn()
             .ok()?;
 
-        let mut stdin = child.stdin.take()?;
-        let stdout = child.stdout.take()?;
+        let mut stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => {
+                eprintln!("Warning: Failed to take stdin of LSP child process");
+                return None;
+            }
+        };
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                eprintln!("Warning: Failed to take stdout of LSP child process");
+                return None;
+            }
+        };
 
         let (tx, rx) = std::sync::mpsc::channel::<String>();
 

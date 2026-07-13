@@ -25,8 +25,10 @@ use lsp_client::{Diagnostic, LspClient};
 use parser::load_and_parse_twxml;
 use ui::{DemoView, DocumentHome, ParseState};
 
-extern "C" {
-    fn tree_sitter_twxml() -> tree_sitter::Language;
+unsafe extern "C" {
+    /// Safety: The function is safe to call as it returns a static, read-only
+    /// TSLanguage pointer representing the TWXML grammar definition.
+    fn tree_sitter_twxml() -> *const std::ffi::c_void;
 }
 
 fn main() {
@@ -54,6 +56,15 @@ fn main() {
 }
 
 fn open_window(twxml_path: String, cx: &mut App) {
+    let workspace_root = match resolve_workspace_root() {
+        Some(root) => root,
+        None => {
+            eprintln!("Error: Failed to resolve workspace root. Make sure the application is run from within the source tree.");
+            cx.quit();
+            return;
+        }
+    };
+
     let bounds = Bounds::centered(None, size(px(1200.), px(800.)), cx);
     let opened = cx.open_window(
         WindowOptions {
@@ -92,7 +103,6 @@ fn open_window(twxml_path: String, cx: &mut App) {
             });
 
             // Build workspace model
-            let workspace_root = resolve_workspace_root().unwrap_or_else(|| PathBuf::from("."));
             let workspace = cx.new(|_| ui::Workspace::new(workspace_root.clone()));
 
             // Load and watch themes from local themes directory
@@ -100,8 +110,12 @@ fn open_window(twxml_path: String, cx: &mut App) {
             let _ = gpui_component::ThemeRegistry::watch_dir(themes_dir, cx, |_| {});
 
             // Register custom tree-sitter language for twxml
-            let language_ptr = unsafe { tree_sitter_twxml() };
-            let language: tree_sitter::Language = unsafe { std::mem::transmute(language_ptr) };
+            // Safety: The transmute from a raw pointer to `tree_sitter::Language` is safe because
+            // `Language` is a transparent wrapper around a raw TSLanguage pointer (`*const std::ffi::c_void`),
+            // and `tree_sitter_twxml()` is guaranteed to return a valid `*const std::ffi::c_void`.
+            let language: tree_sitter::Language = unsafe {
+                std::mem::transmute(tree_sitter_twxml())
+            };
             let highlights = include_str!("../../extension/languages/twxml/highlights.scm");
             let config = gpui_component::highlighter::LanguageConfig::new(
                 "twxml",

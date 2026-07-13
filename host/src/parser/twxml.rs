@@ -73,9 +73,9 @@ pub enum Block {
     DescriptionList { items: Vec<(String, Vec<TextRun>)>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
     Table { headers: Vec<String>, rows: Vec<Vec<Vec<TextRun>>>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
     HorizontalRule { id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Image { src: String, alt: String, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Audio { src: String, alt: String, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Video { src: String, alt: String, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
+    Image { src: String, alt: Option<String>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
+    Audio { src: String, alt: Option<String>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
+    Video { src: String, alt: Option<String>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
     Details { summary: String, blocks: Vec<Block>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
     Footnote { id: String, runs: Vec<TextRun>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
     Review { blocks: Vec<Block>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
@@ -203,15 +203,15 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
         blocks.push(Block::HorizontalRule { id, attributes, range });
     } else if node.has_tag_name("image") {
         let src = node.attribute("src").unwrap_or("").to_string();
-        let alt = node.attribute("alt").unwrap_or("").to_string();
+        let alt = node.attribute("alt").map(|s| s.to_string());
         blocks.push(Block::Image { src, alt, id, attributes, range });
     } else if node.has_tag_name("audio") {
         let src = node.attribute("src").unwrap_or("").to_string();
-        let alt = node.attribute("alt").unwrap_or("").to_string();
+        let alt = node.attribute("alt").map(|s| s.to_string());
         blocks.push(Block::Audio { src, alt, id, attributes, range });
     } else if node.has_tag_name("video") {
         let src = node.attribute("src").unwrap_or("").to_string();
-        let alt = node.attribute("alt").unwrap_or("").to_string();
+        let alt = node.attribute("alt").map(|s| s.to_string());
         blocks.push(Block::Video { src, alt, id, attributes, range });
     } else if node.has_tag_name("details") {
         let mut summary = "Details".to_string();
