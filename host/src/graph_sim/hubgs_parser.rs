@@ -41,7 +41,7 @@ pub(crate) fn parse_hubgs(content: &str) -> anyhow::Result<(Vec<HubgsDefinition>
                 &mut current_hub_name,
                 &mut current_hub_links,
                 &mut definitions,
-            );
+            )?;
         }
 
         // Parse instances
@@ -106,12 +106,12 @@ fn parse_definition_line(
     current_hub_name: &mut Option<String>,
     current_hub_links: &mut Vec<(String, String)>,
     definitions: &mut Vec<HubgsDefinition>,
-) {
+) -> anyhow::Result<()> {
     if trimmed.ends_with('{') && !trimmed.contains(':') {
         let hub_name = trimmed.trim_end_matches('{').trim().to_string();
         *current_hub_name = Some(hub_name);
         current_hub_links.clear();
-        return;
+        return Ok(());
     }
     if trimmed == "}" || trimmed == "}," {
         if let Some(name) = current_hub_name.take() {
@@ -120,30 +120,47 @@ fn parse_definition_line(
                 links: current_hub_links.clone(),
             });
         }
-        return;
+        return Ok(());
     }
 
     if trimmed.contains("ALLOWS [") {
-        if let Some(arrow_idx) = trimmed.find("->") {
-            let rel_name = trimmed[..arrow_idx].trim().to_string();
-            if let Some(allows_idx) = trimmed.find("ALLOWS [") {
-                let target_part = &trimmed[allows_idx + 8..];
-                if let Some(end_bracket) = target_part.find(']') {
-                    let target_hub = target_part[..end_bracket].trim().to_string();
-                    current_hub_links.push((rel_name, target_hub));
-                }
+        let (arrow_end, rel_name) = if let Some(double_arrow_idx) = trimmed.find("<->") {
+            (double_arrow_idx + 3, trimmed[..double_arrow_idx].trim().to_string())
+        } else if let Some(arrow_idx) = trimmed.find("->") {
+            (arrow_idx + 2, trimmed[..arrow_idx].trim().to_string())
+        } else {
+            return Ok(());
+        };
+
+        if let Some(allows_idx) = trimmed.find("ALLOWS [") {
+            if allows_idx < arrow_end {
+                anyhow::bail!("Invalid HubGS syntax: ALLOWS [ must be after arrow");
             }
-        } else if let Some(double_arrow_idx) = trimmed.find("<->") {
-            let rel_name = trimmed[..double_arrow_idx].trim().to_string();
-            if let Some(allows_idx) = trimmed.find("ALLOWS [") {
-                let target_part = &trimmed[allows_idx + 8..];
-                if let Some(end_bracket) = target_part.find(']') {
-                    let target_hub = target_part[..end_bracket].trim().to_string();
-                    current_hub_links.push((rel_name, target_hub));
-                }
+            let middle = trimmed[arrow_end..allows_idx].trim();
+            if !middle.starts_with('(') || !middle.ends_with(')') {
+                anyhow::bail!("Invalid HubGS syntax: missing multiplicity bounds (e.g. (0..1)) in relationship: {}", trimmed);
+            }
+            let inner = &middle[1..middle.len() - 1];
+            let parts: Vec<&str> = inner.split("..").collect();
+            if parts.len() != 2 {
+                anyhow::bail!("Invalid HubGS syntax: multiplicity must be formatted as 'min..max' (e.g. (0..1)) in relationship: {}", trimmed);
+            }
+            let min = parts[0].trim();
+            let max = parts[1].trim();
+            if min.is_empty() || max.is_empty() {
+                anyhow::bail!("Invalid HubGS syntax: multiplicity bounds cannot be empty: {}", trimmed);
+            }
+
+            let target_part = &trimmed[allows_idx + 8..];
+            if let Some(end_bracket) = target_part.find(']') {
+                let target_hub = target_part[..end_bracket].trim().to_string();
+                current_hub_links.push((rel_name, target_hub));
+            } else {
+                anyhow::bail!("Invalid HubGS syntax: missing closing bracket in target: {}", trimmed);
             }
         }
     }
+    Ok(())
 }
 
 fn parse_instance_line(
@@ -220,7 +237,7 @@ mod tests {
 DEFINITIONS [
     HUBS [
         Character {
-            friend -> ALLOWS [Character]
+            friend -> (0..*) ALLOWS [Character]
         }
     ]
 ]
@@ -240,5 +257,36 @@ INSTANCES [
         assert_eq!(insts[0].id, "hero");
         assert_eq!(insts[0].type_name, "Character");
         assert_eq!(insts[0].name, "Hero");
+    }
+
+    #[test]
+    fn test_hubgs_parser_rejects_missing_multiplicity() {
+        let sample = r#"
+DEFINITIONS [
+    HUBS [
+        Character {
+            friend -> ALLOWS [Character]
+        }
+    ]
+]
+        "#;
+        let res = parse_hubgs(sample);
+        assert!(res.is_err());
+        assert!(res.err().unwrap().to_string().contains("missing multiplicity bounds"));
+    }
+
+    #[test]
+    fn test_hubgs_parser_rejects_malformed_multiplicity() {
+        let sample = r#"
+DEFINITIONS [
+    HUBS [
+        Character {
+            friend -> (0..) ALLOWS [Character]
+        }
+    ]
+]
+        "#;
+        let res = parse_hubgs(sample);
+        assert!(res.is_err());
     }
 }
