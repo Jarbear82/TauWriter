@@ -4,8 +4,11 @@
 //! [user-review: split required] See task ticket for splitting rationale.
 
 use gpui::prelude::*;
-use gpui::{div, px, uniform_list, Entity, EventEmitter};
-use gpui_component::{Icon, IconName};
+use gpui::{div, uniform_list, Context, Entity, EventEmitter};
+use gpui_component::{
+    tab::{Tab, TabBar},
+    Icon, IconName,
+};
 use std::path::PathBuf;
 
 use super::tree_view::flatten_file_tree;
@@ -153,108 +156,4 @@ impl Render for SidebarView {
     }
 }
 
-// ─── TabBar component ────────────────────────────────────────────────────────
 
-#[derive(IntoElement)]
-pub(crate) struct TabBar {
-    pub(crate) active_tab: crate::ui::ActiveTab,
-    pub(crate) view: Entity<crate::ui::MainView>,
-}
-
-impl RenderOnce for TabBar {
-    fn render(self, _window: &mut gpui::Window, cx: &mut gpui::App) -> impl IntoElement {
-        let theme = gpui_component::Theme::global(cx);
-        let bg_color = theme.background;
-        let sidebar_bg = theme.sidebar;
-        let border_color = theme.border;
-        let theme_muted_foreground = theme.muted_foreground;
-        let theme_accent = theme.accent;
-        let theme_primary = theme.primary;
-
-        let raw_editor_active = self.active_tab == crate::ui::ActiveTab::RawEditor;
-        let preview_active = self.active_tab == crate::ui::ActiveTab::RenderedPreview;
-        let def_graph_active = self.active_tab == crate::ui::ActiveTab::DefinitionsGraph;
-        let inst_graph_active = self.active_tab == crate::ui::ActiveTab::InstancesGraph;
-
-        let view = self.view.clone();
-
-        let render_tab = |id: &'static str,
-                          label: &'static str,
-                          icon: gpui_component::IconName,
-                          active: bool,
-                          target_tab: crate::ui::ActiveTab| {
-            let view = view.clone();
-            gpui::div()
-                .id(id)
-                .px_4()
-                .py_2()
-                .border_r(gpui::px(1.))
-                .border_color(border_color)
-                .bg(if active { bg_color } else { sidebar_bg })
-                .text_color(if active {
-                    theme_primary
-                } else {
-                    theme_muted_foreground
-                })
-                .font_weight(if active {
-                    gpui::FontWeight::BOLD
-                } else {
-                    gpui::FontWeight::NORMAL
-                })
-                .text_size(gpui::px(12.))
-                .hover(|s| s.bg(theme_accent))
-                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                    view.update(cx, |this, cx| {
-                        this.workspace.update(cx, |w, cx| {
-                            w.active_tab = target_tab;
-                            cx.notify();
-                        });
-                        cx.notify();
-                    });
-                })
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(Icon::new(icon).size(gpui::px(12.)))
-                        .child(label),
-                )
-        };
-
-        gpui::div()
-            .flex()
-            .h(gpui::px(38.))
-            .bg(sidebar_bg)
-            .border_b(gpui::px(1.))
-            .border_color(border_color)
-            .child(render_tab(
-                "tab_raw_editor",
-                "Raw Editor",
-                IconName::File,
-                raw_editor_active,
-                crate::ui::ActiveTab::RawEditor,
-            ))
-            .child(render_tab(
-                "tab_rendered_preview",
-                "Rendered Preview",
-                IconName::Eye,
-                preview_active,
-                crate::ui::ActiveTab::RenderedPreview,
-            ))
-            .child(render_tab(
-                "tab_def_graph",
-                "Definitions Graph",
-                IconName::LayoutDashboard,
-                def_graph_active,
-                crate::ui::ActiveTab::DefinitionsGraph,
-            ))
-            .child(render_tab(
-                "tab_inst_graph",
-                "Instances Graph",
-                IconName::Network,
-                inst_graph_active,
-                crate::ui::ActiveTab::InstancesGraph,
-            ))
-    }
-}

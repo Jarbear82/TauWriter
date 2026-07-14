@@ -1,17 +1,63 @@
+use super::collapsible::CollapsibleBlock;
+use super::expansion_state::{ExpandedBlocks, ToggleState};
 use super::jump_links::{find_block_range_by_id, find_block_type_by_id, offset_to_position};
+use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
-use crate::ui::{DocumentHome, DocumentView};
-use gpui::{div, prelude::*, px, rgb, AnyElement, Context, Entity, SharedString};
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::{Icon, IconName, Theme};
+use crate::ui::DocumentView;
+use gpui::{
+    div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, SharedString, Styled,
+};
+use gpui_component::{scroll::ScrollableElement, table::*, Icon, IconName, Theme};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
+/// Conventionally accepted code editor colors (VS Code dark style).
+static CODE_BLOCK_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.12, 1.0));
+static CODE_BLOCK_HEADER_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.16, 1.0));
+static CODE_BLOCK_TEXT_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.83, 1.0));
+
+/// Standard warning/review background (light yellow, works on both light and dark themes).
+static REVIEW_BGCOLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(48.0, 1.0, 0.975, 1.0));
+
+/// Warm amber border for aside/note blocks.
+static ASIDE_BORDER_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(43.0, 0.85, 0.47, 1.0));
+
+/// Review warning icon/text color (warm orange).
+static REVIEW_WARNING_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(23.0, 0.82, 0.47, 1.0));
+
+/// Review border color (soft yellow-orange).
+static REVIEW_BORDER_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(35.0, 0.97, 0.90, 1.0));
+
+/// Build a HashMap<footnote_id, footnote_content> from blocks for O(1) lookups.
+/// Returns an empty map if no footnotes are present.
+#[allow(dead_code)]
+pub(crate) fn build_footnote_map(blocks: &[Block]) -> HashMap<String, String> {
+    blocks
+        .iter()
+        .filter_map(|b| {
+            if let Block::Footnote { id, runs, .. } = b {
+                let content: String = runs.iter().map(|r| r.text.as_ref()).collect();
+                Some((id.clone().to_string(), content))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Render a single Block into an AnyElement.
+///
+/// Hoisted reads: `blocks`, `hubgs_instances`, and `footnote_map` are passed
+/// as references from the caller's single Entity read (in DocumentView::render).
 pub(crate) fn render_block(
-    expanded_details: &std::collections::HashSet<usize>,
-    document_home: &Entity<DocumentHome>,
-    input_state: &Entity<gpui_component::input::InputState>,
+    expanded_blocks: &Entity<ExpandedBlocks>,
+    doc_blocks: &[Block],
+    hubgs_instances: &HashMap<String, (String, String, Vec<InstanceLink>)>,
+    footnote_map: &HashMap<String, String>,
+    input_state: Entity<gpui_component::input::InputState>,
     block: &Block,
     idx: usize,
-    doc_blocks: &[Block],
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
     let theme = Theme::global(cx).clone();
@@ -64,13 +110,13 @@ pub(crate) fn render_block(
                 })
                 .children(runs.iter().enumerate().map(|(run_idx, run)| {
                     render_run(
-                        document_home,
-                        input_state,
+                        doc_blocks,
+                        hubgs_instances,
+                        footnote_map,
+                        input_state.clone(),
                         run,
                         idx,
                         run_idx,
-                        &doc_blocks,
-                        cx,
                         &theme,
                     )
                 }))
@@ -83,72 +129,28 @@ pub(crate) fn render_block(
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
-            let is_collapsed = expanded_details.contains(&start_offset);
+            let is_collapsed = !expanded_blocks.read(cx).expanded.contains(&start_offset);
 
-            let view_handle = cx.entity().clone();
-            let toggle_state = is_collapsed;
-            let tooltip_text = element_tooltip("BlockQuote", id, attributes);
-
-            let mut container = div()
-                .id(("blockquote", idx))
-                .w_full()
-                .mb_4()
-                .border_l_4()
-                .border_color(theme.border)
-                .bg(theme.group_box)
-                .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
-                });
-
-            // Quote Header
-            container = container.child(
-                div()
-                    .id(("blockquote-header", idx))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_4()
-                    .py_1()
-                    .bg(theme.accent.opacity(0.3))
-                    .hover(|s| s.bg(theme.accent.opacity(0.5)))
-                    .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                        let _ = view_handle.update(cx, |this, cx| {
-                            if toggle_state {
-                                this.expanded_details.remove(&start_offset);
-                            } else {
-                                this.expanded_details.insert(start_offset);
-                            }
-                            cx.notify();
-                        });
-                    })
-                    .child(
-                        div()
-                            .italic()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child("Quote"),
-                    )
-                    .child(if is_collapsed { "▶" } else { "▼" }),
-            );
-
-            if !is_collapsed {
-                container = container.child(div().p_4().flex().flex_wrap().children(
-                    runs.iter().enumerate().map(|(run_idx, run)| {
-                        render_run(
-                            document_home,
-                            input_state,
-                            run,
-                            idx,
-                            run_idx,
-                            &doc_blocks,
-                            cx,
-                            &theme,
-                        )
-                    }),
-                ));
-            }
-
-            container.into_any_element()
+            let toggle = cx.new(|cx| ToggleState::new(!is_collapsed));
+            CollapsibleBlock::new(is_collapsed, "Quote".into(), theme.border, theme.group_box)
+                .with_body(
+                    runs.iter()
+                        .enumerate()
+                        .map(|(run_idx, run)| {
+                            render_run(
+                                doc_blocks,
+                                hubgs_instances,
+                                footnote_map,
+                                input_state.clone(),
+                                run,
+                                idx,
+                                run_idx,
+                                &theme,
+                            )
+                        })
+                        .collect(),
+                )
+                .render_with_toggle(toggle, cx)
         }
         Block::Aside {
             runs,
@@ -164,7 +166,7 @@ pub(crate) fn render_block(
                 .p_4()
                 .bg(theme.accent.opacity(0.15)) // Soft tinted aside/note bg
                 .border_l_4()
-                .border_color(rgb(0xd69e2e)) // Warm amber border for aside/note semantics
+                .border_color(*ASIDE_BORDER_COLOR) // Warm amber border for aside/note semantics
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
@@ -172,13 +174,13 @@ pub(crate) fn render_block(
                 .flex_wrap()
                 .children(runs.iter().enumerate().map(|(run_idx, run)| {
                     render_run(
-                        document_home,
-                        input_state,
+                        doc_blocks,
+                        hubgs_instances,
+                        footnote_map,
+                        input_state.clone(),
                         run,
                         idx,
                         run_idx,
-                        &doc_blocks,
-                        cx,
                         &theme,
                     )
                 }))
@@ -192,12 +194,8 @@ pub(crate) fn render_block(
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
-            let is_collapsed = expanded_details.contains(&start_offset);
+            let is_collapsed = !expanded_blocks.read(cx).expanded.contains(&start_offset);
             let trimmed_code = trim_codeblock_indentation(code);
-
-            let view_handle = cx.entity().clone();
-            let toggle_state = is_collapsed;
-            let tooltip_text = element_tooltip("CodeBlock", id, attributes);
 
             let lang_display = if language.is_empty() {
                 "codeblock"
@@ -205,57 +203,46 @@ pub(crate) fn render_block(
                 language
             };
 
+            let id_clone = id.clone();
+            let attrs_clone: Vec<_> = attributes.iter().cloned().collect();
+
+            // Outer wrapper for CodeBlock's unique styling (dark bg, rounded corners)
             let mut container = div()
-                .id(("codeblock", idx))
+                .id("codeblock")
                 .w_full()
                 .mb_4()
                 .border(px(1.))
-                .border_color(theme.border) // Theme border for code block container
+                .border_color(theme.border)
                 .rounded(px(4.))
-                .bg(rgb(0x1e1e1e)) // Fixed dark code editor style — conventional and unchanging
-                .bg(rgb(0x1e1e1e))
+                .bg(*CODE_BLOCK_BG) // Conventionally accepted VS Code dark background
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_component::tooltip::Tooltip::new(format!(
+                        "Element: CodeBlock\nid: {:?}",
+                        id_clone
+                    ))
+                    .build(window, cx)
                 });
 
-            // Header
-            container = container.child(
-                div()
-                    .id(("codeblock-header", idx))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .p_2()
-                    .bg(rgb(0x2d2d2d))
-                    .text_color(rgb(0xd4d4d4))
-                    .text_xs()
-                    .font_family("Courier New")
-                    .hover(|s| s.bg(rgb(0x3d3d3d))) // Code header hover (fixed dark scheme)
-                    .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                        let _ = view_handle.update(cx, |this, cx| {
-                            if toggle_state {
-                                this.expanded_details.remove(&start_offset);
-                            } else {
-                                this.expanded_details.insert(start_offset);
-                            }
-                            cx.notify();
-                        });
-                    })
-                    .child(if is_collapsed { "▶" } else { "▼" })
-                    .child(div().child(lang_display.to_string())),
-            );
+            // Use CollapsibleBlock for the toggle/header logic
+            let toggle = cx.new(|cx| ToggleState::new(!is_collapsed));
+            let collapsible_content = CollapsibleBlock::new(
+                is_collapsed,
+                lang_display.into(),
+                gpui::hsla(0.0, 0.0, 0.0, 0.0), // transparent (outer container provides border)
+                *CODE_BLOCK_BG,                 // inner bg (VS Code dark style)
+            )
+            .with_body(vec![div()
+                .p_4()
+                .text_color(*CODE_BLOCK_TEXT_COLOR)
+                .font_family("Courier New")
+                .text_size(px(13.))
+                .overflow_x_scrollbar()
+                .child(trimmed_code)
+                .into_any_element()]);
 
-            if !is_collapsed {
-                container = container.child(
-                    div()
-                        .p_4()
-                        .text_color(rgb(0xd4d4d4))
-                        .font_family("Courier New")
-                        .text_size(px(13.))
-                        .overflow_x_scrollbar()
-                        .child(trimmed_code),
-                );
-            }
+            // Wrap in outer container with border/tooltip
+            let content = collapsible_content.render_with_toggle(toggle, cx);
+            container = container.child(content);
 
             container.into_any_element()
         }
@@ -291,13 +278,13 @@ pub(crate) fn render_block(
                         .flex_wrap()
                         .children(item.runs.iter().enumerate().map(|(run_idx, run)| {
                             render_run(
-                                document_home,
-                                input_state,
+                                doc_blocks,
+                                hubgs_instances,
+                                footnote_map,
+                                input_state.clone(),
                                 run,
                                 idx,
                                 run_idx + 100 * item_idx,
-                                &doc_blocks,
-                                cx,
                                 &theme,
                             )
                         })),
@@ -335,13 +322,13 @@ pub(crate) fn render_block(
                     .child(div().pl_4().mb_2().flex().flex_wrap().children(
                         runs.iter().enumerate().map(|(run_idx, run)| {
                             render_run(
-                                document_home,
-                                input_state,
+                                doc_blocks,
+                                hubgs_instances,
+                                footnote_map,
+                                input_state.clone(),
                                 run,
                                 idx,
                                 run_idx + 100 * item_idx,
-                                &doc_blocks,
-                                cx,
                                 &theme,
                             )
                         }),
@@ -364,65 +351,60 @@ pub(crate) fn render_block(
         Block::Table {
             headers,
             rows,
-            id,
-            attributes,
+            id: _,
+            attributes: _,
             range: _,
         } => {
-            let tooltip_text = element_tooltip("table", id, attributes);
-            let mut table_container = div()
-                .id(("table", idx))
-                .w_full()
-                .mb_4()
-                .flex()
-                .flex_col()
-                .border(px(1.))
-                .border_color(theme.border)
-                .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
-                });
+            // Build header cells — simple clones.
+            let header_cells: Vec<_> = headers
+                .iter()
+                .map(|h| TableHead::new().child(h.clone()))
+                .collect();
 
-            // Headers
-            if !headers.is_empty() {
-                let mut header_row = div().flex().w_full().bg(theme.accent.opacity(0.2));
-                for header in headers {
-                    header_row = header_row.child(
-                        div()
-                            .flex_1()
-                            .p_2()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(header.clone()),
-                    );
-                }
-                table_container = table_container.child(header_row);
-            }
+            // Clone data so we can build AnyElement builders with owned captures.
+            let doc_blocks_clone = doc_blocks.to_vec();
+            let hubgs_clone: HashMap<_, _> = hubgs_instances
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let fn_map_clone: HashMap<_, _> = footnote_map
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
 
-            // Rows
+            // Build table body row-by-row via explicit loops.
+            // Each cell wraps its runs in an AnyElement iterator via .children().
+            let mut table_body = TableBody::new();
             for (row_idx, row) in rows.iter().enumerate() {
-                let mut table_row = div()
-                    .flex()
-                    .w_full()
-                    .border_t(px(1.))
-                    .border_color(theme.border.opacity(0.5));
+                let mut table_row = TableRow::new();
                 for (cell_idx, cell) in row.iter().enumerate() {
-                    table_row = table_row.child(div().flex_1().p_2().flex().flex_wrap().children(
-                        cell.iter().enumerate().map(|(run_idx, run)| {
+                    let runs: Vec<_> = cell
+                        .iter()
+                        .enumerate()
+                        .map(|(run_idx, run)| {
                             render_run(
-                                document_home,
-                                input_state,
+                                &doc_blocks_clone,
+                                &hubgs_clone,
+                                &fn_map_clone,
+                                input_state.clone(),
                                 run,
-                                idx,
-                                run_idx + 100 * cell_idx + 1000 * row_idx,
-                                &doc_blocks,
-                                cx,
+                                idx + 1000 * row_idx,
+                                run_idx + 100 * cell_idx,
                                 &theme,
                             )
-                        }),
-                    ));
+                        })
+                        .collect();
+                    table_row = table_row.child(TableCell::new().children(runs));
                 }
-                table_container = table_container.child(table_row);
+                table_body = table_body.child(table_row);
             }
 
-            table_container.into_any_element()
+            Table::new()
+                .w_full()
+                .mb_4()
+                .child(TableHeader::new().children(header_cells))
+                .child(table_body)
+                .into_any_element()
         }
         Block::HorizontalRule {
             id,
@@ -511,18 +493,16 @@ pub(crate) fn render_block(
                 .into_any_element()
         }
         Block::Details {
-            summary,
+            summary: _,
             blocks,
             id,
             attributes,
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
-            let is_expanded = expanded_details.contains(&start_offset);
+            // Presence in the set = expanded; we negate for CollapsibleBlock's is_collapsed param
+            let is_collapsed = expanded_blocks.read(cx).expanded.contains(&start_offset);
             let tooltip_text = element_tooltip("details", id, attributes);
-
-            let view_handle = cx.entity().clone();
-            let toggle_state = is_expanded;
 
             let mut container = div()
                 .id(("details", idx))
@@ -536,49 +516,34 @@ pub(crate) fn render_block(
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 });
 
-            container = container.child(
-                div()
-                    .id(("details-header", idx))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .p_3()
-                    .bg(theme.accent.opacity(0.2))
-                    .hover(|s| s.bg(theme.accent.opacity(0.4)))
-                    .on_mouse_down(gpui::MouseButton::Left, move |_, _window, cx| {
-                        let _ = view_handle.update(cx, |this, cx| {
-                            if toggle_state {
-                                this.expanded_details.remove(&start_offset);
-                            } else {
-                                this.expanded_details.insert(start_offset);
-                            }
-                            cx.notify();
-                        });
+            let toggle = cx.new(|cx| ToggleState::new(!is_collapsed));
+            let collapsible_content = CollapsibleBlock::new(
+                is_collapsed,
+                "Details".into(),
+                theme.border,
+                theme.background,
+            )
+            .with_body(
+                blocks
+                    .iter()
+                    .enumerate()
+                    .map(|(inner_idx, inner_block)| {
+                        render_block(
+                            expanded_blocks,
+                            doc_blocks,
+                            hubgs_instances,
+                            footnote_map,
+                            input_state.clone(),
+                            inner_block,
+                            idx + 1000 * inner_idx,
+                            cx,
+                        )
                     })
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(summary.clone()),
-                    )
-                    .child(if is_expanded { "▼" } else { "▶" }),
+                    .collect(),
             );
 
-            if is_expanded {
-                let mut content = div().p_3().bg(theme.background);
-                for (inner_idx, inner_block) in blocks.iter().enumerate() {
-                    content = content.child(render_block(
-                        expanded_details,
-                        document_home,
-                        input_state,
-                        inner_block,
-                        idx + 1000 * inner_idx,
-                        doc_blocks,
-                        cx,
-                    ));
-                }
-                container = container.child(content);
-            }
-
+            let content = collapsible_content.render_with_toggle(toggle, cx);
+            container = container.child(content);
             container.into_any_element()
         }
         Block::Footnote {
@@ -604,13 +569,13 @@ pub(crate) fn render_block(
                 )
                 .children(runs.iter().enumerate().map(|(run_idx, run)| {
                     render_run(
-                        document_home,
-                        input_state,
+                        doc_blocks,
+                        hubgs_instances,
+                        footnote_map,
+                        input_state.clone(),
                         run,
                         idx,
                         run_idx,
-                        &doc_blocks,
-                        cx,
                         &theme,
                     )
                 }))
@@ -629,9 +594,9 @@ pub(crate) fn render_block(
                 .mb_4()
                 .p_4()
                 .rounded(px(4.))
-                .bg(rgb(0xfffaf0)) // Soft yellow warning background
+                .bg(*REVIEW_BGCOLOR) // Soft yellow warning background
                 .border(px(1.))
-                .border_color(rgb(0xfeebc8))
+                .border_color(*ASIDE_BORDER_COLOR)
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 });
@@ -644,35 +609,64 @@ pub(crate) fn render_block(
                     .gap_2()
                     .text_xs()
                     .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(rgb(0xdd6b20))
+                    .text_color(*REVIEW_WARNING_COLOR)
                     .child(Icon::new(IconName::TriangleAlert).size(gpui::px(13.)))
                     .child("FLAG FOR REVIEW"),
             );
 
             for (inner_idx, inner_block) in blocks.iter().enumerate() {
                 container = container.child(render_block(
-                    expanded_details,
-                    document_home,
-                    input_state,
+                    expanded_blocks,
+                    doc_blocks,
+                    hubgs_instances,
+                    footnote_map,
+                    input_state.clone(),
                     inner_block,
                     idx + 1000 * inner_idx,
-                    doc_blocks,
                     cx,
                 ));
+            }
+            container.into_any_element()
+        }
+        Block::Include {
+            src: _,
+            id: _,
+            attributes: _,
+            range: _,
+            resolved_blocks,
+        } => {
+            let mut container = div().flex().flex_col().w_full().gap_2();
+            if let Some(blocks) = resolved_blocks {
+                for (inner_idx, inner_block) in blocks.iter().enumerate() {
+                    container = container.child(render_block(
+                        expanded_blocks,
+                        doc_blocks,
+                        hubgs_instances,
+                        footnote_map,
+                        input_state.clone(),
+                        inner_block,
+                        idx + 1000 * (inner_idx + 1),
+                        cx,
+                    ));
+                }
             }
             container.into_any_element()
         }
     }
 }
 
+/// Render a single TextRun into an AnyElement.
+///
+/// Hoisted reads: `doc_blocks`, `hubgs_instances`, and `footnote_map` are passed
+/// as references from the caller's single Entity read (in DocumentView::render).
 pub(crate) fn render_run(
-    document_home: &Entity<DocumentHome>,
-    input_state: &Entity<gpui_component::input::InputState>,
+    doc_blocks: &[Block],
+    hubgs_instances: &HashMap<String, (String, String, Vec<InstanceLink>)>,
+    footnote_map: &HashMap<String, String>,
+    input_state: Entity<gpui_component::input::InputState>,
     run: &TextRun,
     block_idx: usize,
     run_idx: usize,
-    blocks: &[Block],
-    cx: &mut Context<DocumentView>,
     theme: &gpui_component::Theme,
 ) -> AnyElement {
     if run.text == "\n" {
@@ -709,9 +703,8 @@ pub(crate) fn render_run(
 
     if let Some(ref hub_id) = run.hubref {
         let hub_id = hub_id.clone();
-        let hubgs_instances = document_home.read(cx).hubgs_instances.clone();
 
-        // Build HubGS tooltip
+        // O(1) HashMap lookup instead of Entity::read on every render frame
         let mut tooltip_text = format!("HubRef: {}", hub_id);
         if let Some((type_name, name, links)) = hubgs_instances.get(hub_id.as_ref()) {
             tooltip_text = format!("Hub: {}\nname: \"{}\"", type_name, name);
@@ -726,13 +719,16 @@ pub(crate) fn render_run(
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _cx| {
-                println!("[host] User clicked on Hub Reference ID: {}", hub_id);
+                log::debug!("[host] User clicked on Hub Reference ID: {}", hub_id);
             });
     } else if let Some(ref fn_id) = run.footnote_ref {
         let fn_id = fn_id.clone();
 
-        // Build Footnote Ref tooltip
-        let footnote_content = find_footnote_content(blocks, &fn_id);
+        // O(1) HashMap lookup instead of O(n) linear scan per footnote reference
+        let footnote_content = footnote_map
+            .get(fn_id.as_ref())
+            .cloned()
+            .unwrap_or_else(|| "Footnote definition not found".to_string());
         run_tooltip = format!("Footnote Ref: {}\n{}", fn_id, footnote_content);
 
         text_el = text_el
@@ -740,23 +736,23 @@ pub(crate) fn render_run(
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _cx| {
-                println!("[host] User clicked on Footnote Reference ID: {}", fn_id);
+                log::debug!("[host] User clicked on Footnote Reference ID: {}", fn_id);
             });
     } else if let Some(ref link) = run.link {
         let link = link.clone();
-        let input_state = input_state.clone();
-        let doc_home = document_home.clone();
 
-        // Build Link tooltip
+        // Build Link tooltip — synchronous lookup, no closures needed
         let mut tooltip_text = format!("Link: {}", link);
         if link.starts_with('#') {
             let target_id = &link[1..];
-            if let Some(target_type) = find_block_type_by_id(blocks, target_id) {
+            if let Some(target_type) = find_block_type_by_id(doc_blocks, target_id) {
                 tooltip_text = format!("Jump to element: {}\nType: {}", target_id, target_type);
             }
         }
         run_tooltip = tooltip_text;
 
+        // Clone doc_blocks for closure capture (avoids lifetime escape)
+        let blocks_for_closure = doc_blocks.to_vec();
         text_el = text_el
             .text_color(theme.accent)
             .underline()
@@ -766,8 +762,8 @@ pub(crate) fn render_run(
                     cx.open_url(&link);
                 } else if link.starts_with('#') {
                     let target_id = link[1..].to_string();
-                    let current_blocks = doc_home.read(cx).blocks.clone();
-                    if let Some(target_range) = find_block_range_by_id(&current_blocks, &target_id)
+                    if let Some(target_range) =
+                        find_block_range_by_id(&blocks_for_closure, &target_id)
                     {
                         let value = input_state.read(cx).value().to_string();
                         if let Some(pos) = offset_to_position(&value, target_range.start) {
@@ -832,19 +828,4 @@ pub(crate) fn trim_codeblock_indentation(code: &str) -> String {
         .collect();
 
     trimmed_lines.join("\n")
-}
-
-pub(crate) fn find_footnote_content(blocks: &[Block], target_id: &str) -> String {
-    for block in blocks {
-        if let Block::Footnote { id, runs, .. } = block {
-            if id == target_id {
-                return runs
-                    .iter()
-                    .map(|r| r.text.clone())
-                    .collect::<Vec<_>>()
-                    .join("");
-            }
-        }
-    }
-    "Footnote definition not found".to_string()
 }

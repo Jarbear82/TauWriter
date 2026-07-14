@@ -6650,6 +6650,8 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "log",
+ "once_cell",
  "roxmltree 0.20.0",
  "serde",
  "serde_json",

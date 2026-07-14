@@ -162,6 +162,13 @@ pub enum Block {
         attributes: Vec<(String, String)>,
         range: Option<std::ops::Range<usize>>,
     },
+    Include {
+        src: SharedString,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+        resolved_blocks: Option<Vec<Block>>,
+    },
 }
 
 /// Load a TWXML file and parse it into (title, author, metadata, blocks).
@@ -169,12 +176,26 @@ pub fn load_and_parse_twxml(
     path: &str,
 ) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
     let xml_content = std::fs::read_to_string(path)?;
-    parse_twxml(&xml_content)
+    let base_dir = std::path::Path::new(path).parent();
+    let mut visited = std::collections::HashSet::new();
+    if let Ok(abs_path) = std::path::Path::new(path).canonicalize() {
+        visited.insert(abs_path);
+    }
+    parse_twxml_internal(&xml_content, base_dir, &mut visited)
 }
 
 /// Parse TWXML XML content into a document model.
 pub fn parse_twxml(
     xml_content: &str,
+) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
+    let mut visited = std::collections::HashSet::new();
+    parse_twxml_internal(xml_content, None, &mut visited)
+}
+
+pub fn parse_twxml_internal(
+    xml_content: &str,
+    base_dir: Option<&std::path::Path>,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
 ) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
     let doc = roxmltree::Document::parse(xml_content)?;
     let root = doc.root_element();
@@ -199,7 +220,7 @@ pub fn parse_twxml(
 
     if let Some(body) = root.children().find(|c| c.has_tag_name("body")) {
         for child in body.children() {
-            parse_node(child, 0, &mut blocks);
+            parse_node(child, 0, &mut blocks, base_dir, visited);
         }
     }
 
@@ -207,7 +228,13 @@ pub fn parse_twxml(
 }
 
 /// Recursively convert a TWXML element node into one or more `Block` entries.
-fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
+fn parse_node(
+    node: roxmltree::Node,
+    depth: usize,
+    blocks: &mut Vec<Block>,
+    base_dir: Option<&std::path::Path>,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+) {
     let range = Some(node.range());
     let id = node.attribute("id").map(SharedString::from);
     let attributes: Vec<(String, String)> = node
@@ -217,8 +244,37 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
 
     if node.has_tag_name("section") {
         for child in node.children() {
-            parse_node(child, depth + 1, blocks);
+            parse_node(child, depth + 1, blocks, base_dir, visited);
         }
+    } else if node.has_tag_name("include") {
+        let src_val = node.attribute("src").unwrap_or("");
+        let src = SharedString::from(src_val);
+        let mut resolved_blocks = None;
+        if let Some(dir) = base_dir {
+            let target_path = dir.join(src_val);
+            if let Ok(abs_path) = target_path.canonicalize() {
+                if !visited.contains(&abs_path) {
+                    visited.insert(abs_path.clone());
+                    if let Ok(content) = std::fs::read_to_string(&target_path) {
+                        let sub_dir = target_path.parent();
+                        let mut sub_visited = visited.clone();
+                        if let Ok((_, _, _, sub_blocks)) = parse_twxml_internal(&content, sub_dir, &mut sub_visited) {
+                            resolved_blocks = Some(sub_blocks);
+                        }
+                    }
+                    visited.remove(&abs_path);
+                } else {
+                    log::warn!("Circular include detected: {}", target_path.display());
+                }
+            }
+        }
+        blocks.push(Block::Include {
+            src,
+            id,
+            attributes,
+            range,
+            resolved_blocks,
+        });
     } else if node.has_tag_name("heading") {
         let text = SharedString::from(collect_text(node));
         blocks.push(Block::Heading {
@@ -367,7 +423,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
             if child.has_tag_name("summary") {
                 summary = SharedString::from(collect_text(child));
             } else {
-                parse_node(child, depth + 1, &mut details_blocks);
+                parse_node(child, depth + 1, &mut details_blocks, base_dir, visited);
             }
         }
         blocks.push(Block::Details {
@@ -389,7 +445,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
     } else if node.has_tag_name("review") {
         let mut review_blocks = Vec::new();
         for child in node.children() {
-            parse_node(child, depth + 1, &mut review_blocks);
+            parse_node(child, depth + 1, &mut review_blocks, base_dir, visited);
         }
         blocks.push(Block::Review {
             blocks: review_blocks,
@@ -399,7 +455,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
         });
     } else if node.is_element() {
         for child in node.children() {
-            parse_node(child, depth, blocks);
+            parse_node(child, depth, blocks, base_dir, visited);
         }
     }
 }
@@ -655,3 +711,325 @@ fn normalize_runs(runs: &mut Vec<TextRun>) {
     }
     *runs = updated_runs;
 }
+
+/// Represents a node in the document outline graph.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OutlineNode {
+    pub id: String,
+    pub name: String,
+    pub kind: String, // "section", "heading", "paragraph", "hubref"
+    pub start_offset: usize,
+}
+
+/// Parse the active twxml text using Tree-sitter and the outlines.scm query
+/// to produce nodes and parent-child edges.
+pub fn parse_document_outline(text: &str) -> (Vec<OutlineNode>, Vec<(usize, usize)>) {
+    use tree_sitter::StreamingIterator;
+    let language = match crate::load_twxml_language() {
+        Some(lang) => lang,
+        None => return (Vec::new(), Vec::new()),
+    };
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&language).is_err() {
+        return (Vec::new(), Vec::new());
+    }
+    let tree = match parser.parse(text, None) {
+        Some(t) => t,
+        None => return (Vec::new(), Vec::new()),
+    };
+
+    let query_str = include_str!("../../../extension/languages/twxml/outlines.scm");
+    let query = match tree_sitter::Query::new(&language, query_str) {
+        Ok(q) => q,
+        Err(_) => return (Vec::new(), Vec::new()),
+    };
+
+    let mut query_cursor = tree_sitter::QueryCursor::new();
+    let mut matches = query_cursor.matches(&query, tree.root_node(), text.as_bytes());
+
+    let mut nodes = Vec::new();
+    let mut ts_id_to_idx = std::collections::HashMap::new();
+
+    while let Some(m) = matches.next() {
+        for capture in m.captures {
+            let node = capture.node;
+            if node.kind() == "element" || node.kind() == "self_closing_element" {
+                let node_id = node.id();
+                if ts_id_to_idx.contains_key(&node_id) {
+                    continue;
+                }
+
+                let mut tag_name = String::new();
+                if let Some(start_tag) = node.child(0) {
+                    if start_tag.kind() == "start_tag" {
+                        if let Some(name_node) = start_tag.child_by_field_name("name") {
+                            tag_name = text[name_node.byte_range()].to_string();
+                        }
+                    }
+                }
+                if tag_name.is_empty() && node.kind() == "self_closing_element" {
+                    if let Some(name_node) = node.child_by_field_name("name") {
+                        tag_name = text[name_node.byte_range()].to_string();
+                    }
+                }
+                if tag_name.is_empty() {
+                    tag_name = "element".to_string();
+                }
+
+                let mut display_name = String::new();
+                if tag_name == "section" {
+                    if let Some(start_tag) = node.child(0) {
+                        display_name = get_attribute_value_str(start_tag, text, "alias")
+                            .unwrap_or_else(|| "Section".to_string());
+                    }
+                } else if tag_name == "heading" {
+                    display_name = collect_node_text(node, text);
+                    if display_name.len() > 15 {
+                        display_name = format!("{}...", display_name.chars().take(12).collect::<String>());
+                    }
+                } else if tag_name == "paragraph" {
+                    display_name = collect_node_text(node, text);
+                    if display_name.len() > 15 {
+                        display_name = format!("{}...", display_name.chars().take(12).collect::<String>());
+                    }
+                } else if tag_name == "hubref" {
+                    let start_tag = if node.kind() == "element" {
+                        node.child(0).unwrap_or(node)
+                    } else {
+                        node
+                    };
+                    let id_val = get_attribute_value_str(start_tag, text, "id")
+                        .unwrap_or_else(|| "hubref".to_string());
+                    display_name = format!("Ref: {}", id_val);
+                }
+
+                if display_name.trim().is_empty() {
+                    display_name = tag_name.clone();
+                }
+
+                let start_offset = node.start_byte();
+                let idx = nodes.len();
+                nodes.push((node, OutlineNode {
+                    id: format!("{}_{}", tag_name, idx),
+                    name: display_name,
+                    kind: tag_name,
+                    start_offset,
+                }));
+                ts_id_to_idx.insert(node_id, idx);
+            }
+        }
+    }
+
+    let mut edges = Vec::new();
+    for (idx, (node, _)) in nodes.iter().enumerate() {
+        let mut parent = node.parent();
+        while let Some(p) = parent {
+            if let Some(&parent_idx) = ts_id_to_idx.get(&p.id()) {
+                edges.push((parent_idx, idx));
+                break;
+            }
+            parent = p.parent();
+        }
+    }
+
+    let final_nodes = nodes.into_iter().map(|(_, n)| n).collect();
+    (final_nodes, edges)
+}
+
+fn get_attribute_value_str(tag_node: tree_sitter::Node, text: &str, attr_name: &str) -> Option<String> {
+    let mut cursor = tag_node.walk();
+    for child in tag_node.children(&mut cursor) {
+        if child.kind() == "attribute" {
+            if let Some(name_node) = child.child(0) {
+                let name = &text[name_node.byte_range()];
+                if name == attr_name {
+                    if let Some(val_node) = child.child(2) {
+                        return Some(text[val_node.byte_range()].trim_matches('"').trim_matches('\'').to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn collect_node_text(node: tree_sitter::Node, text: &str) -> String {
+    if node.kind() == "text" {
+        return text[node.byte_range()].to_string();
+    }
+    let mut text_acc = String::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "start_tag" && child.kind() != "end_tag" {
+            let t = collect_node_text(child, text);
+            if !t.is_empty() {
+                if !text_acc.is_empty() && !text_acc.ends_with(' ') {
+                    text_acc.push(' ');
+                }
+                text_acc.push_str(&t);
+            }
+        }
+    }
+    text_acc
+}
+
+pub fn blocks_to_markdown(blocks: &[Block]) -> String {
+    let mut md = String::new();
+    render_blocks_to_markdown(blocks, &mut md);
+    md
+}
+
+fn render_blocks_to_markdown(blocks: &[Block], md: &mut String) {
+    for block in blocks {
+        match block {
+            Block::Heading { level, text, .. } => {
+                let hashes = "#".repeat(*level);
+                md.push_str(&format!("{} {}\n\n", hashes, text));
+            }
+            Block::Paragraph { runs, .. } => {
+                md.push_str(&format!("{}\n\n", runs_to_markdown(runs)));
+            }
+            Block::BlockQuote { runs, .. } => {
+                md.push_str(&format!("> {}\n\n", runs_to_markdown(runs)));
+            }
+            Block::Aside { runs, .. } => {
+                md.push_str(&format!("> [!NOTE]\n> {}\n\n", runs_to_markdown(runs)));
+            }
+            Block::CodeBlock { language, code, .. } => {
+                md.push_str(&format!("```{}\n{}\n```\n\n", language, code));
+            }
+            Block::List { ordered, items, .. } => {
+                for (idx, item) in items.iter().enumerate() {
+                    let prefix = if let Some(checked) = item.checked {
+                        if checked { "- [x] " } else { "- [ ] " }
+                    } else if *ordered {
+                        &format!("{}. ", idx + 1)
+                    } else {
+                        "- "
+                    };
+                    md.push_str(&format!("{}{}\n", prefix, runs_to_markdown(&item.runs)));
+                }
+                md.push('\n');
+            }
+            Block::DescriptionList { items, .. } => {
+                for (term, runs) in items {
+                    md.push_str(&format!("**{}**: {}\n", term, runs_to_markdown(runs)));
+                }
+                md.push('\n');
+            }
+            Block::Table { headers, rows, .. } => {
+                if !headers.is_empty() {
+                    md.push_str("| ");
+                    for h in headers {
+                        md.push_str(h.as_ref());
+                        md.push_str(" | ");
+                    }
+                    md.push('\n');
+                    md.push_str("| ");
+                    for _ in headers {
+                        md.push_str("--- | ");
+                    }
+                    md.push('\n');
+                }
+                for row in rows {
+                    md.push_str("| ");
+                    for cell in row {
+                        md.push_str(&runs_to_markdown(cell));
+                        md.push_str(" | ");
+                    }
+                    md.push('\n');
+                }
+                md.push('\n');
+            }
+            Block::HorizontalRule { .. } => {
+                md.push_str("---\n\n");
+            }
+            Block::Image { src, alt, .. } => {
+                let alt_str = alt.as_ref().map(|s| s.as_ref()).unwrap_or("");
+                md.push_str(&format!("![{}]({})\n\n", alt_str, src));
+            }
+            Block::Audio { src, alt, .. } => {
+                let alt_str = alt.as_ref().map(|s| s.as_ref()).unwrap_or("Audio");
+                md.push_str(&format!("![{}]({})\n\n", alt_str, src));
+            }
+            Block::Video { src, alt, .. } => {
+                let alt_str = alt.as_ref().map(|s| s.as_ref()).unwrap_or("Video");
+                md.push_str(&format!("![{}]({})\n\n", alt_str, src));
+            }
+            Block::Details { summary, blocks: inner, .. } => {
+                md.push_str(&format!("<details><summary>{}</summary>\n\n", summary));
+                render_blocks_to_markdown(inner, md);
+                md.push_str("</details>\n\n");
+            }
+            Block::Footnote { id, runs, .. } => {
+                md.push_str(&format!("[^{}]: {}\n", id, runs_to_markdown(runs)));
+            }
+            Block::Review { blocks: inner, .. } => {
+                md.push_str("> [!WARNING]\n> **Review required**\n");
+                let mut inner_md = String::new();
+                render_blocks_to_markdown(inner, &mut inner_md);
+                for line in inner_md.lines() {
+                    if !line.is_empty() {
+                        md.push_str(&format!("> {}\n", line));
+                    }
+                }
+                md.push('\n');
+            }
+            Block::Include { src, .. } => {
+                let path = std::path::Path::new(src.as_str());
+                let stem = path.file_stem().map_or("", |s| s.to_str().unwrap_or(""));
+                md.push_str(&format!("![[{}]]\n\n", stem));
+            }
+        }
+    }
+}
+
+fn runs_to_markdown(runs: &[TextRun]) -> String {
+    let mut s = String::new();
+    for run in runs {
+        let mut prefix = String::new();
+        let mut suffix = String::new();
+
+        if run.bold {
+            prefix.push_str("**");
+            suffix.insert_str(0, "**");
+        }
+        if run.italic {
+            prefix.push_str("*");
+            suffix.insert_str(0, "*");
+        }
+        if run.underline {
+            prefix.push_str("<u>");
+            suffix.insert_str(0, "</u>");
+        }
+        if run.strikethrough {
+            prefix.push_str("~~");
+            suffix.insert_str(0, "~~");
+        }
+        if run.code {
+            prefix.push_str("`");
+            suffix.insert_str(0, "`");
+        }
+        if run.superscript {
+            prefix.push_str("<sup>");
+            suffix.insert_str(0, "</sup>");
+        }
+        if run.subscript {
+            prefix.push_str("<sub>");
+            suffix.insert_str(0, "</sub>");
+        }
+
+        if let Some(ref fn_ref) = run.footnote_ref {
+            s.push_str(&format!("[^{}]", fn_ref));
+        } else if let Some(ref hub_id) = run.hubref {
+            s.push_str(&format!("[[{}|{}{}{}]]", hub_id, prefix, run.text, suffix));
+        } else if let Some(ref href) = run.link {
+            s.push_str(&format!("[{}{}{}]( {})", prefix, run.text, suffix, href));
+        } else {
+            s.push_str(&format!("{}{}{}", prefix, run.text, suffix));
+        }
+    }
+    s
+}
+
+

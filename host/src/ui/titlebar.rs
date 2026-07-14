@@ -6,6 +6,7 @@
 use gpui::prelude::*;
 use gpui::{div, Context, Entity, IntoElement, Render};
 use gpui_component::{Icon, IconName};
+use gpui_component::scroll::ScrollableElement;
 
 // ─── SettingsPanel (theme picker) ───────────────────────────────────────────
 
@@ -95,7 +96,7 @@ impl RenderOnce for SettingsPanel {
                 gpui::div()
                     .id("theme_list")
                     .flex_1()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .flex()
                     .flex_col()
                     .children(theme_items),

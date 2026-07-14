@@ -147,12 +147,29 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 eprintln!("Warning: TWXML grammar not linked. Syntax highlighting disabled.");
             }
 
-            // Initialize input state for XML Editor
+            // Initialize input state for XML Editor (default first tab)
             let input_state = cx.new(|cx| {
                 gpui_component::input::InputState::new(window, cx)
                     .multi_line(true)
                     .code_editor("twxml")
                     .line_number(true)
+            });
+
+            // Set initial XML Editor content
+            let xml_content = std::fs::read_to_string(&path).unwrap_or_default();
+            input_state.update(cx, |state, cx| {
+                state.set_value(xml_content.clone(), window, cx);
+            });
+
+            workspace.update(cx, |w, _| {
+                w.open_docs.push(ui::OpenDocument {
+                    path: path.clone(),
+                    mode: ui::DocumentMode::RawEditor,
+                    document_home: document_home.clone(),
+                    input_state: input_state.clone(),
+                    show_mode_dropdown: false,
+                });
+                w.active_doc_idx = Some(0);
             });
 
             let sidebar = cx.new(|cx| ui::SidebarView::new(workspace.clone(), cx));
@@ -165,12 +182,6 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 )
             });
             let graph_pane = cx.new(|cx| ui::GraphPaneView::new(workspace.clone(), cx));
-
-            // Set initial XML Editor content
-            let xml_content = std::fs::read_to_string(&path).unwrap_or_default();
-            input_state.update(cx, |state, cx| {
-                state.set_value(xml_content.clone(), window, cx);
-            });
 
             let (diag_tx, mut diag_rx) =
                 tokio::sync::mpsc::unbounded_channel::<(String, Vec<Diagnostic>)>();
@@ -218,10 +229,23 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     }
                 });
 
+                // Subscribe to GraphPaneView node click events
+                let graph_sub = cx.subscribe_in(&graph_pane, window, {
+                    move |this: &mut MainView,
+                          _graph_pane,
+                          ev: &ui::graph_pane::GraphEvent,
+                          window,
+                          cx| {
+                        match ev {
+                            ui::graph_pane::GraphEvent::NodeClicked(node_id) => {
+                                this.handle_node_click(node_id.clone(), window, cx);
+                            }
+                        }
+                    }
+                });
+
                 // Subscribe to InputEvent::Change to sync XML edits to the Preview
                 let input_sub = cx.subscribe_in(&input_state, window, {
-                    let input_state = input_state.clone();
-                    let document_home = document_home.clone();
                     let workspace = workspace.clone();
                     move |_this: &mut MainView,
                           _,
@@ -229,34 +253,54 @@ fn open_window(twxml_path: String, cx: &mut App) {
                           _window,
                           cx| match ev {
                         gpui_component::input::InputEvent::Change => {
-                            let text = input_state.read(cx).value().to_string();
-                            let (selected_path, lsp_client) = workspace
-                                .update(cx, |w, _| (w.selected_path.clone(), w.lsp_client.clone()));
+                            let (active_doc_path, active_input_state, active_doc_home) = {
+                                let w = workspace.read(cx);
+                                if let Some(idx) = w.active_doc_idx {
+                                    if let Some(doc) = w.open_docs.get(idx) {
+                                        (Some(doc.path.clone()), doc.input_state.clone(), doc.document_home.clone())
+                                    } else {
+                                        return;
+                                    }
+                                } else {
+                                    return;
+                                }
+                            };
 
-                            if let Some(ref p) = selected_path {
+                            let text = active_input_state.read(cx).value().to_string();
+                            let lsp_client = workspace.update(cx, |w, _| {
+                                w.selected_path = active_doc_path.clone();
+                                w.lsp_client.clone()
+                            });
+
+                            if let Some(ref p) = active_doc_path {
                                 let _ = std::fs::write(p, &text);
                                 if let Some(ref client) = lsp_client {
                                     client.notify_change(p, &text);
                                 }
-                            }
-                            match parser::parse_twxml(&text) {
-                                Ok((title, author, metadata, blocks)) => {
-                                    document_home.update(cx, |doc, cx| {
-                                        doc.title = title.into();
-                                        doc.author = author.into();
-                                        doc.metadata = metadata;
-                                        doc.blocks = blocks;
-                                        doc.parse_state = ParseState::Synced;
-                                        cx.notify();
-                                    });
+                                let base_dir = p.parent();
+                                let mut visited = std::collections::HashSet::new();
+                                if let Ok(abs) = p.canonicalize() {
+                                    visited.insert(abs);
                                 }
-                                Err(err) => {
-                                    document_home.update(cx, |doc, cx| {
-                                        doc.parse_state = ParseState::OutOfSync {
-                                            error: err.to_string(),
-                                        };
-                                        cx.notify();
-                                    });
+                                match parser::parse_twxml_internal(&text, base_dir, &mut visited) {
+                                    Ok((title, author, metadata, blocks)) => {
+                                        active_doc_home.update(cx, |doc, cx| {
+                                            doc.title = title.into();
+                                            doc.author = author.into();
+                                            doc.metadata = metadata;
+                                            doc.blocks = blocks;
+                                            doc.parse_state = ParseState::Synced;
+                                            cx.notify();
+                                        });
+                                    }
+                                    Err(err) => {
+                                        active_doc_home.update(cx, |doc, cx| {
+                                            doc.parse_state = ParseState::OutOfSync {
+                                                error: err.to_string(),
+                                            };
+                                            cx.notify();
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -273,7 +317,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     settings_window: None,
                     document_home,
                     input_state,
-                    _subscriptions: vec![sidebar_sub, input_sub],
+                    _subscriptions: vec![sidebar_sub, graph_sub, input_sub],
                 }
             });
 

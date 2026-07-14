@@ -9,7 +9,7 @@ use gpui::{div, prelude::*, Context, Entity, Render, Window};
 use super::super::graph_sim::{
     parse_hubgs_file, run_def_simulation, run_graph_simulation, GraphEdge, GraphNode,
 };
-use super::{ActiveTab, Workspace};
+use super::{GraphTab, Workspace};
 
 /// A single graph panel containing nodes, edges, and a label.
 #[derive(IntoElement)]
@@ -17,6 +17,8 @@ pub(crate) struct GraphPanel {
     pub(crate) nodes: Vec<GraphNode>,
     pub(crate) edges: Vec<GraphEdge>,
     pub(crate) label: &'static str,
+    pub(crate) selected_hub_id: Option<String>,
+    pub(crate) on_node_click: Option<std::sync::Arc<dyn Fn(String, &mut Window, &mut gpui::App) + Send + Sync + 'static>>,
 }
 
 impl RenderOnce for GraphPanel {
@@ -135,6 +137,11 @@ impl RenderOnce for GraphPanel {
             };
 
             let color = node.color;
+            let on_click = self.on_node_click.clone();
+            let node_id = node.id.clone();
+            let is_selected = Some(&node.id) == self.selected_hub_id.as_ref();
+            let border_width = if is_selected { gpui::px(4.) } else { gpui::px(2.) };
+            let border_color_val = if is_selected { active_accent } else { border_color };
 
             let node_div = gpui::div()
                 .id(format!("{}_{}", label.to_lowercase(), idx))
@@ -149,9 +156,14 @@ impl RenderOnce for GraphPanel {
                 .items_center()
                 .justify_center()
                 .shadow_md()
-                .border(gpui::px(2.))
-                .border_color(border_color)
+                .border(border_width)
+                .border_color(border_color_val)
                 .hover(|s| s.border_color(active_accent))
+                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                    if let Some(ref cb) = on_click {
+                        cb(node_id.clone(), window, cx);
+                    }
+                })
                 .child(
                     gpui::div()
                         .text_color(fg_color)
@@ -222,13 +234,21 @@ impl RenderOnce for GraphPanel {
 
 // ─── GraphPaneView View ──────────────────────────────────────────────────────
 
+pub(crate) enum GraphEvent {
+    NodeClicked(String),
+}
+
 pub(crate) struct GraphPaneView {
     _workspace: Entity<Workspace>,
     graph_nodes: Vec<GraphNode>,
     graph_edges: Vec<GraphEdge>,
     def_nodes: Vec<GraphNode>,
     def_edges: Vec<GraphEdge>,
+    outline_nodes: Vec<GraphNode>,
+    outline_edges: Vec<GraphEdge>,
 }
+
+impl gpui::EventEmitter<GraphEvent> for GraphPaneView {}
 
 impl GraphPaneView {
     pub(crate) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
@@ -244,13 +264,27 @@ impl GraphPaneView {
             graph_edges: Vec::new(),
             def_nodes: Vec::new(),
             def_edges: Vec::new(),
+            outline_nodes: Vec::new(),
+            outline_edges: Vec::new(),
         };
         this.recalculate_layout(&workspace, cx);
         this
     }
 
     fn recalculate_layout(&mut self, workspace: &Entity<Workspace>, cx: &mut Context<Self>) {
-        let selected_path = workspace.read(cx).selected_path.clone();
+        let (selected_path, active_doc_text) = {
+            let w = workspace.read(cx);
+            let text = if let Some(idx) = w.active_doc_idx {
+                if let Some(doc) = w.open_docs.get(idx) {
+                    Some(doc.input_state.read(cx).value().to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            (w.selected_path.clone(), text)
+        };
 
         cx.spawn(
             move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
@@ -293,7 +327,14 @@ impl GraphPaneView {
                                 }
                             }
 
-                            (graph_nodes, graph_edges, def_nodes, def_edges)
+                            let (out_nodes, out_edges) = if let Some(ref t) = active_doc_text {
+                                let (nodes, edges) = crate::parser::parse_document_outline(t);
+                                layout_outline_tree(&nodes, &edges, 500.0, 500.0)
+                            } else {
+                                (Vec::new(), Vec::new())
+                            };
+
+                            (graph_nodes, graph_edges, def_nodes, def_edges, out_nodes, out_edges)
                         })
                         .await;
 
@@ -302,6 +343,8 @@ impl GraphPaneView {
                         this.graph_edges = layout_data.1;
                         this.def_nodes = layout_data.2;
                         this.def_edges = layout_data.3;
+                        this.outline_nodes = layout_data.4;
+                        this.outline_edges = layout_data.5;
                         cx.notify();
                     });
                 }
@@ -313,20 +356,135 @@ impl GraphPaneView {
 
 impl Render for GraphPaneView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_tab = self._workspace.read(cx).active_tab;
+        let (active_tab, selected_hub_id) = {
+            let w = self._workspace.read(cx);
+            (w.active_graph_tab, w.selected_hub_id.clone())
+        };
+
+        let cx_entity = cx.entity().clone();
+        let on_node_click = std::sync::Arc::new(move |node_id: String, _window: &mut Window, cx: &mut gpui::App| {
+            let _ = cx_entity.update(cx, |this, cx| {
+                cx.emit(GraphEvent::NodeClicked(node_id));
+            });
+        });
+
         match active_tab {
-            ActiveTab::DefinitionsGraph => GraphPanel {
-                nodes: self.def_nodes.clone(),
-                edges: self.def_edges.clone(),
-                label: "DEFINITIONS SCHEMA GRAPH",
+            super::GraphTab::DocumentGraph => GraphPanel {
+                nodes: self.outline_nodes.clone(),
+                edges: self.outline_edges.clone(),
+                label: "TWXML DOCUMENT GRAPH",
+                selected_hub_id,
+                on_node_click: Some(on_node_click),
             }
             .into_any_element(),
-            _ => GraphPanel {
+            super::GraphTab::DefinitionsSchema => GraphPanel {
+                nodes: self.def_nodes.clone(),
+                edges: self.def_edges.clone(),
+                label: "HUBGS DEFINITIONS SCHEMA",
+                selected_hub_id,
+                on_node_click: Some(on_node_click),
+            }
+            .into_any_element(),
+            super::GraphTab::InstancesRelation => GraphPanel {
                 nodes: self.graph_nodes.clone(),
                 edges: self.graph_edges.clone(),
-                label: "INSTANCES RELATION GRAPH",
+                label: "HUBGS INSTANCES RELATION",
+                selected_hub_id,
+                on_node_click: Some(on_node_click),
             }
             .into_any_element(),
         }
     }
+}
+
+fn layout_outline_tree(
+    nodes: &[crate::parser::OutlineNode],
+    edges: &[(usize, usize)],
+    width: f32,
+    height: f32,
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+    let n_len = nodes.len();
+    if n_len == 0 {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut in_degrees = vec![0; n_len];
+    let mut adj = vec![Vec::new(); n_len];
+    for &(parent, child) in edges {
+        if parent < n_len && child < n_len {
+            adj[parent].push(child);
+            in_degrees[child] += 1;
+        }
+    }
+
+    let mut depths = vec![0; n_len];
+    let mut queue = std::collections::VecDeque::new();
+    for i in 0..n_len {
+        if in_degrees[i] == 0 {
+            queue.push_back((i, 0));
+        }
+    }
+
+    while let Some((node_idx, d)) = queue.pop_front() {
+        depths[node_idx] = d;
+        for &child in &adj[node_idx] {
+            queue.push_back((child, d + 1));
+        }
+    }
+
+    let max_depth = *depths.iter().max().unwrap_or(&0);
+
+    let mut level_nodes = vec![Vec::new(); max_depth + 1];
+    for i in 0..n_len {
+        let d = depths[i];
+        if d <= max_depth {
+            level_nodes[d].push(i);
+        }
+    }
+
+    let mut out_nodes = Vec::with_capacity(n_len);
+    let mut coords = vec![(0.0f32, 0.0f32); n_len];
+
+    for d in 0..=max_depth {
+        let count = level_nodes[d].len();
+        let y = ((d + 1) as f32 * height) / ((max_depth + 2) as f32);
+        for (col, &node_idx) in level_nodes[d].iter().enumerate() {
+            let x = ((col + 1) as f32 * width) / ((count + 1) as f32);
+            coords[node_idx] = (x, y);
+
+            let color_hsla = match nodes[node_idx].kind.as_str() {
+                "section" => gpui::hsla(0.6, 0.8, 0.5, 1.0),
+                "heading" => gpui::hsla(0.3, 0.8, 0.5, 1.0),
+                "paragraph" => gpui::hsla(0.0, 0.0, 0.8, 1.0),
+                "hubref" => gpui::hsla(0.1, 0.8, 0.5, 1.0),
+                _ => gpui::hsla(0.8, 0.8, 0.5, 1.0),
+            };
+
+            out_nodes.push(GraphNode {
+                id: nodes[node_idx].id.clone(),
+                name: nodes[node_idx].name.clone(),
+                type_name: nodes[node_idx].kind.clone(),
+                color: color_hsla,
+                x,
+                y,
+                vx: 0.0,
+                vy: 0.0,
+            });
+        }
+    }
+
+    let mut out_edges = Vec::with_capacity(edges.len());
+    for &(parent, child) in edges {
+        if parent < n_len && child < n_len {
+            let (source_x, source_y) = coords[parent];
+            let (target_x, target_y) = coords[child];
+            out_edges.push(GraphEdge {
+                source: parent,
+                target: child,
+                label: "->".to_string(),
+            });
+        }
+    }
+
+    (out_nodes, out_edges)
 }

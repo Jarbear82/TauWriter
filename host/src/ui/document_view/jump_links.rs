@@ -48,6 +48,17 @@ pub(crate) fn find_block_type_by_id(blocks: &[Block], target_id: &str) -> Option
                     return Some(t);
                 }
             }
+            Block::Include {
+                id, resolved_blocks: Some(inner), ..
+            } => {
+                if id.as_deref() == Some(target_id) {
+                    return Some("Include");
+                }
+                if let Some(t) = find_block_type_by_id(inner, target_id) {
+                    return Some(t);
+                }
+            }
+            Block::Include { id, .. } if id.as_deref() == Some(target_id) => return Some("Include"),
             _ => {}
         }
     }
@@ -149,6 +160,24 @@ pub(crate) fn find_block_range_by_id(
                 }
                 if let Some(r) = find_block_range_by_id(inner, target_id) {
                     return Some(r);
+                }
+            }
+            Block::Include {
+                id,
+                resolved_blocks: Some(inner),
+                range,
+                ..
+            } => {
+                if id.as_deref() == Some(target_id) {
+                    return range.clone();
+                }
+                if let Some(r) = find_block_range_by_id(inner, target_id) {
+                    return Some(r);
+                }
+            }
+            Block::Include { id, range, .. } => {
+                if id.as_deref() == Some(target_id) {
+                    return range.clone();
                 }
             }
         }
