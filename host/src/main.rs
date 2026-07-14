@@ -1,29 +1,28 @@
 //! TauWriter host — a GPUI desktop application for editing TWXML documents.
 //!
 //! Architecture:
-//! - `ui::` — the DemoView component (window, tabs, panels)
+//! - `ui::` — the MainView component (window, tabs, panels)
 //! - `parser::twxml` — TWXML → renderer_schema::Block conversion
 //! - `graph_sim` — HubGS force-directed layout engine
 //! - `lsp_client` — tauwriter-lsp subprocess management
 
 use gpui::{prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
-use parser::{Block, TextRun};
-use std::path::{Path, PathBuf};
-
-mod graph_sim;
-mod lsp_client;
-mod parser;
-mod ui;
-
-#[cfg(test)]
-mod lsp_client_tests;
-
-#[cfg(test)]
-mod graph_sim_tests;
-
+use gpui_component_assets::Assets;
 use lsp_client::{Diagnostic, LspClient};
 use parser::load_and_parse_twxml;
-use ui::{DemoView, DocumentHome, ParseState, ToggleSettings, SelectDocumentTab, SelectGraphTab};
+use parser::{Block, TextRun};
+use std::path::PathBuf;
+use ui::{DocumentHome, MainView, ParseState, SelectDocumentTab, SelectGraphTab, ToggleSettings};
+
+mod graph_sim;
+#[cfg(test)]
+mod graph_sim_tests;
+mod lsp_client;
+#[cfg(test)]
+mod lsp_client_tests;
+mod parser;
+mod ui;
+mod utils;
 
 unsafe extern "C" {
     /// Safety: The function is safe to call as it returns a static, read-only
@@ -48,15 +47,27 @@ fn main() {
 
     let platform = gpui_platform::current_platform(false);
     let twxml_path_clone = twxml_path.clone();
-    Application::with_platform(platform).run(move |cx: &mut App| {
-        // Initialize gpui_component library
-        gpui_component::init(cx);
-        open_window(twxml_path_clone, cx);
-    });
+    Application::with_platform(platform)
+        .with_assets(Assets)
+        .run(move |cx: &mut App| {
+            // Initialize gpui_component library
+            gpui_component::init(cx);
+            open_window(twxml_path_clone, cx);
+        });
+}
+
+/// Load the TWXML tree-sitter language from the bundled native grammar.
+/// Returns `None` if the external symbol is missing or returns NULL.
+fn load_twxml_language() -> Option<tree_sitter::Language> {
+    let ptr = unsafe { tree_sitter_twxml() };
+    if ptr.is_null() {
+        return None;
+    }
+    Some(unsafe { std::mem::transmute(ptr) })
 }
 
 fn open_window(twxml_path: String, cx: &mut App) {
-    let workspace_root = match resolve_workspace_root() {
+    let workspace_root = match utils::resolve_workspace_root() {
         Some(root) => root,
         None => {
             eprintln!("Error: Failed to resolve workspace root. Make sure the application is run from within the source tree.");
@@ -87,15 +98,15 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 Err(err) => {
                     eprintln!("Warning: Failed to load twxml: {err:#}. Using empty placeholder.");
                     (
-                         "Error Loading Document".to_string(),
-                         "System".to_string(),
-                         Vec::new(),
-                         vec![Block::Paragraph {
-                             runs: vec![TextRun::new(format!("Could not load document: {err:#}"))],
-                             id: None,
-                             attributes: Vec::new(),
-                             range: None,
-                         }],
+                        "Error Loading Document".to_string(),
+                        "System".to_string(),
+                        Vec::new(),
+                        vec![Block::Paragraph {
+                            runs: vec![TextRun::new(format!("Could not load document: {err:#}"))],
+                            id: None,
+                            attributes: Vec::new(),
+                            range: None,
+                        }],
                     )
                 }
             };
@@ -116,23 +127,25 @@ fn open_window(twxml_path: String, cx: &mut App) {
             let themes_dir = workspace_root.join("themes");
             let _ = gpui_component::ThemeRegistry::watch_dir(themes_dir, cx, |_| {});
 
-            // Register custom tree-sitter language for twxml
-            // Safety: The transmute from a raw pointer to `tree_sitter::Language` is safe because
-            // `Language` is a transparent wrapper around a raw TSLanguage pointer (`*const std::ffi::c_void`),
-            // and `tree_sitter_twxml()` is guaranteed to return a valid `*const std::ffi::c_void`.
-            let language: tree_sitter::Language = unsafe {
-                std::mem::transmute(tree_sitter_twxml())
-            };
+            // Register custom tree-sitter language for twxml.
+            // The FFI symbol must be linked by build.rs; if missing, log a warning
+            // and skip highlighting (graceful degradation).
+            let lang = load_twxml_language();
             let highlights = include_str!("../../extension/languages/twxml/highlights.scm");
-            let config = gpui_component::highlighter::LanguageConfig::new(
-                "twxml",
-                language,
-                vec![],
-                highlights,
-                "",
-                "",
-            );
-            gpui_component::highlighter::LanguageRegistry::singleton().register("twxml", &config);
+            if let Some(language) = lang {
+                let config = gpui_component::highlighter::LanguageConfig::new(
+                    "twxml",
+                    language,
+                    vec![],
+                    highlights,
+                    "",
+                    "",
+                );
+                gpui_component::highlighter::LanguageRegistry::singleton()
+                    .register("twxml", &config);
+            } else {
+                eprintln!("Warning: TWXML grammar not linked. Syntax highlighting disabled.");
+            }
 
             // Initialize input state for XML Editor
             let input_state = cx.new(|cx| {
@@ -143,7 +156,14 @@ fn open_window(twxml_path: String, cx: &mut App) {
             });
 
             let sidebar = cx.new(|cx| ui::SidebarView::new(workspace.clone(), cx));
-            let document_view = cx.new(|cx| ui::DocumentView::new(workspace.clone(), document_home.clone(), input_state.clone(), cx));
+            let document_view = cx.new(|cx| {
+                ui::DocumentView::new(
+                    workspace.clone(),
+                    document_home.clone(),
+                    input_state.clone(),
+                    cx,
+                )
+            });
             let graph_pane = cx.new(|cx| ui::GraphPaneView::new(workspace.clone(), cx));
 
             // Set initial XML Editor content
@@ -185,7 +205,11 @@ fn open_window(twxml_path: String, cx: &mut App) {
 
                 // Subscribe to SidebarView file selection event
                 let sidebar_sub = cx.subscribe_in(&sidebar, window, {
-                    move |this: &mut DemoView, _sidebar, ev: &ui::sidebar::SidebarEvent, window, cx| {
+                    move |this: &mut MainView,
+                          _sidebar,
+                          ev: &ui::sidebar::SidebarEvent,
+                          window,
+                          cx| {
                         match ev {
                             ui::sidebar::SidebarEvent::FileSelected(path) => {
                                 this.select_file(path.clone(), window, cx);
@@ -199,16 +223,15 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     let input_state = input_state.clone();
                     let document_home = document_home.clone();
                     let workspace = workspace.clone();
-                    move |_this: &mut DemoView,
+                    move |_this: &mut MainView,
                           _,
                           ev: &gpui_component::input::InputEvent,
                           _window,
                           cx| match ev {
                         gpui_component::input::InputEvent::Change => {
                             let text = input_state.read(cx).value().to_string();
-                            let (selected_path, lsp_client) = workspace.update(cx, |w, _| {
-                                (w.selected_path.clone(), w.lsp_client.clone())
-                            });
+                            let (selected_path, lsp_client) = workspace
+                                .update(cx, |w, _| (w.selected_path.clone(), w.lsp_client.clone()));
 
                             if let Some(ref p) = selected_path {
                                 let _ = std::fs::write(p, &text);
@@ -229,7 +252,9 @@ fn open_window(twxml_path: String, cx: &mut App) {
                                 }
                                 Err(err) => {
                                     document_home.update(cx, |doc, cx| {
-                                        doc.parse_state = ParseState::OutOfSync { error: err.to_string() };
+                                        doc.parse_state = ParseState::OutOfSync {
+                                            error: err.to_string(),
+                                        };
                                         cx.notify();
                                     });
                                 }
@@ -239,14 +264,13 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     }
                 });
 
-                DemoView {
+                MainView {
                     focus_handle: cx.focus_handle(),
                     workspace,
                     sidebar,
                     document_view,
                     graph_pane,
-                    active_tab: ui::ActiveTab::Document,
-                    settings_open: false,
+                    settings_window: None,
                     document_home,
                     input_state,
                     _subscriptions: vec![sidebar_sub, input_sub],
@@ -268,12 +292,4 @@ fn open_window(twxml_path: String, cx: &mut App) {
     }
 
     cx.activate(true);
-}
-
-/// Resolve the workspace root (parent of CARGO_MANIFEST_DIR). Returns `None` if
-/// the path cannot be determined — this is a valid scenario when the binary runs
-/// from an unusual location.
-fn resolve_workspace_root() -> Option<PathBuf> {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
-    Some(base.to_path_buf())
 }

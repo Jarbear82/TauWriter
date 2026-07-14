@@ -12,6 +12,15 @@ pub(crate) struct FileNode {
     pub(crate) children: Vec<FileNode>,
 }
 
+/// A flattened node suitable for virtualized list rendering.
+#[derive(Clone)]
+pub(crate) struct FlatFileNode {
+    pub(crate) path: PathBuf,
+    pub(crate) name: String,
+    pub(crate) is_dir: bool,
+    pub(crate) depth: usize,
+}
+
 /// Build a tree of file nodes rooted at `dir`.  Hidden files (starting with '.')
 /// and common build directories (`target`, `vendor`) are skipped.
 pub(crate) fn build_file_tree(dir: &Path) -> Vec<FileNode> {
@@ -51,4 +60,25 @@ pub(crate) fn build_file_tree(dir: &Path) -> Vec<FileNode> {
         }
     });
     nodes
+}
+
+/// Flatten a hierarchical FileNode tree into a flat list for virtualized rendering.
+pub(crate) fn flatten_file_tree(nodes: &[FileNode]) -> Vec<FlatFileNode> {
+    let mut flat = Vec::new();
+    _flatten_recursive(nodes, 0, &mut flat);
+    flat
+}
+
+fn _flatten_recursive(nodes: &[FileNode], depth: usize, flat: &mut Vec<FlatFileNode>) {
+    for node in nodes {
+        flat.push(FlatFileNode {
+            path: node.path.clone(),
+            name: node.name.clone(),
+            is_dir: node.is_dir,
+            depth,
+        });
+        if !node.children.is_empty() {
+            _flatten_recursive(&node.children, depth + 1, flat);
+        }
+    }
 }

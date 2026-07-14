@@ -77,36 +77,16 @@ pub(crate) fn run_graph_simulation(
     height: f32,
 ) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut rng = SimpleRng::new(12345);
+    let n = instances.len();
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut vxs = vec![0.0; n];
+    let mut vys = vec![0.0; n];
 
-    let mut nodes: Vec<GraphNode> = instances
-        .iter()
-        .map(|inst| {
-            let rx = width / 2.0 + rng.range(-50.0, 50.0);
-            let ry = height / 2.0 + rng.range(-50.0, 50.0);
-
-            let color = inst.theme_color.map_or_else(
-                || match inst.type_name.as_str() {
-                    "Character" => gpui::rgb(0x4169E1),
-                    "Location" => gpui::rgb(0x2ECC71),
-                    "Creature" => gpui::rgb(0xE67E22),
-                    "Item" => gpui::rgb(0x9B59B6),
-                    _ => gpui::rgb(0x7F8C8D),
-                },
-                gpui::rgb,
-            );
-
-            GraphNode {
-                id: inst.id.clone(),
-                name: inst.name.clone(),
-                type_name: inst.type_name.clone(),
-                color: color.into(),
-                x: rx,
-                y: ry,
-                vx: 0.0,
-                vy: 0.0,
-            }
-        })
-        .collect();
+    for _ in 0..n {
+        xs.push(width / 2.0 + rng.range(-50.0, 50.0));
+        ys.push(height / 2.0 + rng.range(-50.0, 50.0));
+    }
 
     // Map relation names to their defined arrow type
     let mut relation_arrows = std::collections::HashMap::new();
@@ -126,7 +106,10 @@ pub(crate) fn run_graph_simulation(
     for (src_idx, inst) in instances.iter().enumerate() {
         for link in &inst.links {
             if let Some(&tgt_idx) = id_to_index.get(link.target.as_str()) {
-                let arrow = relation_arrows.get(link.relation.as_str()).copied().unwrap_or("-");
+                let arrow = relation_arrows
+                    .get(link.relation.as_str())
+                    .copied()
+                    .unwrap_or("-");
                 edges.push(GraphEdge {
                     source: src_idx,
                     target: tgt_idx,
@@ -136,7 +119,38 @@ pub(crate) fn run_graph_simulation(
         }
     }
 
-    simulate(&mut nodes, &edges, width, height, 80.0, 2000.0, 0.06, 0.01, 0.85, 300.0);
+    simulate(
+        &mut xs, &mut ys, &mut vxs, &mut vys, &edges, width, height, 80.0, 2000.0, 0.06, 0.01,
+        0.85, 300.0,
+    );
+
+    let nodes = instances
+        .iter()
+        .enumerate()
+        .map(|(idx, inst)| {
+            let color = inst.theme_color.map_or_else(
+                || match inst.type_name.as_str() {
+                    "Character" => gpui::rgb(0x4169E1),
+                    "Location" => gpui::rgb(0x2ECC71),
+                    "Creature" => gpui::rgb(0xE67E22),
+                    "Item" => gpui::rgb(0x9B59B6),
+                    _ => gpui::rgb(0x7F8C8D),
+                },
+                gpui::rgb,
+            );
+
+            GraphNode {
+                id: inst.id.clone(),
+                name: inst.name.clone(),
+                type_name: inst.type_name.clone(),
+                color: color.into(),
+                x: xs[idx],
+                y: ys[idx],
+                vx: vxs[idx],
+                vy: vys[idx],
+            }
+        })
+        .collect();
 
     (nodes, edges)
 }
@@ -148,33 +162,16 @@ pub(crate) fn run_def_simulation(
     height: f32,
 ) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let mut rng = SimpleRng::new(54321);
+    let n = definitions.len();
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut vxs = vec![0.0; n];
+    let mut vys = vec![0.0; n];
 
-    let mut nodes: Vec<GraphNode> = definitions
-        .iter()
-        .map(|def| {
-            let rx = width / 2.0 + rng.range(-50.0, 50.0);
-            let ry = height / 2.0 + rng.range(-50.0, 50.0);
-
-            let color = match def.name.as_str() {
-                "Character" => gpui::rgb(0x4169E1),
-                "Location" => gpui::rgb(0x2ECC71),
-                "Creature" => gpui::rgb(0xE67E22),
-                "Item" => gpui::rgb(0x9B59B6),
-                _ => gpui::rgb(0x7F8C8D),
-            };
-
-            GraphNode {
-                id: def.name.clone(),
-                name: def.name.clone(),
-                type_name: "HubDefinition".to_string(),
-                color: color.into(),
-                x: rx,
-                y: ry,
-                vx: 0.0,
-                vy: 0.0,
-            }
-        })
-        .collect();
+    for _ in 0..n {
+        xs.push(width / 2.0 + rng.range(-50.0, 50.0));
+        ys.push(height / 2.0 + rng.range(-50.0, 50.0));
+    }
 
     let name_to_index: std::collections::HashMap<&str, usize> = definitions
         .iter()
@@ -195,15 +192,45 @@ pub(crate) fn run_def_simulation(
         }
     }
 
-    simulate(&mut nodes, &edges, width, height, 100.0, 2500.0, 0.08, 0.015, 0.85, 400.0);
+    simulate(
+        &mut xs, &mut ys, &mut vxs, &mut vys, &edges, width, height, 100.0, 2500.0, 0.08, 0.015,
+        0.85, 400.0,
+    );
+
+    let nodes = definitions
+        .iter()
+        .enumerate()
+        .map(|(idx, def)| {
+            let color = match def.name.as_str() {
+                "Character" => gpui::rgb(0x4169E1),
+                "Location" => gpui::rgb(0x2ECC71),
+                "Creature" => gpui::rgb(0xE67E22),
+                "Item" => gpui::rgb(0x9B59B6),
+                _ => gpui::rgb(0x7F8C8D),
+            };
+
+            GraphNode {
+                id: def.name.clone(),
+                name: def.name.clone(),
+                type_name: "HubDefinition".to_string(),
+                color: color.into(),
+                x: xs[idx],
+                y: ys[idx],
+                vx: vxs[idx],
+                vy: vys[idx],
+            }
+        })
+        .collect();
 
     (nodes, edges)
 }
 
-/// Shared force-directed simulation loop.  Parameters mirror the original
-/// Kamada-Kawai / repulsion-attraction model from main.rs.
+/// Shared force-directed simulation loop operating on flat layout coordinates.
 fn simulate(
-    nodes: &mut [GraphNode],
+    xs: &mut [f32],
+    ys: &mut [f32],
+    vxs: &mut [f32],
+    vys: &mut [f32],
     edges: &[GraphEdge],
     width: f32,
     height: f32,
@@ -214,80 +241,65 @@ fn simulate(
     damping: f32,
     repulsion_range: f32,
 ) {
+    let n = xs.len();
     for _ in 0..200 {
-        for i in 0..nodes.len() {
-            for j in 0..nodes.len() {
+        for i in 0..n {
+            let xi = xs[i];
+            let yi = ys[i];
+            let mut vxi = 0.0;
+            let mut vyi = 0.0;
+            for j in 0..n {
                 if i == j {
                     continue;
                 }
-                let dx = nodes[i].x - nodes[j].x;
-                let dy = nodes[i].y - nodes[j].y;
+                let dx = xi - xs[j];
+                let dy = yi - ys[j];
                 let dist_sq = dx * dx + dy * dy + 0.1;
                 let dist = dist_sq.sqrt();
                 if dist < repulsion_range {
                     let force = rep_strength / dist_sq;
-                    nodes[i].vx += (dx / dist) * force;
-                    nodes[i].vy += (dy / dist) * force;
+                    vxi += (dx / dist) * force;
+                    vyi += (dy / dist) * force;
                 }
             }
+            vxs[i] += vxi;
+            vys[i] += vyi;
         }
 
         for edge in edges {
             let src = edge.source;
             let tgt = edge.target;
-            let dx = nodes[tgt].x - nodes[src].x;
-            let dy = nodes[tgt].y - nodes[src].y;
+            let dx = xs[tgt] - xs[src];
+            let dy = ys[tgt] - ys[src];
             let dist = (dx * dx + dy * dy + 0.1).sqrt();
             let force = (dist - k) * attr_strength;
             let fx = (dx / dist) * force;
             let fy = (dy / dist) * force;
-            nodes[src].vx += fx;
-            nodes[src].vy += fy;
-            nodes[tgt].vx -= fx;
-            nodes[tgt].vy -= fy;
+            vxs[src] += fx;
+            vys[src] += fy;
+            vxs[tgt] -= fx;
+            vys[tgt] -= fy;
         }
 
         let cx = width / 2.0;
         let cy = height / 2.0;
-        for node in &mut *nodes {
-            node.vx += (cx - node.x) * center_pull;
-            node.vy += (cy - node.y) * center_pull;
+        for i in 0..n {
+            let x = xs[i];
+            let y = ys[i];
+            let vx = vxs[i] + (cx - x) * center_pull;
+            let vy = vys[i] + (cy - y) * center_pull;
 
-            node.x += node.vx;
-            node.y += node.vy;
-
-            node.vx *= damping;
-            node.vy *= damping;
-
-            node.x = node.x.clamp(24.0, width - 24.0);
-            node.y = node.y.clamp(24.0, height - 24.0);
+            xs[i] = (x + vx).clamp(24.0, width - 24.0);
+            ys[i] = (y + vy).clamp(24.0, height - 24.0);
+            vxs[i] = vx * damping;
+            vys[i] = vy * damping;
         }
     }
 }
 
 /// Recursively search a directory tree for the first `.hubgs` file.
 pub(crate) fn find_any_hubgs(dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            if name.starts_with('.') || name == "target" || name == "vendor" {
-                continue;
-            }
-            if path.is_dir() {
-                if let Some(found) = find_any_hubgs(&path) {
-                    return Some(found);
-                }
-            } else if path.extension().map_or(false, |ext| ext == "hubgs") {
-                return Some(path);
-            }
-        }
-    }
-    None
+    crate::utils::find_first_file(dir, Some("hubgs"))
 }
 
 mod hubgs_parser;

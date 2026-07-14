@@ -32,20 +32,8 @@ impl LspClient {
             .spawn()
             .ok()?;
 
-        let mut stdin = match child.stdin.take() {
-            Some(s) => s,
-            None => {
-                eprintln!("Warning: Failed to take stdin of LSP child process");
-                return None;
-            }
-        };
-        let stdout = match child.stdout.take() {
-            Some(s) => s,
-            None => {
-                eprintln!("Warning: Failed to take stdout of LSP child process");
-                return None;
-            }
-        };
+        let mut stdin = child.stdin.take()?;
+        let stdout = child.stdout.take()?;
 
         let (tx, rx) = std::sync::mpsc::channel::<String>();
 
@@ -186,7 +174,7 @@ pub(crate) fn find_lsp_binary() -> Option<std::path::PathBuf> {
         return Some(direct);
     }
 
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
+    let base = crate::utils::resolve_workspace_root()?;
     for candidate in [
         base.join("target/debug/tauwriter-lsp"),
         base.join("target/debug/tauwriter_lsp"),

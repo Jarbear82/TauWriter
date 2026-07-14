@@ -4,7 +4,8 @@
 //! [user-review: split required] See task ticket for splitting rationale.
 
 use gpui::prelude::*;
-use gpui::{IntoElement, Entity};
+use gpui::{div, Context, Entity, IntoElement, Render};
+use gpui_component::{Icon, IconName};
 
 // ─── SettingsPanel (theme picker) ───────────────────────────────────────────
 
@@ -15,7 +16,6 @@ impl RenderOnce for SettingsPanel {
     fn render(self, _window: &mut gpui::Window, cx: &mut gpui::App) -> impl IntoElement {
         let theme_val = gpui_component::Theme::global(cx);
         let sidebar_bg = theme_val.sidebar;
-        let border_color = theme_val.border;
         let theme_muted_foreground = theme_val.muted_foreground;
         let theme_primary = theme_val.primary;
         let theme_accent = theme_val.accent;
@@ -34,11 +34,11 @@ impl RenderOnce for SettingsPanel {
                 theme_foreground
             };
 
-            let mode_icon = if theme_config.mode.is_dark() {
-                "🌙"
+            let mode_icon = gpui_component::Icon::new(if theme_config.mode.is_dark() {
+                IconName::Moon
             } else {
-                "☀️"
-            };
+                IconName::Sun
+            });
 
             let item = gpui::div()
                 .id(("theme", idx))
@@ -50,35 +50,37 @@ impl RenderOnce for SettingsPanel {
                 .text_size(gpui::px(12.))
                 .text_color(item_color)
                 .hover(|s| s.bg(theme_accent))
-                .on_mouse_down(
-                    gpui::MouseButton::Left,
-                    move |_, _, cx| {
-                        let theme_registry = gpui_component::ThemeRegistry::global(cx);
-                        if let Some(config) = theme_registry.themes().get(&name).cloned() {
-                            let mode = config.mode;
-                            let theme = gpui_component::Theme::global_mut(cx);
-                            if mode.is_dark() {
-                                theme.dark_theme = config.clone();
-                            } else {
-                                theme.light_theme = config.clone();
-                            }
-                            gpui_component::Theme::change(mode, None, cx);
-                            cx.refresh_windows();
+                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                    let theme_registry = gpui_component::ThemeRegistry::global(cx);
+                    if let Some(config) = theme_registry.themes().get(&name).cloned() {
+                        let mode = config.mode;
+                        let theme = gpui_component::Theme::global_mut(cx);
+                        if mode.is_dark() {
+                            theme.dark_theme = config.clone();
+                        } else {
+                            theme.light_theme = config.clone();
                         }
-                    },
-                )
-                .child(format!("{} {}", mode_icon, theme_config.name));
+                        gpui_component::Theme::change(mode, None, cx);
+                        cx.refresh_windows();
+                    }
+                })
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .child(mode_icon)
+                        .child(theme_config.name.clone()),
+                );
 
             theme_items.push(item);
         }
 
         gpui::div()
             .id("theme_settings_panel")
-            .w(gpui::px(250.))
+            .w_full()
             .h_full()
             .bg(sidebar_bg)
-            .border_l(gpui::px(1.))
-            .border_color(border_color)
             .flex()
             .flex_col()
             .child(
@@ -101,13 +103,68 @@ impl RenderOnce for SettingsPanel {
     }
 }
 
+// ─── SettingsView (separate window wrapper) ───────────────────────────────
+
+pub(crate) struct SettingsView {
+    focus_handle: gpui::FocusHandle,
+}
+
+impl SettingsView {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            focus_handle: cx.focus_handle(),
+        }
+    }
+}
+
+impl Render for SettingsView {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme_val = gpui_component::Theme::global(cx);
+        let bg_color = theme_val.background;
+        let fg_color = theme_val.foreground;
+        let border_color = theme_val.border;
+        let sidebar_bg = theme_val.sidebar;
+
+        gpui::div()
+            .key_context("SettingsView")
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(bg_color)
+            .text_color(fg_color)
+            .child(
+                gpui::div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .h(gpui::px(32.))
+                    .bg(sidebar_bg)
+                    .border_b(gpui::px(1.))
+                    .border_color(border_color)
+                    .px_4()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(Icon::new(IconName::Settings).size(gpui::px(13.)))
+                            .child("Settings"),
+                    ),
+            )
+            .child(gpui::div().flex_1().w_full().h_full().child(SettingsPanel))
+    }
+}
+
 // ─── TitleBar component ─────────────────────────────────────────────────────
 
 #[derive(IntoElement)]
 pub(crate) struct TitleBar {
     pub(crate) settings_open: bool,
     pub(crate) title: gpui::SharedString,
-    pub(crate) view: Entity<crate::ui::DemoView>,
+    pub(crate) view: Entity<crate::ui::MainView>,
 }
 
 impl RenderOnce for TitleBar {
@@ -192,15 +249,11 @@ impl RenderOnce for TitleBar {
                             .text_size(gpui::px(11.))
                             .font_weight(gpui::FontWeight::BOLD)
                             .hover(|s| s.bg(theme.accent))
-                            .on_mouse_down(
-                                gpui::MouseButton::Left,
-                                move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.settings_open = !this.settings_open;
-                                        cx.notify();
-                                    });
-                                },
-                            )
+                            .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.toggle_settings(&crate::ui::ToggleSettings, window, cx);
+                                });
+                            })
                             .child("Settings"),
                     )
                     .child(

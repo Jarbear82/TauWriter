@@ -6648,6 +6648,7 @@ dependencies = [
  "env_logger",
  "gpui",
  "gpui-component",
+ "gpui-component-assets",
  "gpui_platform",
  "roxmltree 0.20.0",
  "serde",

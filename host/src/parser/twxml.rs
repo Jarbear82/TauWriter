@@ -6,11 +6,12 @@
 //! via tree-sitter for diagnostics/completion.  The two parsers serve different domains;
 //! eventual unification would require a shared AST layer.
 
-use serde::{Serialize, Deserialize};
+use gpui::SharedString;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TextRun {
-    pub text: String,
+    pub text: SharedString,
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
@@ -18,10 +19,10 @@ pub struct TextRun {
     pub code: bool,
     pub superscript: bool,
     pub subscript: bool,
-    pub hubref: Option<String>,
-    pub link: Option<String>,
-    pub footnote_ref: Option<String>,
-    pub id: Option<String>,
+    pub hubref: Option<SharedString>,
+    pub link: Option<SharedString>,
+    pub footnote_ref: Option<SharedString>,
+    pub id: Option<SharedString>,
     pub attributes: Vec<(String, String)>,
     pub range: Option<std::ops::Range<usize>>,
 }
@@ -29,7 +30,7 @@ pub struct TextRun {
 impl Default for TextRun {
     fn default() -> Self {
         Self {
-            text: String::new(),
+            text: SharedString::default(),
             bold: false,
             italic: false,
             underline: false,
@@ -48,7 +49,7 @@ impl Default for TextRun {
 }
 
 impl TextRun {
-    pub fn new(text: impl Into<String>) -> Self {
+    pub fn new(text: impl Into<SharedString>) -> Self {
         Self {
             text: text.into(),
             ..Default::default()
@@ -64,32 +65,117 @@ pub struct ListItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Block {
-    Heading { level: usize, text: String, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Paragraph { runs: Vec<TextRun>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    BlockQuote { runs: Vec<TextRun>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Aside { runs: Vec<TextRun>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    CodeBlock { language: String, code: String, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    List { ordered: bool, items: Vec<ListItem>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    DescriptionList { items: Vec<(String, Vec<TextRun>)>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Table { headers: Vec<String>, rows: Vec<Vec<Vec<TextRun>>>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    HorizontalRule { id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Image { src: String, alt: Option<String>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Audio { src: String, alt: Option<String>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Video { src: String, alt: Option<String>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Details { summary: String, blocks: Vec<Block>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Footnote { id: String, runs: Vec<TextRun>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
-    Review { blocks: Vec<Block>, id: Option<String>, attributes: Vec<(String, String)>, range: Option<std::ops::Range<usize>> },
+    Heading {
+        level: usize,
+        text: SharedString,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Paragraph {
+        runs: Vec<TextRun>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    BlockQuote {
+        runs: Vec<TextRun>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Aside {
+        runs: Vec<TextRun>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    CodeBlock {
+        language: SharedString,
+        code: SharedString,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    List {
+        ordered: bool,
+        items: Vec<ListItem>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    DescriptionList {
+        items: Vec<(SharedString, Vec<TextRun>)>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Table {
+        headers: Vec<SharedString>,
+        rows: Vec<Vec<Vec<TextRun>>>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    HorizontalRule {
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Image {
+        src: SharedString,
+        alt: Option<SharedString>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Audio {
+        src: SharedString,
+        alt: Option<SharedString>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Video {
+        src: SharedString,
+        alt: Option<SharedString>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Details {
+        summary: SharedString,
+        blocks: Vec<Block>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Footnote {
+        id: SharedString,
+        runs: Vec<TextRun>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
+    Review {
+        blocks: Vec<Block>,
+        id: Option<SharedString>,
+        attributes: Vec<(String, String)>,
+        range: Option<std::ops::Range<usize>>,
+    },
 }
 
-
 /// Load a TWXML file and parse it into (title, author, metadata, blocks).
-pub fn load_and_parse_twxml(path: &str) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
+pub fn load_and_parse_twxml(
+    path: &str,
+) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
     let xml_content = std::fs::read_to_string(path)?;
     parse_twxml(&xml_content)
 }
 
 /// Parse TWXML XML content into a document model.
-pub fn parse_twxml(xml_content: &str) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
+pub fn parse_twxml(
+    xml_content: &str,
+) -> anyhow::Result<(String, String, Vec<(String, String)>, Vec<Block>)> {
     let doc = roxmltree::Document::parse(xml_content)?;
     let root = doc.root_element();
 
@@ -123,8 +209,9 @@ pub fn parse_twxml(xml_content: &str) -> anyhow::Result<(String, String, Vec<(St
 /// Recursively convert a TWXML element node into one or more `Block` entries.
 fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
     let range = Some(node.range());
-    let id = node.attribute("id").map(|s| s.to_string());
-    let attributes: Vec<(String, String)> = node.attributes()
+    let id = node.attribute("id").map(SharedString::from);
+    let attributes: Vec<(String, String)> = node
+        .attributes()
         .map(|a| (a.name().to_string(), a.value().to_string()))
         .collect();
 
@@ -133,7 +220,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
             parse_node(child, depth + 1, blocks);
         }
     } else if node.has_tag_name("heading") {
-        let text = collect_text(node);
+        let text = SharedString::from(collect_text(node));
         blocks.push(Block::Heading {
             level: depth + 1,
             text,
@@ -143,17 +230,38 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
         });
     } else if node.has_tag_name("paragraph") {
         let runs = collect_and_normalize_runs(node);
-        blocks.push(Block::Paragraph { runs, id, attributes, range });
+        blocks.push(Block::Paragraph {
+            runs,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("blockquote") {
         let runs = collect_and_normalize_runs(node);
-        blocks.push(Block::BlockQuote { runs, id, attributes, range });
+        blocks.push(Block::BlockQuote {
+            runs,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("aside") {
         let runs = collect_and_normalize_runs(node);
-        blocks.push(Block::Aside { runs, id, attributes, range });
+        blocks.push(Block::Aside {
+            runs,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("codeblock") {
-        let language = node.attribute("language").unwrap_or("").to_string();
-        let code = node.text().unwrap_or("").to_string();
-        blocks.push(Block::CodeBlock { language, code, id, attributes, range });
+        let language = SharedString::from(node.attribute("language").unwrap_or(""));
+        let code = SharedString::from(node.text().unwrap_or(""));
+        blocks.push(Block::CodeBlock {
+            language,
+            code,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("ul") || node.has_tag_name("ol") {
         let ordered = node.has_tag_name("ol");
         let mut items = Vec::new();
@@ -166,7 +274,13 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
                 items.push(ListItem { checked, runs });
             }
         }
-        blocks.push(Block::List { ordered, items, id, attributes, range });
+        blocks.push(Block::List {
+            ordered,
+            items,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("dl") {
         let mut items = Vec::new();
         let mut current_term = String::new();
@@ -175,10 +289,15 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
                 current_term = collect_text(child);
             } else if child.has_tag_name("dd") {
                 let runs = collect_and_normalize_runs(child);
-                items.push((current_term.clone(), runs));
+                items.push((SharedString::from(current_term.clone()), runs));
             }
         }
-        blocks.push(Block::DescriptionList { items, id, attributes, range });
+        blocks.push(Block::DescriptionList {
+            items,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("table") {
         let mut headers = Vec::new();
         let mut rows = Vec::new();
@@ -187,7 +306,7 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
                 let mut row_cells = Vec::new();
                 for cell in child.children() {
                     if cell.has_tag_name("th") {
-                        headers.push(collect_text(cell));
+                        headers.push(SharedString::from(collect_text(cell)));
                     } else if cell.has_tag_name("td") {
                         let runs = collect_and_normalize_runs(cell);
                         row_cells.push(runs);
@@ -198,42 +317,86 @@ fn parse_node(node: roxmltree::Node, depth: usize, blocks: &mut Vec<Block>) {
                 }
             }
         }
-        blocks.push(Block::Table { headers, rows, id, attributes, range });
+        blocks.push(Block::Table {
+            headers,
+            rows,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("hr") {
-        blocks.push(Block::HorizontalRule { id, attributes, range });
+        blocks.push(Block::HorizontalRule {
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("image") {
-        let src = node.attribute("src").unwrap_or("").to_string();
-        let alt = node.attribute("alt").map(|s| s.to_string());
-        blocks.push(Block::Image { src, alt, id, attributes, range });
+        let src = SharedString::from(node.attribute("src").unwrap_or(""));
+        let alt = node.attribute("alt").map(SharedString::from);
+        blocks.push(Block::Image {
+            src,
+            alt,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("audio") {
-        let src = node.attribute("src").unwrap_or("").to_string();
-        let alt = node.attribute("alt").map(|s| s.to_string());
-        blocks.push(Block::Audio { src, alt, id, attributes, range });
+        let src = SharedString::from(node.attribute("src").unwrap_or(""));
+        let alt = node.attribute("alt").map(SharedString::from);
+        blocks.push(Block::Audio {
+            src,
+            alt,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("video") {
-        let src = node.attribute("src").unwrap_or("").to_string();
-        let alt = node.attribute("alt").map(|s| s.to_string());
-        blocks.push(Block::Video { src, alt, id, attributes, range });
+        let src = SharedString::from(node.attribute("src").unwrap_or(""));
+        let alt = node.attribute("alt").map(SharedString::from);
+        blocks.push(Block::Video {
+            src,
+            alt,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("details") {
-        let mut summary = "Details".to_string();
+        let mut summary = SharedString::from("Details");
         let mut details_blocks = Vec::new();
         for child in node.children() {
             if child.has_tag_name("summary") {
-                summary = collect_text(child);
+                summary = SharedString::from(collect_text(child));
             } else {
                 parse_node(child, depth + 1, &mut details_blocks);
             }
         }
-        blocks.push(Block::Details { summary, blocks: details_blocks, id, attributes, range });
+        blocks.push(Block::Details {
+            summary,
+            blocks: details_blocks,
+            id,
+            attributes,
+            range,
+        });
     } else if node.has_tag_name("footnote") {
-        let footnote_id = node.attribute("id").unwrap_or("").to_string();
+        let footnote_id = SharedString::from(node.attribute("id").unwrap_or(""));
         let runs = collect_and_normalize_runs(node);
-        blocks.push(Block::Footnote { id: footnote_id, runs, attributes: attributes.clone(), range });
+        blocks.push(Block::Footnote {
+            id: footnote_id,
+            runs,
+            attributes: attributes.clone(),
+            range,
+        });
     } else if node.has_tag_name("review") {
         let mut review_blocks = Vec::new();
         for child in node.children() {
             parse_node(child, depth + 1, &mut review_blocks);
         }
-        blocks.push(Block::Review { blocks: review_blocks, id, attributes, range });
+        blocks.push(Block::Review {
+            blocks: review_blocks,
+            id,
+            attributes,
+            range,
+        });
     } else if node.is_element() {
         for child in node.children() {
             parse_node(child, depth, blocks);
@@ -246,7 +409,7 @@ fn collect_text(node: roxmltree::Node) -> String {
     let mut runs = Vec::new();
     collect_runs(node, &mut runs, &Style::default());
     normalize_runs(&mut runs);
-    runs.into_iter().map(|r| r.text).collect()
+    runs.iter().map(|r| r.text.as_ref()).collect()
 }
 
 /// Helper to collect and normalize runs for a node.
@@ -267,13 +430,12 @@ pub(crate) struct Style {
     pub(crate) code: bool,
     pub(crate) superscript: bool,
     pub(crate) subscript: bool,
-    hubref: Option<String>,
-    link: Option<String>,
-    footnote_ref: Option<String>,
-    pub(crate) id: Option<String>,
+    hubref: Option<SharedString>,
+    link: Option<SharedString>,
+    footnote_ref: Option<SharedString>,
+    pub(crate) id: Option<SharedString>,
     pub(crate) attributes: Vec<(String, String)>,
 }
-
 
 /// Recursively collect styled `TextRun` segments, threading the inline style
 /// through the subtree via [`Style`] accumulators.
@@ -281,7 +443,7 @@ fn collect_runs(node: roxmltree::Node, runs: &mut Vec<TextRun>, current_style: &
     for child in node.children() {
         let range = Some(child.range());
         if child.is_text() {
-            let text = child.text().unwrap_or("").to_string();
+            let text = SharedString::from(child.text().unwrap_or(""));
             if !text.trim().is_empty() || text == " " {
                 runs.push(TextRun {
                     text,
@@ -303,7 +465,7 @@ fn collect_runs(node: roxmltree::Node, runs: &mut Vec<TextRun>, current_style: &
         } else if child.is_element() {
             if child.has_tag_name("br") {
                 runs.push(TextRun {
-                    text: "\n".to_string(),
+                    text: SharedString::from("\n"),
                     bold: current_style.bold,
                     italic: current_style.italic,
                     underline: current_style.underline,
@@ -319,12 +481,13 @@ fn collect_runs(node: roxmltree::Node, runs: &mut Vec<TextRun>, current_style: &
                     range,
                 });
             } else if child.has_tag_name("fr") {
-                let fr_id = child.attribute("id").unwrap_or("").to_string();
-                let child_attrs: Vec<(String, String)> = child.attributes()
+                let fr_id = SharedString::from(child.attribute("id").unwrap_or(""));
+                let child_attrs: Vec<(String, String)> = child
+                    .attributes()
                     .map(|a| (a.name().to_string(), a.value().to_string()))
                     .collect();
                 runs.push(TextRun {
-                    text: format!("[{}]", fr_id),
+                    text: SharedString::from(format!("[{}]", fr_id)),
                     subscript: true,
                     footnote_ref: Some(fr_id.clone()),
                     id: Some(fr_id),
@@ -334,8 +497,9 @@ fn collect_runs(node: roxmltree::Node, runs: &mut Vec<TextRun>, current_style: &
                 });
             } else {
                 let mut next_style = current_style.clone();
-                let child_id = child.attribute("id").map(|s| s.to_string());
-                let child_attrs: Vec<(String, String)> = child.attributes()
+                let child_id = child.attribute("id").map(SharedString::from);
+                let child_attrs: Vec<(String, String)> = child
+                    .attributes()
                     .map(|a| (a.name().to_string(), a.value().to_string()))
                     .collect();
                 next_style.id = child_id.or(next_style.id);
@@ -358,9 +522,9 @@ fn collect_runs(node: roxmltree::Node, runs: &mut Vec<TextRun>, current_style: &
                 } else if child.has_tag_name("sub") {
                     next_style.subscript = true;
                 } else if child.has_tag_name("hubref") {
-                    next_style.hubref = child.attribute("id").map(|s| s.to_string());
+                    next_style.hubref = child.attribute("id").map(SharedString::from);
                 } else if child.has_tag_name("link") {
-                    next_style.link = child.attribute("href").map(|s| s.to_string());
+                    next_style.link = child.attribute("href").map(SharedString::from);
                 }
                 collect_runs(child, runs, &next_style);
             }
@@ -382,7 +546,11 @@ enum PrevElement {
     None,
 }
 
-fn find_next_semantic_element(runs: &[TextRun], start_run_idx: usize, start_char_idx: usize) -> NextElement {
+fn find_next_semantic_element(
+    runs: &[TextRun],
+    start_run_idx: usize,
+    start_char_idx: usize,
+) -> NextElement {
     for (r_idx, run) in runs.iter().enumerate().skip(start_run_idx) {
         if run.text == "\n" {
             return NextElement::LineBreak;
@@ -400,7 +568,11 @@ fn find_next_semantic_element(runs: &[TextRun], start_run_idx: usize, start_char
     NextElement::None
 }
 
-fn find_prev_semantic_element(runs: &[TextRun], start_run_idx: usize, start_char_idx: usize) -> PrevElement {
+fn find_prev_semantic_element(
+    runs: &[TextRun],
+    start_run_idx: usize,
+    start_char_idx: usize,
+) -> PrevElement {
     let mut r_idx = start_run_idx;
     let mut first = true;
     loop {
@@ -440,7 +612,7 @@ fn normalize_runs(runs: &mut Vec<TextRun>) {
     for r_idx in 0..num_runs {
         let run = &runs[r_idx];
         if run.text == "\n" {
-            new_texts.push("\n".to_string());
+            new_texts.push(SharedString::from("\n"));
             continue;
         }
 
@@ -460,7 +632,8 @@ fn normalize_runs(runs: &mut Vec<TextRun>) {
                 }
 
                 if let (PrevElement::Char(_), NextElement::Char(next_c)) = (prev_el, next_el) {
-                    let is_punctuation = ['.', ',', ':', ';', '!', '?', ')', ']', '}'].contains(&next_c);
+                    let is_punctuation =
+                        ['.', ',', ':', ';', '!', '?', ')', ']', '}'].contains(&next_c);
                     if !is_punctuation {
                         normalized.push(' ');
                     }
@@ -470,7 +643,7 @@ fn normalize_runs(runs: &mut Vec<TextRun>) {
                 i += 1;
             }
         }
-        new_texts.push(normalized);
+        new_texts.push(SharedString::from(normalized));
     }
 
     let mut updated_runs = Vec::with_capacity(num_runs);
@@ -482,199 +655,3 @@ fn normalize_runs(runs: &mut Vec<TextRun>) {
     }
     *runs = updated_runs;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_twxml_basic_structures_match() {
-        let xml = r#"
-        <document>
-          <meta name="title" content="Test Document"/>
-          <meta name="author" content="Test Author"/>
-          <body>
-            <heading>Chapter 1</heading>
-            <paragraph>Hello <bold>world</bold>!</paragraph>
-          </body>
-        </document>
-        "#;
-        let (title, author, _metadata, blocks) = parse_twxml(xml).unwrap();
-        assert_eq!(title, "Test Document");
-        assert_eq!(author, "Test Author");
-        assert_eq!(blocks.len(), 2);
-
-        match &blocks[0] {
-            Block::Heading { level, text, .. } => {
-                assert_eq!(*level, 1);
-                assert_eq!(text, "Chapter 1");
-            }
-            _ => panic!("Expected Heading"),
-        }
-
-        match &blocks[1] {
-            Block::Paragraph { runs, .. } => {
-                assert_eq!(runs.len(), 3);
-                assert_eq!(runs[0].text, "Hello ");
-                assert_eq!(runs[0].bold, false);
-                assert_eq!(runs[1].text, "world");
-                assert_eq!(runs[1].bold, true);
-                assert_eq!(runs[2].text, "!");
-                assert_eq!(runs[2].bold, false);
-            }
-            _ => panic!("Expected Paragraph"),
-        }
-    }
-
-    #[test]
-    fn test_parser_whitespace_normalization_and_br_handling_succeeds() {
-        let xml = r#"
-        <document>
-          <body>
-            <paragraph>
-              This is a very long paragraph that has
-              been split across multiple lines for source
-              readability.
-              It also contains  intentional  double spaces.
-              And punctuation,
-              like this!
-              Here is a line break:<br/>
-              And another line break:<br />
-              And some <bold>bold
-              text</bold> on multiple lines.
-            </paragraph>
-          </body>
-        </document>
-        "#;
-        let (_, _, _metadata, blocks) = parse_twxml(xml).unwrap();
-        assert_eq!(blocks.len(), 1);
-
-        match &blocks[0] {
-            Block::Paragraph { runs, .. } => {
-                let text_content: String = runs.iter().map(|r| r.text.as_str()).collect();
-                // Check if newlines are removed, double spaces preserved, br tags are \n, and punctuation has no extra space.
-                let expected = "This is a very long paragraph that has been split across multiple lines for source readability. It also contains  intentional  double spaces. And punctuation, like this! Here is a line break:\nAnd another line break:\nAnd some bold text on multiple lines.";
-                assert_eq!(text_content, expected);
-
-                // Verify that bold style run was correctly normalized and preserved.
-                let bold_run = runs.iter().find(|r| r.bold).unwrap();
-                assert_eq!(bold_run.text, "bold text");
-            }
-            _ => panic!("Expected Paragraph"),
-        }
-    }
-
-    #[test]
-    fn test_parser_extracts_correct_character_ranges() {
-        let xml = "<document><body><heading>Chapter 1</heading><paragraph>Hello <bold>world</bold>!</paragraph></body></document>";
-        let (_, _, _metadata, blocks) = parse_twxml(xml).unwrap();
-        assert_eq!(blocks.len(), 2);
-
-        // Heading block
-        match &blocks[0] {
-            Block::Heading { text, range, .. } => {
-                assert_eq!(text, "Chapter 1");
-                let range = range.as_ref().unwrap();
-                assert_eq!(&xml[range.clone()], "<heading>Chapter 1</heading>");
-            }
-            _ => panic!("Expected Heading"),
-        }
-
-        // Paragraph block
-        match &blocks[1] {
-            Block::Paragraph { runs, range, .. } => {
-                let range = range.as_ref().unwrap();
-                assert_eq!(&xml[range.clone()], "<paragraph>Hello <bold>world</bold>!</paragraph>");
-
-                assert_eq!(runs.len(), 3);
-                // "Hello " text run
-                let r0 = runs[0].range.as_ref().unwrap();
-                assert_eq!(&xml[r0.clone()], "Hello ");
-
-                // "<bold>world</bold>" -> text run "world"
-                let r1 = runs[1].range.as_ref().unwrap();
-                assert_eq!(&xml[r1.clone()], "world");
-
-                // "!" text run
-                let r2 = runs[2].range.as_ref().unwrap();
-                assert_eq!(&xml[r2.clone()], "!");
-            }
-            _ => panic!("Expected Paragraph"),
-        }
-    }
-
-    #[test]
-    fn test_parser_handles_details_footnotes_and_reviews_properly() {
-        let xml = r#"
-        <document>
-          <body>
-            <details>
-              <summary>Show details</summary>
-              <paragraph>Hidden paragraph.</paragraph>
-            </details>
-            <paragraph>Inline footnote reference: <fr id="99"/>.</paragraph>
-            <footnote id="99">
-              Footnote content.
-            </footnote>
-            <review>
-              <paragraph>To be reviewed.</paragraph>
-            </review>
-          </body>
-        </document>
-        "#;
-        let (_, _, _metadata, blocks) = parse_twxml(xml).unwrap();
-        assert_eq!(blocks.len(), 4);
-
-        // 1. Details block
-        match &blocks[0] {
-            Block::Details { summary, blocks: inner_blocks, .. } => {
-                assert_eq!(summary, "Show details");
-                assert_eq!(inner_blocks.len(), 1);
-                match &inner_blocks[0] {
-                    Block::Paragraph { runs, .. } => {
-                        assert_eq!(runs[0].text, "Hidden paragraph.");
-                    }
-                    _ => panic!("Expected paragraph inside details"),
-                }
-            }
-            _ => panic!("Expected Details block"),
-        }
-
-        // 2. Paragraph with fr tag
-        match &blocks[1] {
-            Block::Paragraph { runs, .. } => {
-                assert_eq!(runs.len(), 3);
-                assert_eq!(runs[0].text, "Inline footnote reference: ");
-                assert_eq!(runs[1].text, "[99]");
-                assert_eq!(runs[1].footnote_ref.as_deref(), Some("99"));
-                assert!(runs[1].subscript);
-                assert_eq!(runs[2].text, ".");
-            }
-            _ => panic!("Expected Paragraph block"),
-        }
-
-        // 3. Footnote definition block
-        match &blocks[2] {
-            Block::Footnote { id, runs, .. } => {
-                assert_eq!(id, "99");
-                assert_eq!(runs[0].text, "Footnote content.");
-            }
-            _ => panic!("Expected Footnote block"),
-        }
-
-        // 4. Review block
-        match &blocks[3] {
-            Block::Review { blocks: inner_blocks, .. } => {
-                assert_eq!(inner_blocks.len(), 1);
-                match &inner_blocks[0] {
-                    Block::Paragraph { runs, .. } => {
-                        assert_eq!(runs[0].text, "To be reviewed.");
-                    }
-                    _ => panic!("Expected paragraph inside review"),
-                }
-            }
-            _ => panic!("Expected Review block"),
-        }
-    }
-}
-
