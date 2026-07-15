@@ -1,12 +1,12 @@
 use super::collapsible::CollapsibleBlock;
-use super::expansion_state::{ExpandedBlocks, ToggleState};
+use super::expansion_state::ExpandedBlocks;
 use super::jump_links::{find_block_range_by_id, find_block_type_by_id, offset_to_position};
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
 use crate::ui::DocumentView;
 use gpui::{
     div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled,
+    ParentElement, SharedString, Styled, TextOverflow,
 };
 use gpui_component::{scroll::ScrollableElement, table::*, Icon, IconName, Theme};
 use once_cell::sync::Lazy;
@@ -125,15 +125,13 @@ pub(crate) fn render_block(
         }
         Block::BlockQuote {
             runs,
-            id,
-            attributes,
+            id: _,
+            attributes: _,
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
-            let is_collapsed = !expanded_blocks.read(cx).expanded.contains(&start_offset);
 
-            let toggle = cx.new(|cx| ToggleState::new(!is_collapsed));
-            CollapsibleBlock::new(is_collapsed, "Quote".into(), theme.border, theme.group_box)
+            CollapsibleBlock::new("Quote".to_string(), theme.border, theme.group_box)
                 .with_body(
                     runs.iter()
                         .enumerate()
@@ -151,7 +149,7 @@ pub(crate) fn render_block(
                         })
                         .collect(),
                 )
-                .render_with_toggle(toggle, cx)
+                .render(start_offset, expanded_blocks.clone(), cx)
         }
         Block::Aside {
             runs,
@@ -195,7 +193,6 @@ pub(crate) fn render_block(
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
-            let is_collapsed = !expanded_blocks.read(cx).expanded.contains(&start_offset);
             let trimmed_code = trim_codeblock_indentation(code);
 
             let lang_display = if language.is_empty() {
@@ -225,10 +222,8 @@ pub(crate) fn render_block(
                 });
 
             // Use CollapsibleBlock for the toggle/header logic
-            let toggle = cx.new(|cx| ToggleState::new(!is_collapsed));
             let collapsible_content = CollapsibleBlock::new(
-                is_collapsed,
-                lang_display.into(),
+                lang_display.to_string(),
                 gpui::hsla(0.0, 0.0, 0.0, 0.0), // transparent (outer container provides border)
                 *CODE_BLOCK_BG,                 // inner bg (VS Code dark style)
             )
@@ -238,11 +233,12 @@ pub(crate) fn render_block(
                 .font_family("Courier New")
                 .text_size(px(13.))
                 .overflow_x_scrollbar()
+                .overflow_x_hidden()
                 .child(trimmed_code)
                 .into_any_element()]);
 
             // Wrap in outer container with border/tooltip
-            let content = collapsible_content.render_with_toggle(toggle, cx);
+            let content = collapsible_content.render(start_offset, expanded_blocks.clone(), cx);
             container = container.child(content);
 
             container.into_any_element()
@@ -406,6 +402,7 @@ pub(crate) fn render_block(
 
             Table::new()
                 .w_full()
+                .overflow_x_hidden()
                 .mb_4()
                 .child(TableHeader::new().children(header_cells))
                 .child(table_body)
@@ -505,9 +502,7 @@ pub(crate) fn render_block(
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
-            // Presence in the set = expanded; we negate for CollapsibleBlock's is_collapsed param
-            let is_collapsed = expanded_blocks.read(cx).expanded.contains(&start_offset);
-            let tooltip_text = element_tooltip("details", id, attributes);
+            let tooltip_text = element_tooltip("details", &id.clone(), attributes);
 
             let mut container = div()
                 .id(("details", idx))
@@ -521,33 +516,28 @@ pub(crate) fn render_block(
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 });
 
-            let toggle = cx.new(|cx| ToggleState::new(!is_collapsed));
-            let collapsible_content = CollapsibleBlock::new(
-                is_collapsed,
-                "Details".into(),
-                theme.border,
-                theme.background,
-            )
-            .with_body(
-                blocks
-                    .iter()
-                    .enumerate()
-                    .map(|(inner_idx, inner_block)| {
-                        render_block(
-                            expanded_blocks,
-                            doc_blocks,
-                            hubgs_instances,
-                            footnote_map,
-                            input_state.clone(),
-                            inner_block,
-                            idx + 1000 * inner_idx,
-                            cx,
-                        )
-                    })
-                    .collect(),
-            );
+            let collapsible_content =
+                CollapsibleBlock::new("Details".to_string(), theme.border, theme.background)
+                    .with_body(
+                        blocks
+                            .iter()
+                            .enumerate()
+                            .map(|(inner_idx, inner_block)| {
+                                render_block(
+                                    expanded_blocks,
+                                    doc_blocks,
+                                    hubgs_instances,
+                                    footnote_map,
+                                    input_state.clone(),
+                                    inner_block,
+                                    idx + 1000 * inner_idx,
+                                    cx,
+                                )
+                            })
+                            .collect(),
+                    );
 
-            let content = collapsible_content.render_with_toggle(toggle, cx);
+            let content = collapsible_content.render(start_offset, expanded_blocks.clone(), cx);
             container = container.child(content);
             container.into_any_element()
         }

@@ -1,18 +1,16 @@
+use gpui::prelude::*;
 use gpui::{div, AnyElement, Context, Entity};
-use gpui::{prelude::*, SharedString};
 
-use super::expansion_state::{ToggleEvent, ToggleState};
+use super::expansion_state::ExpandedBlocks;
 
 /// Closure type for lazy body rendering (no Send bound — AnyElement isn't Send).
 type ChildrenFn = Box<dyn FnOnce() -> Vec<AnyElement>>;
 
 /// Reusable wrapper component for all collapsible block types.
-/// Stores children as a builder closure to avoid storing AnyElement directly.
+/// Reads/writes expansion state from a shared ExpandedBlocks registry keyed by document offset.
 pub(crate) struct CollapsibleBlock {
-    /// Whether the block starts collapsed.
-    is_collapsed: bool,
-    /// Label shown in the header row.
-    header_label: SharedString,
+    /// Header label shown in the toggle row.
+    header_label: String,
     /// Left border color.
     border_color: gpui::Hsla,
     /// Background color of the container body.
@@ -22,14 +20,8 @@ pub(crate) struct CollapsibleBlock {
 }
 
 impl CollapsibleBlock {
-    pub fn new(
-        is_collapsed: bool,
-        header_label: SharedString,
-        border_color: gpui::Hsla,
-        bg_color: gpui::Hsla,
-    ) -> Self {
+    pub fn new(header_label: String, border_color: gpui::Hsla, bg_color: gpui::Hsla) -> Self {
         Self {
-            is_collapsed,
             header_label,
             border_color,
             bg_color,
@@ -43,23 +35,26 @@ impl CollapsibleBlock {
         self
     }
 
-    /// Render this collapsible block into an AnyElement using the provided toggle entity.
-    pub(crate) fn render_with_toggle(
+    /// Render this collapsible block into an AnyElement using the shared ExpandedBlocks registry.
+    pub(crate) fn render(
         mut self,
-        toggle: Entity<ToggleState>,
+        toggle_offset: usize,
+        expanded_blocks: Entity<ExpandedBlocks>,
         cx: &mut Context<impl gpui::Render>,
     ) -> AnyElement {
-        let is_expanded = toggle.read(cx).is_expanded;
+        let is_expanded = expanded_blocks.read(cx).expanded.contains(&toggle_offset);
 
-        // Subscribe to child toggle changes so the parent re-renders on collapse/expand.
-        let _sub = cx.subscribe(&toggle, |_this, _target, ev: &ToggleEvent, cx| match ev {
-            ToggleEvent::Toggled { .. } => cx.notify(),
-        });
+        // Subscribe to registry changes so the parent re-renders on collapse/expand.
+        cx.subscribe(&expanded_blocks, |_this, _target, _ev: &(), cx| {
+            cx.notify();
+        })
+        .detach();
 
-        let header_label = self.header_label;
+        let header_label = self.header_label.clone();
         let border_color = self.border_color;
         let bg_color = self.bg_color;
-        let is_expanded_clone = is_expanded;
+        let toggle_key = toggle_offset;
+        let blocks_key = expanded_blocks.clone();
 
         let mut container = div()
             .id("collapsible")
@@ -79,15 +74,11 @@ impl CollapsibleBlock {
             .py_1()
             .bg(gpui_component::Theme::global(cx).accent.opacity(0.3))
             .hover(|s| s.bg(gpui_component::Theme::global(cx).accent.opacity(0.5)))
+            .cursor_pointer()
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                let toggle_clone = toggle.clone();
-                let new_is_expanded = !is_expanded_clone;
-                toggle_clone.update(cx, |ts, cx| {
-                    ts.toggle();
-                    cx.emit(ToggleEvent::Toggled {
-                        is_expanded: new_is_expanded,
-                    });
-                });
+                blocks_key.update(cx, |eb, _cx| eb.toggle(toggle_key));
+                // No explicit notify needed — EventEmitter<()> on ExpandedBlocks triggers
+                // all subscriber re-renders implicitly via .update().
             })
             .child(if is_expanded { "▼" } else { "▶" })
             .child(
