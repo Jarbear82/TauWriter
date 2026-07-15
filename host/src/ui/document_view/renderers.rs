@@ -11,6 +11,7 @@ use gpui::{
 use gpui_component::{scroll::ScrollableElement, table::*, Icon, IconName, Theme};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Conventionally accepted code editor colors (VS Code dark style).
 static CODE_BLOCK_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.12, 1.0));
@@ -361,16 +362,20 @@ pub(crate) fn render_block(
                 .map(|h| TableHead::new().child(h.clone()))
                 .collect();
 
-            // Clone data so we can build AnyElement builders with owned captures.
-            let doc_blocks_clone = doc_blocks.to_vec();
-            let hubgs_clone: HashMap<_, _> = hubgs_instances
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            let fn_map_clone: HashMap<_, _> = footnote_map
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            // Arc-wrapped references for cheap per-cell closure captures.
+            let doc_blocks_arc = Arc::new(doc_blocks.to_vec());
+            let hubgs_arc = Arc::new(
+                hubgs_instances
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<HashMap<_, _>>(),
+            );
+            let fn_map_arc = Arc::new(
+                footnote_map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<HashMap<_, _>>(),
+            );
 
             // Build table body row-by-row via explicit loops.
             // Each cell wraps its runs in an AnyElement iterator via .children().
@@ -383,9 +388,9 @@ pub(crate) fn render_block(
                         .enumerate()
                         .map(|(run_idx, run)| {
                             render_run(
-                                &doc_blocks_clone,
-                                &hubgs_clone,
-                                &fn_map_clone,
+                                &*doc_blocks_arc,
+                                &*hubgs_arc,
+                                &*fn_map_arc,
                                 input_state.clone(),
                                 run,
                                 idx + 1000 * row_idx,

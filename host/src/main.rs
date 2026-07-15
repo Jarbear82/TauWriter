@@ -167,7 +167,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     mode: ui::DocumentMode::RawEditor,
                     document_home: document_home.clone(),
                     input_state: input_state.clone(),
-                    show_mode_dropdown: false,
+                    doc_subscriptions: Vec::new(),
                 });
                 w.active_doc_idx = Some(0);
             });
@@ -257,7 +257,11 @@ fn open_window(twxml_path: String, cx: &mut App) {
                                 let w = workspace.read(cx);
                                 if let Some(idx) = w.active_doc_idx {
                                     if let Some(doc) = w.open_docs.get(idx) {
-                                        (Some(doc.path.clone()), doc.input_state.clone(), doc.document_home.clone())
+                                        (
+                                            Some(doc.path.clone()),
+                                            doc.input_state.clone(),
+                                            doc.document_home.clone(),
+                                        )
                                     } else {
                                         return;
                                     }
@@ -317,7 +321,9 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     settings_window: None,
                     document_home,
                     input_state,
-                    _subscriptions: vec![sidebar_sub, graph_sub, input_sub],
+                    _sidebar_sub: sidebar_sub,
+                    _graph_sub: graph_sub,
+                    _input_sub: input_sub,
                 }
             });
 
