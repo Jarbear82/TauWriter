@@ -370,26 +370,22 @@ fn parse_hubs_block<'a>(
 }
 
 /// Extract decorator name and expression from a hub_field node.
-// user-review: field decorators use index-based child access because tree-sitter
-// generates a fixed structure: child(1) = "=", child(2) = "decorator" = "(" ... ")"
 fn parse_field_decorators(
     item: &tree_sitter::Node,
     contents: &str,
 ) -> (Option<String>, Option<String>) {
     let mut decorator = None;
     let mut expression = None;
-    if let Some(eq_node) = item.child(1) {
-        if eq_node.kind() == "=" {
-            if let Some(dec_node) = item.child(2) {
-                if dec_node.kind() == "decorator" {
-                    if let Some(choice_node) = dec_node.child(0) {
-                        decorator = Some(contents[choice_node.byte_range()].to_string());
-                    }
-                    if let Some(expr_node) = dec_node.child(2) {
-                        expression = Some(contents[expr_node.byte_range()].to_string());
-                    }
-                }
+    let mut cursor = item.walk();
+    for child in item.children(&mut cursor) {
+        if child.kind() == "decorator" {
+            if let Some(choice_node) = child.child(0) {
+                decorator = Some(contents[choice_node.byte_range()].to_string());
             }
+            if let Some(expr_node) = child.child(2) {
+                expression = Some(contents[expr_node.byte_range()].to_string());
+            }
+            break;
         }
     }
     (decorator, expression)

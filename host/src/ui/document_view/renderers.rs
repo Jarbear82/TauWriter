@@ -6,7 +6,7 @@ use crate::parser::{Block, TextRun};
 use crate::ui::DocumentView;
 use gpui::{
     div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled, TextOverflow,
+    ParentElement, SharedString, Styled,
 };
 use gpui_component::{scroll::ScrollableElement, table::*, Icon, IconName, Theme};
 use once_cell::sync::Lazy;
@@ -33,13 +33,17 @@ static REVIEW_BORDER_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(35.0, 0.9
 /// Build a HashMap<footnote_id, footnote_content> from blocks for O(1) lookups.
 /// Returns an empty map if no footnotes are present.
 #[allow(dead_code)]
-pub(crate) fn build_footnote_map(blocks: &[Block]) -> HashMap<String, String> {
+pub(crate) fn build_footnote_map(blocks: &[Block]) -> HashMap<SharedString, SharedString> {
     blocks
         .iter()
         .filter_map(|b| {
             if let Block::Footnote { id, runs, .. } = b {
-                let content: String = runs.iter().map(|r| r.text.as_ref()).collect();
-                Some((id.clone().to_string(), content))
+                let content: SharedString = runs
+                    .iter()
+                    .map(|r| r.text.as_ref())
+                    .collect::<String>()
+                    .into();
+                Some((id.clone(), content))
             } else {
                 None
             }
@@ -54,8 +58,8 @@ pub(crate) fn build_footnote_map(blocks: &[Block]) -> HashMap<String, String> {
 pub(crate) fn render_block(
     expanded_blocks: &Entity<ExpandedBlocks>,
     doc_blocks: &[Block],
-    hubgs_instances: &HashMap<String, (String, String, Vec<InstanceLink>)>,
-    footnote_map: &HashMap<String, String>,
+    hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
+    footnote_map: &HashMap<SharedString, SharedString>,
     input_state: Entity<gpui_component::input::InputState>,
     block: &Block,
     idx: usize,
@@ -656,8 +660,8 @@ pub(crate) fn render_block(
 /// as references from the caller's single Entity read (in DocumentView::render).
 pub(crate) fn render_run(
     doc_blocks: &[Block],
-    hubgs_instances: &HashMap<String, (String, String, Vec<InstanceLink>)>,
-    footnote_map: &HashMap<String, String>,
+    hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
+    footnote_map: &HashMap<SharedString, SharedString>,
     input_state: Entity<gpui_component::input::InputState>,
     run: &TextRun,
     block_idx: usize,
@@ -713,7 +717,9 @@ pub(crate) fn render_run(
             .text_color(theme.accent)
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
-            .on_mouse_down(gpui::MouseButton::Left, move |_, _, _cx| {
+            .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
+                // HubRef click — the workspace.selected_hub_id is set by handle_node_click
+                // which is already wired up via graph_pane event subscription in main.rs.
                 log::debug!("[host] User clicked on Hub Reference ID: {}", hub_id);
             });
     } else if let Some(ref fn_id) = run.footnote_ref {
@@ -723,7 +729,7 @@ pub(crate) fn render_run(
         let footnote_content = footnote_map
             .get(fn_id.as_ref())
             .cloned()
-            .unwrap_or_else(|| "Footnote definition not found".to_string());
+            .unwrap_or_else(|| -> SharedString { "Footnote definition not found".into() });
         run_tooltip = format!("Footnote Ref: {}\n{}", fn_id, footnote_content);
 
         text_el = text_el
@@ -783,7 +789,7 @@ pub(crate) fn render_run(
 pub(crate) fn element_tooltip(
     tag_name: &str,
     id: &Option<SharedString>,
-    attributes: &[(String, String)],
+    attributes: &[(SharedString, SharedString)],
 ) -> String {
     let mut attrs_str = String::new();
     for (k, v) in attributes {

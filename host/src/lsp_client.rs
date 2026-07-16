@@ -4,16 +4,20 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Diagnostic {
     pub(crate) line: usize,
     pub(crate) severity: usize,
     pub(crate) message: String,
 }
 
+#[derive(Debug)]
 pub(crate) struct LspClient {
     tx: std::sync::mpsc::Sender<String>,
+    version: AtomicU64,
+    child: std::sync::Mutex<Option<std::process::Child>>,
 }
 
 impl LspClient {
@@ -127,11 +131,16 @@ impl LspClient {
         });
         let _ = tx.send(initialized_msg.to_string());
 
-        Some(LspClient { tx })
+        Some(LspClient {
+            tx,
+            version: AtomicU64::new(1),
+            child: std::sync::Mutex::new(Some(child)),
+        })
     }
 
     pub(crate) fn notify_open(&self, path: &std::path::Path, content: &str) {
         let uri = format!("file://{}", path.display());
+        self.version.store(1, Ordering::SeqCst);
         let msg = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "textDocument/didOpen",
@@ -149,13 +158,14 @@ impl LspClient {
 
     pub(crate) fn notify_change(&self, path: &std::path::Path, content: &str) {
         let uri = format!("file://{}", path.display());
+        let version = self.version.fetch_add(1, Ordering::SeqCst) + 1;
         let msg = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "textDocument/didChange",
             "params": {
                 "textDocument": {
                     "uri": uri,
-                    "version": 2
+                    "version": version
                 },
                 "contentChanges": [
                     {
@@ -168,20 +178,43 @@ impl LspClient {
     }
 }
 
+impl Drop for LspClient {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.child.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+}
+
 pub(crate) fn find_lsp_binary() -> Option<std::path::PathBuf> {
-    let direct = std::path::PathBuf::from("target/debug/tauwriter-lsp");
-    if direct.exists() {
-        return Some(direct);
+    // 1. Prefer a binary next to the running host executable (works in
+    //    both debug and release, regardless of CWD).
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            for name in ["tauwriter-lsp", "tauwriter_lsp"] {
+                let candidate = exe_dir.join(name);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
     }
 
+    // 2. Fall back to the workspace target dir (dev convenience).
     let base = crate::utils::resolve_workspace_root()?;
     for candidate in [
         base.join("target/debug/tauwriter-lsp"),
+        base.join("target/release/tauwriter-lsp"),
         base.join("target/debug/tauwriter_lsp"),
     ] {
         if candidate.exists() {
             return Some(candidate);
         }
     }
+
+    log::warn!("Could not locate tauwriter-lsp binary next to the host executable or in target/");
     None
 }

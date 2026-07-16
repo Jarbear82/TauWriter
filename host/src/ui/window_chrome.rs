@@ -24,8 +24,7 @@ pub(crate) fn render_bottom_status_bar(
     sidebar_bg: gpui::Hsla,
     border_color: gpui::Hsla,
     theme_muted_foreground: gpui::Hsla,
-    _success_color: gpui::Hsla,
-    _danger_color: gpui::Hsla,
+    success_color: gpui::Hsla,
     view: Entity<super::MainView>,
 ) -> impl IntoElement {
     let lsp_label: SharedString = if lsp_connected {

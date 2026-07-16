@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 /// A node in the workspace file tree (file or directory).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct FileNode {
     pub(crate) path: PathBuf,
     pub(crate) is_dir: bool,
@@ -13,7 +13,7 @@ pub(crate) struct FileNode {
 }
 
 /// A flattened node suitable for virtualized list rendering.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct FlatFileNode {
     pub(crate) path: PathBuf,
     pub(crate) name: String,

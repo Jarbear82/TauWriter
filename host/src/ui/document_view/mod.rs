@@ -12,8 +12,8 @@ use gpui::{
     div, prelude::*, px, uniform_list, Context, Entity, InteractiveElement, ParentElement, Render,
     Styled, Window,
 };
-use gpui_component::{alert::Alert, Icon, IconName};
 use gpui_component::scroll::ScrollableElement;
+use gpui_component::{alert::Alert, Icon, IconName};
 use once_cell::sync::Lazy;
 
 /// Parse error warning colors (soft red palette).
@@ -43,9 +43,36 @@ impl DocumentView {
             expanded_blocks: cx.new(|_cx| ExpandedBlocks::default()),
         }
     }
+
+    /// Handle a hub reference click by propagating to the workspace for graph pane coordination.
+    pub(crate) fn on_hubref_clicked(
+        &mut self,
+        hub_id: gpui::SharedString,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let _ = {
+            let w = self.workspace.read(cx);
+            if let Some(idx) = w.active_doc_idx {
+                if let Some(doc) = w.open_docs.get(idx) {
+                    (doc.path.clone(), doc.input_state.clone())
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        };
+        // Update workspace selected hub so the graph pane can center on it
+        self.workspace.update(cx, |w, cx| {
+            w.selected_hub_id = Some(hub_id);
+            cx.notify();
+        });
+    }
 }
 
 impl Render for DocumentView {
+    #[allow(refining_impl_trait)]
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme_val = gpui_component::Theme::global(cx).clone();
         let sidebar_bg = theme_val.sidebar;
@@ -74,20 +101,23 @@ impl Render for DocumentView {
             }
         };
 
-        let (doc_home, input_state, mode) = match (doc_home_opt, active_input_state_opt, active_doc_mode) {
-            (Some(dh), Some(is), Some(m)) => (dh, is, m),
-            _ => {
-                return gpui::div()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(theme_val.background)
-                    .text_color(theme_muted_foreground)
-                    .child("No document open. Select a file from the sidebar explorer to open it.")
-                    .into_any_element();
-            }
-        };
+        let (doc_home, input_state, mode) =
+            match (doc_home_opt, active_input_state_opt, active_doc_mode) {
+                (Some(dh), Some(is), Some(m)) => (dh, is, m),
+                _ => {
+                    return gpui::div()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(theme_val.background)
+                        .text_color(theme_muted_foreground)
+                        .child(
+                            "No document open. Select a file from the sidebar explorer to open it.",
+                        )
+                        .into_any_element();
+                }
+            };
 
         // Extract diagnostics and selected path
         let diagnostics = {
@@ -364,7 +394,11 @@ impl Render for DocumentView {
                 }
             }
             // Check for Block::Include rendering in WYSIWYG
-            if let Block::Include { resolved_blocks: Some(ref inner_blocks), .. } = block {
+            if let Block::Include {
+                resolved_blocks: Some(ref inner_blocks),
+                ..
+            } = block
+            {
                 for inner_block in inner_blocks {
                     block_idx += 1;
                     preview_content = preview_content.child(renderers::render_block(
@@ -456,11 +490,8 @@ impl Render for DocumentView {
                 .overflow_y_scrollbar();
 
             for line in markdown_text.lines() {
-                preview_content = preview_content.child(
-                    gpui::div()
-                        .min_h(px(18.))
-                        .child(line.to_string())
-                );
+                preview_content =
+                    preview_content.child(gpui::div().min_h(px(18.)).child(line.to_string()));
             }
 
             gpui::div()
@@ -488,6 +519,9 @@ impl Render for DocumentView {
             DocumentMode::MarkdownView => markdown_preview.into_any_element(),
         };
 
-        gpui::div().size_full().child(content_pane).into_any_element()
+        gpui::div()
+            .size_full()
+            .child(content_pane)
+            .into_any_element()
     }
 }

@@ -22,7 +22,8 @@ fn test_parse_hubgs_file_valid() {
     assert!(instances.iter().any(|i| i.id == "workshop"));
 
     // Check simulator layout coordinate bounds
-    let (nodes, _edges) = run_graph_simulation(&instances, &defs, 500.0, 500.0);
+    let mut sizer = sizing::fixed_test_sizer();
+    let (nodes, _edges) = run_graph_simulation(&instances, &defs, 500.0, 500.0, &mut sizer);
     assert_eq!(nodes.len(), instances.len());
     for node in &nodes {
         assert!(
@@ -37,7 +38,8 @@ fn test_parse_hubgs_file_valid() {
         );
     }
 
-    let (dnodes, _dedges) = run_def_simulation(&defs, 500.0, 500.0);
+    let mut sizer2 = sizing::fixed_test_sizer();
+    let (dnodes, _dedges) = run_def_simulation(&defs, 500.0, 500.0, &mut sizer2);
     assert_eq!(dnodes.len(), defs.len());
     for node in &dnodes {
         assert!(

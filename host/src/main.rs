@@ -14,7 +14,8 @@ use parser::{Block, TextRun};
 use std::path::PathBuf;
 use ui::{DocumentHome, MainView, ParseState, SelectDocumentTab, SelectGraphTab, ToggleSettings};
 
-mod graph_sim;
+mod ffi;
+pub(crate) mod graph_sim;
 #[cfg(test)]
 mod graph_sim_tests;
 mod lsp_client;
@@ -23,12 +24,6 @@ mod lsp_client_tests;
 mod parser;
 mod ui;
 mod utils;
-
-unsafe extern "C" {
-    /// Safety: The function is safe to call as it returns a static, read-only
-    /// TSLanguage pointer representing the TWXML grammar definition.
-    fn tree_sitter_twxml() -> *const std::ffi::c_void;
-}
 
 fn main() {
     env_logger::init();
@@ -59,11 +54,7 @@ fn main() {
 /// Load the TWXML tree-sitter language from the bundled native grammar.
 /// Returns `None` if the external symbol is missing or returns NULL.
 fn load_twxml_language() -> Option<tree_sitter::Language> {
-    let ptr = unsafe { tree_sitter_twxml() };
-    if ptr.is_null() {
-        return None;
-    }
-    Some(unsafe { std::mem::transmute(ptr) })
+    ffi::load_twxml_language()
 }
 
 fn open_window(twxml_path: String, cx: &mut App) {
@@ -181,7 +172,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     cx,
                 )
             });
-            let graph_pane = cx.new(|cx| ui::GraphPaneView::new(workspace.clone(), cx));
+            let graph_pane = cx.new(|cx| ui::GraphPaneView::new(workspace.clone(), window, cx));
 
             let (diag_tx, mut diag_rx) =
                 tokio::sync::mpsc::unbounded_channel::<(String, Vec<Diagnostic>)>();
@@ -230,6 +221,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 });
 
                 // Subscribe to GraphPaneView node click events
+                let graph_pane_ev = graph_pane.clone();
                 let graph_sub = cx.subscribe_in(&graph_pane, window, {
                     move |this: &mut MainView,
                           _graph_pane,
@@ -239,6 +231,9 @@ fn open_window(twxml_path: String, cx: &mut App) {
                         match ev {
                             ui::graph_pane::GraphEvent::NodeClicked(node_id) => {
                                 this.handle_node_click(node_id.clone(), window, cx);
+                            }
+                            ui::graph_pane::GraphEvent::RunLayout => {
+                                let _ = graph_pane_ev.update(cx, |pane, cx| pane.run_layout(cx));
                             }
                         }
                     }
@@ -300,7 +295,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                                     Err(err) => {
                                         active_doc_home.update(cx, |doc, cx| {
                                             doc.parse_state = ParseState::OutOfSync {
-                                                error: err.to_string(),
+                                                error: err.to_string().into(),
                                             };
                                             cx.notify();
                                         });

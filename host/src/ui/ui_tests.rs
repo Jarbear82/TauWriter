@@ -16,7 +16,7 @@ fn test_ui_document_home_state_transitions_correctly() {
 
     // Exercise: Transition to OutOfSync due to a parse error
     doc.parse_state = ParseState::OutOfSync {
-        error: "Unclosed tag <bold>".to_string(),
+        error: "Unclosed tag <bold>".into(),
     };
 
     // Verify: Ensure state is OutOfSync with the correct error payload
