@@ -1,3 +1,4 @@
+use super::graph_adapter::{hubgs_definitions_to_graph_state, hubgs_instances_to_graph_state};
 use super::graph_sim::*;
 
 #[test]
@@ -21,36 +22,16 @@ fn test_parse_hubgs_file_valid() {
     assert!(instances.iter().any(|i| i.id == "tailor"));
     assert!(instances.iter().any(|i| i.id == "workshop"));
 
-    // Check simulator layout coordinate bounds
+    // Test adapter conversions to graphene GraphState
     let mut sizer = sizing::fixed_test_sizer();
-    let (nodes, _edges) = run_graph_simulation(&instances, &defs, 500.0, 500.0, &mut sizer);
-    assert_eq!(nodes.len(), instances.len());
-    for node in &nodes {
-        assert!(
-            node.x >= 24.0 && node.x <= 476.0,
-            "Node x out of bounds: {}",
-            node.x
-        );
-        assert!(
-            node.y >= 24.0 && node.y <= 476.0,
-            "Node y out of bounds: {}",
-            node.y
-        );
-    }
+    let (inst_state, inst_map) = hubgs_instances_to_graph_state(&instances, &defs, &mut sizer);
+    assert_eq!(inst_state.node_count(), instances.len());
+    assert!(inst_map.contains_key("tailor"));
+    assert!(inst_map.contains_key("workshop"));
 
     let mut sizer2 = sizing::fixed_test_sizer();
-    let (dnodes, _dedges) = run_def_simulation(&defs, 500.0, 500.0, &mut sizer2);
-    assert_eq!(dnodes.len(), defs.len());
-    for node in &dnodes {
-        assert!(
-            node.x >= 24.0 && node.x <= 476.0,
-            "Node x out of bounds: {}",
-            node.x
-        );
-        assert!(
-            node.y >= 24.0 && node.y <= 476.0,
-            "Node y out of bounds: {}",
-            node.y
-        );
-    }
+    let (def_state, def_map) = hubgs_definitions_to_graph_state(&defs, &mut sizer2);
+    assert_eq!(def_state.node_count(), defs.len());
+    assert!(def_map.contains_key("Character"));
+    assert!(def_map.contains_key("Location"));
 }

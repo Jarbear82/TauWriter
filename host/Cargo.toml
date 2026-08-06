@@ -8,6 +8,10 @@ gpui = { git = "https://github.com/zed-industries/zed.git" }
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", features = ["font-kit", "wayland", "x11"] }
 gpui-component = { git = "https://github.com/longbridge/gpui-component", features = ["tree-sitter"] }
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
+graphene_core = { git = "https://github.com/Jarbear82/graphene-rs" }
+graphene_layout = { git = "https://github.com/Jarbear82/graphene-rs" }
+graphene_gpui = { git = "https://github.com/Jarbear82/graphene-rs" }
+graphene_style = { git = "https://github.com/Jarbear82/graphene-rs" }
 anyhow = "1.0"
 once_cell = "1.19"
 tokio = { version = "1.0", features = ["full"] }

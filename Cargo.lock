@@ -682,6 +682,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitvec"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddcec3d12c579d40898fe0a9a358a803c23e9c52ca3c425707f81c9436211837"
+dependencies = [
+ "funty",
+ "radium",
+ "tap",
+ "wyz",
+]
+
+[[package]]
 name = "block"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,6 +865,15 @@ dependencies = [
  "rustix 1.1.4",
  "wayland-backend",
  "wayland-client",
+]
+
+[[package]]
+name = "castaway"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dec551ab6e7578819132c713a93c022a05d60159dc86e7a7050223577484c55a"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
@@ -1063,6 +1084,21 @@ name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
+
+[[package]]
+name = "compact_str"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fd622ebbb56a5b2ccb651b32b911cdeb2a9b4b11776b2473bf26a26a286244e"
+dependencies = [
+ "castaway",
+ "cfg-if",
+ "itoa",
+ "rustversion",
+ "ryu",
+ "serde",
+ "static_assertions",
+]
 
 [[package]]
 name = "compression-codecs"
@@ -2007,6 +2043,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "funty"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
+
+[[package]]
 name = "futf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2290,7 +2332,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.18",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -2690,6 +2732,76 @@ dependencies = [
  "windows-core 0.61.2",
  "windows-numerics 0.2.0",
  "windows-registry 0.5.3",
+]
+
+[[package]]
+name = "graphene_algorithms"
+version = "0.1.0"
+source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
+dependencies = [
+ "graphene_core",
+ "rand 0.8.6",
+ "smallvec",
+]
+
+[[package]]
+name = "graphene_analysis"
+version = "0.1.0"
+source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
+dependencies = [
+ "graphene_algorithms",
+ "graphene_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "graphene_core"
+version = "0.1.0"
+source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
+dependencies = [
+ "bitflags 2.13.0",
+ "bitvec",
+ "compact_str",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "slotmap",
+ "smallvec",
+ "uuid",
+]
+
+[[package]]
+name = "graphene_gpui"
+version = "0.1.0"
+source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
+dependencies = [
+ "bitflags 2.13.0",
+ "gpui",
+ "graphene_core",
+ "graphene_layout",
+ "graphene_style",
+]
+
+[[package]]
+name = "graphene_layout"
+version = "0.1.0"
+source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
+dependencies = [
+ "graphene_algorithms",
+ "graphene_analysis",
+ "graphene_core",
+ "graphene_style",
+]
+
+[[package]]
+name = "graphene_style"
+version = "0.1.0"
+source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
+dependencies = [
+ "bitflags 2.13.0",
+ "graphene_core",
+ "serde",
 ]
 
 [[package]]
@@ -5101,7 +5213,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5124,6 +5236,12 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "radium"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
@@ -6185,6 +6303,7 @@ version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
 dependencies = [
+ "serde",
  "version_check",
 ]
 
@@ -6193,6 +6312,9 @@ name = "smallvec"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "smol"
@@ -6613,6 +6735,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tap"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
 name = "tauwriter-extension"
 version = "0.1.0"
 dependencies = [
@@ -6650,6 +6778,10 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "graphene_core",
+ "graphene_gpui",
+ "graphene_layout",
+ "graphene_style",
  "log",
  "once_cell",
  "roxmltree 0.20.0",
@@ -8625,6 +8757,15 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "wyz"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
+dependencies = [
+ "tap",
+]
 
 [[package]]
 name = "x11"

@@ -1,26 +1,46 @@
 //! Stateful viewer for graph panes — GraphPaneView struct definition + business logic.
 
-use crate::ui::Workspace;
-use gpui::{prelude::*, Entity, SharedString};
+use std::collections::HashMap;
+use gpui::{prelude::*, Entity};
+use graphene_core::{GraphState, NodeId};
+use graphene_gpui::GraphView;
+use graphene_style::ComputedStyle;
 
-/// Stateful viewer that owns all graph data, camera state, and layout mode.
+use crate::graph_adapter::{
+    hubgs_definitions_to_graph_state, hubgs_instances_to_graph_state, outline_to_graph_state,
+};
+use crate::ui::Workspace;
+
+/// Stateful viewer that owns all graph states, views, camera states, and layout mode.
 #[derive(Debug, Clone)]
 pub(crate) struct GraphPaneView {
     pub(crate) workspace: Entity<Workspace>,
     pub(crate) window_handle: gpui::AnyWindowHandle,
-    pub(crate) graph_nodes: Vec<crate::graph_sim::GraphNode>,
-    pub(crate) graph_edges: Vec<crate::graph_sim::GraphEdge>,
-    pub(crate) def_nodes: Vec<crate::graph_sim::GraphNode>,
-    pub(crate) def_edges: Vec<crate::graph_sim::GraphEdge>,
-    pub(crate) outline_nodes: Vec<crate::graph_sim::GraphNode>,
-    pub(crate) outline_edges: Vec<crate::graph_sim::GraphEdge>,
+
+    // Three graph tab states & views (0=Document Outline, 1=Definitions Schema, 2=Instances Relation)
+    pub(crate) outline_state: GraphState<ComputedStyle>,
+    pub(crate) outline_view: GraphView<ComputedStyle>,
+
+    pub(crate) def_state: GraphState<ComputedStyle>,
+    pub(crate) def_view: GraphView<ComputedStyle>,
+
+    pub(crate) instances_state: GraphState<ComputedStyle>,
+    pub(crate) instances_view: GraphView<ComputedStyle>,
+
+    // Id mapping tables (external string ID -> graphene NodeId)
+    pub(crate) outline_id_map: HashMap<String, NodeId>,
+    pub(crate) def_id_map: HashMap<String, NodeId>,
+    pub(crate) inst_id_map: HashMap<String, NodeId>,
+
     pub(crate) is_ticking: bool,
-    pub(crate) dragged_node: Option<SharedString>,
+    pub(crate) dragged_node: Option<NodeId>,
     pub(crate) last_mouse_pos: gpui::Point<gpui::Pixels>,
     pub(crate) layout_mode: super::data::LayoutMode,
+
     // Per-tab camera state [0]=Document, [1]=Definitions, [2]=Instances.
     pub(crate) camera_states: [CameraState; 3],
     pub(crate) active_camera_idx: usize,
+
     // Real pane content-box bounds (set by parent via bounds callback)
     pub(crate) pane_content_width: f32,
     pub(crate) pane_content_height: f32,
@@ -48,7 +68,6 @@ impl Default for CameraState {
 
 impl gpui::EventEmitter<super::data::GraphEvent> for GraphPaneView {}
 
-#[allow(dead_code)]
 impl GraphPaneView {
     pub(crate) fn new(
         workspace: Entity<Workspace>,
@@ -58,12 +77,20 @@ impl GraphPaneView {
         let mut this = Self {
             workspace: workspace.clone(),
             window_handle: window.window_handle(),
-            graph_nodes: Vec::new(),
-            graph_edges: Vec::new(),
-            def_nodes: Vec::new(),
-            def_edges: Vec::new(),
-            outline_nodes: Vec::new(),
-            outline_edges: Vec::new(),
+
+            outline_state: GraphState::new(),
+            outline_view: GraphView::new(),
+
+            def_state: GraphState::new(),
+            def_view: GraphView::new(),
+
+            instances_state: GraphState::new(),
+            instances_view: GraphView::new(),
+
+            outline_id_map: HashMap::new(),
+            def_id_map: HashMap::new(),
+            inst_id_map: HashMap::new(),
+
             is_ticking: false,
             dragged_node: None,
             last_mouse_pos: gpui::point(gpui::px(0.), gpui::px(0.)),
@@ -73,7 +100,7 @@ impl GraphPaneView {
             pane_content_width: 0.0,
             pane_content_height: 0.0,
         };
-        // Only load data on creation — no auto-layout trigger
+        // Load graph data on creation
         this.recalculate_data(&workspace, cx);
         this
     }
@@ -81,7 +108,6 @@ impl GraphPaneView {
     pub(crate) fn trigger_run_layout(&mut self, cx: &mut Context<Self>) {
         let layout_type = self.workspace.read(cx).layout_type;
         self.layout_mode = super::data::LayoutMode::RunLayout(layout_type);
-        // Note: data reload is handled in render() when layout_mode is checked
     }
 
     pub(crate) fn active_camera(&self) -> &CameraState {
@@ -99,6 +125,20 @@ impl GraphPaneView {
         }
     }
 
+    /// Helper to get active state and view pair
+    pub(crate) fn active_state_and_view(
+        &mut self,
+    ) -> (
+        &mut GraphState<ComputedStyle>,
+        &mut GraphView<ComputedStyle>,
+    ) {
+        match self.active_camera_idx {
+            0 => (&mut self.outline_state, &mut self.outline_view),
+            1 => (&mut self.def_state, &mut self.def_view),
+            _ => (&mut self.instances_state, &mut self.instances_view),
+        }
+    }
+
     fn start_ticking(&mut self, cx: &mut Context<Self>) {
         if self.is_ticking {
             return;
@@ -106,36 +146,29 @@ impl GraphPaneView {
         self.is_ticking = true;
 
         cx.spawn(|this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
-            let mut cx = cx.clone();
+            let cx = cx.clone();
             async move {
-                loop {
+                let mut sim_instances = graphene_layout::livesim::LiveForceSimulation::new();
+                let mut sim_defs = graphene_layout::livesim::LiveForceSimulation::new();
+                let mut sim_outline = graphene_layout::livesim::LiveForceSimulation::new();
+
+                for _step in 0..150 {
                     cx.background_executor()
                         .timer(std::time::Duration::from_millis(16))
                         .await;
 
-                    let mut energy = 0.0;
                     let success = cx.update(|cx| {
                         if let Some(this) = this.upgrade() {
                             this.update(cx, |view, cx| {
-                                // Tick instances graph
-                                let energy_graph = crate::graph_sim::simulate_step(
-                                    &mut view.graph_nodes,
-                                    view.dragged_node.as_ref(),
-                                );
+                                sim_instances.tick(&mut view.instances_state);
+                                view.instances_view.load_preset(&view.instances_state);
 
-                                // Tick definitions graph
-                                let energy_def = crate::graph_sim::simulate_step(
-                                    &mut view.def_nodes,
-                                    view.dragged_node.as_ref(),
-                                );
+                                sim_defs.tick(&mut view.def_state);
+                                view.def_view.load_preset(&view.def_state);
 
-                                // Tick outline nodes (was missing — Document Graph never animated)
-                                let energy_outline = crate::graph_sim::simulate_step(
-                                    &mut view.outline_nodes,
-                                    view.dragged_node.as_ref(),
-                                );
+                                sim_outline.tick(&mut view.outline_state);
+                                view.outline_view.load_preset(&view.outline_state);
 
-                                energy = energy_graph + energy_def + energy_outline;
                                 cx.notify();
                             });
                             true
@@ -147,272 +180,62 @@ impl GraphPaneView {
                     if !success {
                         break;
                     }
-
-                    if energy < 0.05 {
-                        let _ = cx.update(|cx| {
-                            if let Some(this) = this.upgrade() {
-                                this.update(cx, |view, _| {
-                                    view.is_ticking = false;
-                                });
-                            }
-                        });
-                        break;
-                    }
                 }
+
+                let _ = cx.update(|cx| {
+                    if let Some(this) = this.upgrade() {
+                        this.update(cx, |view, _| {
+                            view.is_ticking = false;
+                        });
+                    }
+                });
             }
         })
         .detach();
     }
 
-    fn update_graphs(
-        &mut self,
-        definitions: Vec<crate::graph_sim::HubgsDefinition>,
-        instances: Vec<crate::graph_sim::HubgsInstance>,
-        inst_widths: &[f32],
-        inst_heights: &[f32],
-        def_widths: &[f32],
-        def_heights: &[f32],
-        cx: &mut Context<Self>,
-    ) {
-        let mut rng = crate::graph_sim::SimpleRng::new(12345);
-
-        // 1. Build new instance nodes list (preserving existing coordinates)
-        let current_map: std::collections::HashMap<&str, &crate::graph_sim::GraphNode> = self
-            .graph_nodes
-            .iter()
-            .map(|node| (node.id.as_str(), node))
-            .collect();
-
-        let mut next_graph_nodes = Vec::with_capacity(instances.len());
-        for (idx, inst) in instances.iter().enumerate() {
-            let color = inst.theme_color.map_or_else(
-                || match inst.type_name.as_str() {
-                    "Character" => gpui::rgb(0x4169E1),
-                    "Location" => gpui::rgb(0x2ECC71),
-                    "Creature" => gpui::rgb(0xE67E22),
-                    "Item" => gpui::rgb(0x9B59B6),
-                    _ => gpui::rgb(0x7F8C8D),
-                },
-                gpui::rgb,
-            );
-            let width = inst_widths[idx];
-            let height = inst_heights[idx];
-            if let Some(existing) = current_map.get(inst.id.as_str()) {
-                next_graph_nodes.push(crate::graph_sim::GraphNode {
-                    id: inst.id.clone(),
-                    name: inst.name.clone(),
-                    type_name: inst.type_name.clone(),
-                    color: color.into(),
-                    x: existing.x,
-                    y: existing.y,
-                    vx: existing.vx,
-                    vy: existing.vy,
-                    anchor_x: existing.anchor_x,
-                    anchor_y: existing.anchor_y,
-                    width,
-                    height,
-                    attributes: vec![],
-                });
-            } else {
-                next_graph_nodes.push(crate::graph_sim::GraphNode {
-                    id: inst.id.clone(),
-                    name: inst.name.clone(),
-                    type_name: inst.type_name.clone(),
-                    color: color.into(),
-                    x: rng.range(-50.0, 50.0),
-                    y: rng.range(-50.0, 50.0),
-                    vx: 0.0,
-                    vy: 0.0,
-                    anchor_x: rng.range(-50.0, 50.0),
-                    anchor_y: rng.range(-50.0, 50.0),
-                    width,
-                    height,
-                    attributes: vec![],
-                });
-            }
-        }
-        self.graph_nodes = next_graph_nodes;
-
-        // 2. Build new instances edges list
-        let mut relation_arrows = std::collections::HashMap::new();
-        for def in &definitions {
-            for link in &def.links {
-                relation_arrows.insert(link.name.as_str(), link.arrow.as_str());
-            }
-        }
-
-        let id_to_index: std::collections::HashMap<&str, usize> = instances
-            .iter()
-            .enumerate()
-            .map(|(idx, inst)| (inst.id.as_str(), idx))
-            .collect();
-
-        let mut next_graph_edges = Vec::new();
-        for (src_idx, inst) in instances.iter().enumerate() {
-            for link in &inst.links {
-                if let Some(&tgt_idx) = id_to_index.get(link.target.as_str()) {
-                    let arrow = relation_arrows
-                        .get(link.relation.as_str())
-                        .copied()
-                        .unwrap_or("-");
-                    next_graph_edges.push(crate::graph_sim::GraphEdge {
-                        source: src_idx,
-                        target: tgt_idx,
-                        label: arrow.into(),
-                    });
-                }
-            }
-        }
-        self.graph_edges = next_graph_edges;
-
-        // 3. Build new definition nodes list (preserving coordinates)
-        let current_defs_map: std::collections::HashMap<&str, &crate::graph_sim::GraphNode> = self
-            .def_nodes
-            .iter()
-            .map(|node| (node.id.as_str(), node))
-            .collect();
-
-        let mut next_def_nodes = Vec::with_capacity(definitions.len());
-        for (idx, def) in definitions.iter().enumerate() {
-            let color = match def.name.as_str() {
-                "Character" => gpui::rgb(0x4169E1),
-                "Location" => gpui::rgb(0x2ECC71),
-                "Creature" => gpui::rgb(0xE67E22),
-                "Item" => gpui::rgb(0x9B59B6),
-                _ => gpui::rgb(0x7F8C8D),
-            };
-            let width = def_widths[idx];
-            let height = def_heights[idx];
-            if let Some(existing) = current_defs_map.get(def.name.as_str()) {
-                next_def_nodes.push(crate::graph_sim::GraphNode {
-                    id: def.name.clone(),
-                    name: def.name.clone(),
-                    type_name: "HubDefinition".into(),
-                    color: color.into(),
-                    x: existing.x,
-                    y: existing.y,
-                    vx: existing.vx,
-                    vy: existing.vy,
-                    anchor_x: existing.anchor_x,
-                    anchor_y: existing.anchor_y,
-                    width,
-                    height,
-                    attributes: vec![],
-                });
-            } else {
-                next_def_nodes.push(crate::graph_sim::GraphNode {
-                    id: def.name.clone(),
-                    name: def.name.clone(),
-                    type_name: "HubDefinition".into(),
-                    color: color.into(),
-                    x: rng.range(-50.0, 50.0),
-                    y: rng.range(-50.0, 50.0),
-                    vx: 0.0,
-                    vy: 0.0,
-                    anchor_x: rng.range(-50.0, 50.0),
-                    anchor_y: rng.range(-50.0, 50.0),
-                    width,
-                    height,
-                    attributes: vec![],
-                });
-            }
-        }
-        self.def_nodes = next_def_nodes;
-
-        // 4. Build new definition edges list
-        let name_to_index: std::collections::HashMap<&str, usize> = definitions
-            .iter()
-            .enumerate()
-            .map(|(idx, def)| (def.name.as_str(), idx))
-            .collect();
-
-        let mut next_def_edges = Vec::new();
-        for (src_idx, def) in definitions.iter().enumerate() {
-            for link in &def.links {
-                if let Some(&tgt_idx) = name_to_index.get(link.target.as_str()) {
-                    next_def_edges.push(crate::graph_sim::GraphEdge {
-                        source: src_idx,
-                        target: tgt_idx,
-                        label: link.arrow.clone(),
-                    });
-                }
-            }
-        }
-        self.def_edges = next_def_edges;
-    }
-
-    /// Run the selected layout type — computes target positions for ALL nodes, then starts physics to animate toward them.
+    /// Run the selected layout algorithm on active or all graph states.
     pub(crate) fn run_layout(&mut self, cx: &mut Context<Self>) {
-        // Force restart ticking even if a prior loop got stuck (defense-in-depth).
         self.is_ticking = false;
-
         let layout_type = self.workspace.read(cx).layout_type;
-        let pw = self.pane_content_width.max(400.0);
-        let ph = self.pane_content_height.max(300.0);
 
-        // Compute targets for instance nodes (with locks)
-        let locked_ids: Vec<SharedString> = self.dragged_node.iter().cloned().collect();
-        if !self.graph_nodes.is_empty() {
-            let targets = crate::graph_sim::compute_layout_with_locks(
-                layout_type,
-                &self.graph_nodes,
-                &self.graph_edges,
-                pw,
-                ph,
-                &locked_ids,
-            );
-            for (id, tx, ty) in targets {
-                if let Some(node) = self.graph_nodes.iter_mut().find(|n| n.id == id) {
-                    node.anchor_x = tx;
-                    node.anchor_y = ty;
-                }
+        use graphene_layout::basic::{CircleLayout, GridLayout};
+        use graphene_layout::force::ForceDirectedLayout;
+        use graphene_layout::hierarchical::SugiyamaLayout;
+        use graphene_layout::traits::Layout;
+
+        match layout_type {
+            crate::ui::LayoutType::Circular => {
+                let mut layout = CircleLayout::default();
+                layout.compute(&mut self.instances_state);
+                layout.compute(&mut self.def_state);
+                layout.compute(&mut self.outline_state);
+            }
+            crate::ui::LayoutType::Grid => {
+                let mut layout = GridLayout::default();
+                layout.compute(&mut self.instances_state);
+                layout.compute(&mut self.def_state);
+                layout.compute(&mut self.outline_state);
+            }
+            crate::ui::LayoutType::ForceDirected => {
+                let mut force_layout = ForceDirectedLayout::default().with_iterations(120);
+                force_layout.compute(&mut self.instances_state);
+                force_layout.compute(&mut self.def_state);
+
+                let mut tree_layout = SugiyamaLayout::default();
+                tree_layout.compute(&mut self.outline_state);
             }
         }
 
-        // For definition nodes
-        let locked_ids: Vec<SharedString> = self.dragged_node.iter().cloned().collect();
-        if !self.def_nodes.is_empty() {
-            let targets = crate::graph_sim::compute_layout_with_locks(
-                layout_type,
-                &self.def_nodes,
-                &self.def_edges,
-                pw,
-                ph,
-                &locked_ids,
-            );
-            for (id, tx, ty) in targets {
-                if let Some(node) = self.def_nodes.iter_mut().find(|n| n.id == id) {
-                    node.anchor_x = tx;
-                    node.anchor_y = ty;
-                }
-            }
-        }
-
-        // For outline nodes (empty edges since they're a tree structure)
-        let outline_edges_empty: Vec<crate::graph_sim::GraphEdge> = Vec::new();
-        let locked_ids: Vec<SharedString> = self.dragged_node.iter().cloned().collect();
-        if !self.outline_nodes.is_empty() {
-            let targets = crate::graph_sim::compute_layout_with_locks(
-                layout_type,
-                &self.outline_nodes,
-                &outline_edges_empty,
-                pw,
-                ph,
-                &locked_ids,
-            );
-            for (id, tx, ty) in targets {
-                if let Some(node) = self.outline_nodes.iter_mut().find(|n| n.id == id) {
-                    node.anchor_x = tx;
-                    node.anchor_y = ty;
-                }
-            }
-        }
+        self.instances_view.load_preset(&self.instances_state);
+        self.def_view.load_preset(&self.def_state);
+        self.outline_view.load_preset(&self.outline_state);
 
         self.start_ticking(cx);
         cx.notify();
     }
 
-    fn recalculate_data(&mut self, workspace: &Entity<Workspace>, cx: &mut Context<Self>) {
+    pub(crate) fn recalculate_data(&mut self, workspace: &Entity<Workspace>, cx: &mut Context<Self>) {
         let active_doc_text = {
             let w = workspace.read(cx);
             if let Some(idx) = w.active_doc_idx {
@@ -424,7 +247,7 @@ impl GraphPaneView {
             }
         };
 
-        let window_handle = self.window_handle; // capture before the async block
+        let window_handle = self.window_handle;
 
         cx.spawn(
             move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
@@ -467,79 +290,61 @@ impl GraphPaneView {
                             }
                             let instances: Vec<_> = insts_map.into_values().collect();
 
-                            // Parse document outline only — no layout yet (needs Window).
-                            let outline_nodes_raw = if let Some(ref t) = active_doc_text {
+                            let outline_raw = if let Some(ref t) = active_doc_text {
                                 crate::parser::parse_document_outline(t)
                             } else {
                                 (Vec::new(), Vec::new())
                             };
 
-                            (definitions, instances, outline_nodes_raw)
+                            (definitions, instances, outline_raw)
                         })
                         .await;
 
-                    // Now in UI context — measure node sizes using GPUI text shaping.
+                    // Measure node sizes & build GraphState structures
                     let _ = this.update(&mut cx, |this, cx| {
                         if let Ok((
-                            inst_widths,
-                            inst_heights,
-                            def_widths,
-                            def_heights,
-                            outline_nodes,
-                            outline_edges,
+                            inst_state,
+                            inst_map,
+                            def_state,
+                            def_map,
+                            out_state,
+                            out_map,
                         )) = window_handle.update(cx, |_root, window, _app| {
                             let mut sizer = crate::graph_sim::sizing::gpui_text_sizer(window);
 
-                            // Measure instance nodes
-                            let mut iw = Vec::with_capacity(parse_result.1.len());
-                            let mut ih = Vec::with_capacity(parse_result.1.len());
-                            for inst in &parse_result.1 {
-                                let (w, h) = sizer(crate::graph_sim::sizing::NodeContent {
-                                    name: inst.name.as_ref(),
-                                    type_name: inst.type_name.as_ref(),
-                                    attributes: &[],
-                                });
-                                iw.push(w);
-                                ih.push(h);
-                            }
-
-                            // Measure definition nodes
-                            let mut dw = Vec::with_capacity(parse_result.0.len());
-                            let mut dh = Vec::with_capacity(parse_result.0.len());
-                            for def in &parse_result.0 {
-                                let (w, h) = sizer(crate::graph_sim::sizing::NodeContent {
-                                    name: def.name.as_ref(),
-                                    type_name: "HubDefinition",
-                                    attributes: &[],
-                                });
-                                dw.push(w);
-                                dh.push(h);
-                            }
-
-                            // Layout outline tree with real text measurement.
-                            let (nodes_raw, edges_raw) = parse_result.2;
-                            let (out_nodes, out_edges) = if nodes_raw.is_empty() {
-                                (Vec::new(), Vec::new())
-                            } else {
-                                super::render::layout_outline_tree_with_sizer(
-                                    &nodes_raw, &edges_raw, 500.0, 500.0, &mut sizer,
-                                )
-                            };
-
-                            (iw, ih, dw, dh, out_nodes, out_edges)
-                        }) {
-                            this.update_graphs(
-                                parse_result.0,
-                                parse_result.1,
-                                &inst_widths,
-                                &inst_heights,
-                                &def_widths,
-                                &def_heights,
-                                cx,
+                            let (inst_state, inst_map) = hubgs_instances_to_graph_state(
+                                &parse_result.1,
+                                &parse_result.0,
+                                &mut sizer,
                             );
 
-                            this.outline_nodes = outline_nodes;
-                            this.outline_edges = outline_edges;
+                            let (def_state, def_map) = hubgs_definitions_to_graph_state(
+                                &parse_result.0,
+                                &mut sizer,
+                            );
+
+                            let (out_nodes, out_edges) = parse_result.2;
+                            let (out_state, out_map) = outline_to_graph_state(
+                                &out_nodes,
+                                &out_edges,
+                                &mut sizer,
+                            );
+
+                            (
+                                inst_state, inst_map, def_state, def_map, out_state, out_map,
+                            )
+                        }) {
+                            this.instances_view = GraphView::from_state(&inst_state);
+                            this.instances_state = inst_state;
+                            this.inst_id_map = inst_map;
+
+                            this.def_view = GraphView::from_state(&def_state);
+                            this.def_state = def_state;
+                            this.def_id_map = def_map;
+
+                            this.outline_view = GraphView::from_state(&out_state);
+                            this.outline_state = out_state;
+                            this.outline_id_map = out_map;
 
                             cx.notify();
                         }

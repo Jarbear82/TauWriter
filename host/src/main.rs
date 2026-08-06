@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use ui::{DocumentHome, MainView, ParseState, SelectDocumentTab, SelectGraphTab, ToggleSettings};
 
 mod ffi;
+pub(crate) mod graph_adapter;
 pub(crate) mod graph_sim;
 #[cfg(test)]
 mod graph_sim_tests;
