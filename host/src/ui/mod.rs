@@ -58,6 +58,8 @@ pub(crate) enum GraphTab {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LayoutType {
     ForceDirected,
+    Sugiyama,
+    Cose,
     Circular,
     Grid,
 }
@@ -759,6 +761,8 @@ impl gpui::Render for MainView {
 
         let layout_label = match current_layout_type {
             LayoutType::ForceDirected => "Force",
+            LayoutType::Sugiyama => "Tree",
+            LayoutType::Cose => "Compound",
             LayoutType::Circular => "Circle",
             LayoutType::Grid => "Grid",
         };
@@ -779,7 +783,9 @@ impl gpui::Render for MainView {
                     .dropdown_menu(move |menu, _event, _cx| {
                         let graph_pane = graph_pane_for_dropdown.clone();
                         [
-                            ("Force", LayoutType::ForceDirected),
+                            ("Force (ForceAtlas2)", LayoutType::ForceDirected),
+                            ("Tree (Sugiyama)", LayoutType::Sugiyama),
+                            ("Compound (CoSE)", LayoutType::Cose),
                             ("Circle", LayoutType::Circular),
                             ("Grid", LayoutType::Grid),
                         ]

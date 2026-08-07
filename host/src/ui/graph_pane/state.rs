@@ -200,6 +200,7 @@ impl GraphPaneView {
         let layout_type = self.workspace.read(cx).layout_type;
 
         use graphene_layout::basic::{CircleLayout, GridLayout};
+        use graphene_layout::cose::CoseLayout;
         use graphene_layout::force::ForceDirectedLayout;
         use graphene_layout::hierarchical::SugiyamaLayout;
         use graphene_layout::traits::Layout;
@@ -224,6 +225,18 @@ impl GraphPaneView {
 
                 let mut tree_layout = SugiyamaLayout::default();
                 tree_layout.compute(&mut self.outline_state);
+            }
+            crate::ui::LayoutType::Sugiyama => {
+                let mut tree_layout = SugiyamaLayout::default();
+                tree_layout.compute(&mut self.outline_state);
+                tree_layout.compute(&mut self.def_state);
+                tree_layout.compute(&mut self.instances_state);
+            }
+            crate::ui::LayoutType::Cose => {
+                let mut cose_layout = CoseLayout::default();
+                cose_layout.compute(&mut self.instances_state);
+                cose_layout.compute(&mut self.def_state);
+                cose_layout.compute(&mut self.outline_state);
             }
         }
 

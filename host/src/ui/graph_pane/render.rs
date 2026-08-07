@@ -382,6 +382,38 @@ impl Render for GraphPaneView {
                     }),
             )
             .child({
+                let on_toggle_physics = std::sync::Arc::new({
+                    let pane_entity = cx_entity.clone();
+                    move |_window: &mut Window, cx: &mut gpui::App| {
+                        let _ = pane_entity.update(cx, |this, cx| {
+                            if this.is_ticking {
+                                this.is_ticking = false;
+                            } else {
+                                this.run_layout(cx);
+                            }
+                        });
+                    }
+                });
+                let is_ticking = self.is_ticking;
+                gpui_component::button::Button::new("toggle_physics")
+                    .on_mouse_down(gpui::MouseButton::Left, move |_ev, window, cx| {
+                        on_toggle_physics(window, cx);
+                    })
+                    .label(if is_ticking { "Pause Physics" } else { "Play Physics" })
+                    .text_size(gpui::px(10.))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .absolute()
+                    .top(gpui::px(8.))
+                    .right(gpui::px(80.))
+                    .bg(sidebar_bg)
+                    .border(gpui::px(1.))
+                    .border_color(border_color)
+                    .rounded(gpui::px(6.))
+                    .px_3()
+                    .py_2()
+                    .text_color(fg_color)
+            })
+            .child({
                 let on_fit_view = on_fit_view.clone();
                 gpui_component::button::Button::new("fit_view")
                     .on_mouse_down(gpui::MouseButton::Left, move |_ev, window, cx| {
@@ -405,7 +437,7 @@ impl Render for GraphPaneView {
                 div()
                     .absolute()
                     .bottom(gpui::px(8.))
-                    .left(gpui::px(196.))
+                    .left(gpui::px(8.))
                     .flex()
                     .items_center()
                     .gap_2()
@@ -420,5 +452,58 @@ impl Render for GraphPaneView {
                     .text_color(fg_color.opacity(0.8))
                     .child(format!("Zoom: {:.0}%", (cam.zoom * 100.0).round())),
             )
+            .child(if let Some(sel_nid) = selected_node_id {
+                if let Some(&idx) = active_state.node_keys.get(sel_nid) {
+                    let node_data = active_state.nodes.get(idx);
+                    let display_name = active_state.display_label(sel_nid).unwrap_or("Selected Node");
+                    let primary_label = node_data.primary_label().unwrap_or("Node");
+
+                    let mut prop_rows = Vec::new();
+                    for (k, v) in &node_data.props {
+                        if !k.starts_with('@') {
+                            prop_rows.push(format!("{}: {}", k, v.to_display_string()));
+                        }
+                    }
+
+                    div()
+                        .absolute()
+                        .bottom(gpui::px(42.))
+                        .left(gpui::px(8.))
+                        .w(gpui::px(220.))
+                        .bg(sidebar_bg)
+                        .border(gpui::px(1.))
+                        .border_color(border_color)
+                        .rounded(gpui::px(6.))
+                        .shadow_md()
+                        .p_3()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_size(gpui::px(12.))
+                                .text_color(fg_color)
+                                .child(display_name.to_string()),
+                        )
+                        .child(
+                            div()
+                                .text_size(gpui::px(10.))
+                                .text_color(fg_color.opacity(0.7))
+                                .child(format!("«{}»", primary_label)),
+                        )
+                        .children(prop_rows.into_iter().map(|row| {
+                            div()
+                                .text_size(gpui::px(10.))
+                                .font_family("monospace")
+                                .text_color(fg_color.opacity(0.9))
+                                .child(row)
+                        }))
+                } else {
+                    div()
+                }
+            } else {
+                div()
+            })
     }
 }
