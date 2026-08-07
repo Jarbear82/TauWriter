@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use gpui::{div, prelude::*, SharedString, Window};
 use graphene_core::math::Vec2;
-use graphene_core::{NodeId, PropValue};
+use graphene_core::{DataExpansionMode, NodeId, PropValue};
 use graphene_gpui::render::draw_pipeline::Viewport;
 use graphene_gpui::{CanvasConfig, GraphCanvas, InteractionState};
 use graphene_style::Theme;
@@ -77,7 +77,7 @@ impl Render for GraphPaneView {
         let theme = Theme::catppuccin_mocha();
         let node_labels = HashMap::new();
         let edge_labels = HashMap::new();
-        let collapsed_parents = HashSet::new();
+        let collapsed_parents = &self.expansion_state.collapsed_parents;
 
         let canvas_element = GraphCanvas::new(
             active_view,
@@ -88,7 +88,7 @@ impl Render for GraphPaneView {
             &node_labels,
             &edge_labels,
             30,
-            &collapsed_parents,
+            collapsed_parents,
         )
         .with_config(CanvasConfig {
             edge_stroke_width: 2.0,
@@ -96,6 +96,16 @@ impl Render for GraphPaneView {
             arrow_width: 8.0,
             node_border_width: 2.0,
             node_font_size: 11.0,
+            color_config: graphene_style::ColorConfig {
+                label_contrast_mode: if self.wcag_contrast_auto {
+                    graphene_style::LabelContrastMode::WcagAuto
+                } else {
+                    graphene_style::LabelContrastMode::Fixed(graphene_style::Rgb::new(200, 200, 200))
+                },
+                auto_node_colors: self.auto_node_colors,
+                auto_edge_colors: self.auto_edge_colors,
+                canvas_background: graphene_style::Rgb::new(30, 30, 46),
+            },
             ..CanvasConfig::default()
         })
         .into_element();
@@ -382,6 +392,31 @@ impl Render for GraphPaneView {
                     }),
             )
             .child({
+                let pane_entity = cx_entity.clone();
+                let auto_colors = self.auto_node_colors;
+                gpui_component::button::Button::new("toggle_auto_colors")
+                    .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                        let _ = pane_entity.update(cx, |this, cx| {
+                            this.auto_node_colors = !this.auto_node_colors;
+                            this.auto_edge_colors = this.auto_node_colors;
+                            cx.notify();
+                        });
+                    })
+                    .label(if auto_colors { "Auto Color: ON" } else { "Auto Color: OFF" })
+                    .text_size(gpui::px(10.))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .absolute()
+                    .top(gpui::px(8.))
+                    .right(gpui::px(175.))
+                    .bg(sidebar_bg)
+                    .border(gpui::px(1.))
+                    .border_color(border_color)
+                    .rounded(gpui::px(6.))
+                    .px_3()
+                    .py_2()
+                    .text_color(fg_color)
+            })
+            .child({
                 let on_toggle_physics = std::sync::Arc::new({
                     let pane_entity = cx_entity.clone();
                     move |_window: &mut Window, cx: &mut gpui::App| {
@@ -457,6 +492,7 @@ impl Render for GraphPaneView {
                     let node_data = active_state.nodes.get(idx);
                     let display_name = active_state.display_label(sel_nid).unwrap_or("Selected Node");
                     let primary_label = node_data.primary_label().unwrap_or("Node");
+                    let cur_exp = node_data.expansion_mode;
 
                     let mut prop_rows = Vec::new();
                     for (k, v) in &node_data.props {
@@ -469,7 +505,7 @@ impl Render for GraphPaneView {
                         .absolute()
                         .bottom(gpui::px(42.))
                         .left(gpui::px(8.))
-                        .w(gpui::px(220.))
+                        .w(gpui::px(230.))
                         .bg(sidebar_bg)
                         .border(gpui::px(1.))
                         .border_color(border_color)
@@ -491,6 +527,61 @@ impl Render for GraphPaneView {
                                 .text_size(gpui::px(10.))
                                 .text_color(fg_color.opacity(0.7))
                                 .child(format!("«{}»", primary_label)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .py_1()
+                                .child({
+                                    let pane_entity = cx_entity.clone();
+                                    gpui_component::button::Button::new("exp_compact")
+                                        .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                                            let _ = pane_entity.update(cx, |this, cx| {
+                                                let (state, view) = this.active_state_and_view();
+                                                state.set_node_expansion_mode(sel_nid, DataExpansionMode::Compact);
+                                                view.load_preset(state);
+                                                cx.notify();
+                                            });
+                                        })
+                                        .label(if cur_exp == DataExpansionMode::Compact { "[Compact]" } else { "Compact" })
+                                        .text_size(gpui::px(9.))
+                                        .px_2()
+                                        .py_1()
+                                })
+                                .child({
+                                    let pane_entity = cx_entity.clone();
+                                    gpui_component::button::Button::new("exp_preview")
+                                        .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                                            let _ = pane_entity.update(cx, |this, cx| {
+                                                let (state, view) = this.active_state_and_view();
+                                                state.set_node_expansion_mode(sel_nid, DataExpansionMode::Preview);
+                                                view.load_preset(state);
+                                                cx.notify();
+                                            });
+                                        })
+                                        .label(if cur_exp == DataExpansionMode::Preview { "[Preview]" } else { "Preview" })
+                                        .text_size(gpui::px(9.))
+                                        .px_2()
+                                        .py_1()
+                                })
+                                .child({
+                                    let pane_entity = cx_entity.clone();
+                                    gpui_component::button::Button::new("exp_full")
+                                        .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                                            let _ = pane_entity.update(cx, |this, cx| {
+                                                let (state, view) = this.active_state_and_view();
+                                                state.set_node_expansion_mode(sel_nid, DataExpansionMode::Full);
+                                                view.load_preset(state);
+                                                cx.notify();
+                                            });
+                                        })
+                                        .label(if cur_exp == DataExpansionMode::Full { "[Full]" } else { "Full" })
+                                        .text_size(gpui::px(9.))
+                                        .px_2()
+                                        .py_1()
+                                })
                         )
                         .children(prop_rows.into_iter().map(|row| {
                             div()

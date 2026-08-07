@@ -36,6 +36,10 @@ pub(crate) struct GraphPaneView {
     pub(crate) dragged_node: Option<NodeId>,
     pub(crate) last_mouse_pos: gpui::Point<gpui::Pixels>,
     pub(crate) layout_mode: super::data::LayoutMode,
+    pub(crate) expansion_state: graphene_gpui::ExpansionState,
+    pub(crate) auto_node_colors: bool,
+    pub(crate) auto_edge_colors: bool,
+    pub(crate) wcag_contrast_auto: bool,
 
     // Per-tab camera state [0]=Document, [1]=Definitions, [2]=Instances.
     pub(crate) camera_states: [CameraState; 3],
@@ -95,6 +99,10 @@ impl GraphPaneView {
             dragged_node: None,
             last_mouse_pos: gpui::point(gpui::px(0.), gpui::px(0.)),
             layout_mode: super::data::LayoutMode::default(),
+            expansion_state: graphene_gpui::ExpansionState::new(),
+            auto_node_colors: true,
+            auto_edge_colors: true,
+            wcag_contrast_auto: true,
             camera_states: [CameraState::default(); 3],
             active_camera_idx: 0,
             pane_content_width: 0.0,

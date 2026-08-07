@@ -30,3 +30,9 @@ gpui_macros = { git = "https://github.com/zed-industries/zed.git?branch=gpui-emb
 [patch.crates-io]
 gpui = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.2.2" }
 
+[patch."https://github.com/Jarbear82/graphene-rs"]
+graphene_core = { path = "../graphene-rs/crates/graphene_core" }
+graphene_layout = { path = "../graphene-rs/crates/graphene_layout" }
+graphene_gpui = { path = "../graphene-rs/crates/graphene_gpui" }
+graphene_style = { path = "../graphene-rs/crates/graphene_style" }
+

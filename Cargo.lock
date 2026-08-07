@@ -2737,7 +2737,6 @@ dependencies = [
 [[package]]
 name = "graphene_algorithms"
 version = "0.1.0"
-source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
 dependencies = [
  "graphene_core",
  "rand 0.8.6",
@@ -2747,7 +2746,6 @@ dependencies = [
 [[package]]
 name = "graphene_analysis"
 version = "0.1.0"
-source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
 dependencies = [
  "graphene_algorithms",
  "graphene_core",
@@ -2758,7 +2756,6 @@ dependencies = [
 [[package]]
 name = "graphene_core"
 version = "0.1.0"
-source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
 dependencies = [
  "bitflags 2.13.0",
  "bitvec",
@@ -2774,7 +2771,6 @@ dependencies = [
 [[package]]
 name = "graphene_gpui"
 version = "0.1.0"
-source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
 dependencies = [
  "bitflags 2.13.0",
  "gpui",
@@ -2786,7 +2782,6 @@ dependencies = [
 [[package]]
 name = "graphene_layout"
 version = "0.1.0"
-source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
 dependencies = [
  "graphene_algorithms",
  "graphene_analysis",
@@ -2797,7 +2792,6 @@ dependencies = [
 [[package]]
 name = "graphene_style"
 version = "0.1.0"
-source = "git+https://github.com/Jarbear82/graphene-rs#c2c9c9782f5e6c3d4f9ebef32bee5772ac079e65"
 dependencies = [
  "bitflags 2.13.0",
  "graphene_core",

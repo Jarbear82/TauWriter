@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 use graphene_core::math::{Size2, Vec2};
 use graphene_core::{
-    CompactString, DataExpansionMode, EdgeData, EdgeDirection, GraphState, NodeData,
-    NodeId, PropValue, Properties,
+    CompactString, EdgeData, EdgeDirection, GraphState, NodeData, NodeId, PropValue,
+    Properties,
 };
 use graphene_style::ComputedStyle;
 
