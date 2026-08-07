@@ -13,22 +13,8 @@ unexpected_cfgs = { level = "allow" }
 dbg_macro = "deny"
 todo = "deny"
 
-[patch."https://github.com/zed-industries/zed.git"]
-gpui = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.2.2" }
-gpui_platform = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-gpui_linux = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-gpui_wgpu = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-gpui_macros = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-
-[patch."https://github.com/zed-industries/zed"]
-gpui = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.2.2" }
-gpui_platform = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-gpui_linux = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-gpui_wgpu = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-gpui_macros = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.1.0" }
-
 [patch.crates-io]
-gpui = { git = "https://github.com/zed-industries/zed.git?branch=gpui-embedded-in-gpui", branch = "gpui-embedded-in-gpui", version = "=0.2.2" }
+gpui = { git = "https://github.com/zed-industries/zed.git" }
 
 [patch."https://github.com/Jarbear82/graphene-rs"]
 graphene_core = { path = "../graphene-rs/crates/graphene_core" }
