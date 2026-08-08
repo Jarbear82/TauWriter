@@ -6831,6 +6831,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauwriter-hubgs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "serde",
+ "tree-sitter",
+]
+
+[[package]]
 name = "tauwriter-lsp"
 version = "0.1.0"
 dependencies = [
@@ -6843,11 +6853,25 @@ dependencies = [
  "serde",
  "serde_json",
  "streaming-iterator",
+ "tauwriter-hubgs",
+ "tauwriter-twxml",
  "tokio",
  "tower 0.4.13",
  "tower-lsp",
  "tree-sitter",
  "walkdir",
+]
+
+[[package]]
+name = "tauwriter-twxml"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "roxmltree 0.20.0",
+ "serde",
+ "streaming-iterator",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -6870,6 +6894,8 @@ dependencies = [
  "roxmltree 0.20.0",
  "serde",
  "serde_json",
+ "tauwriter-hubgs",
+ "tauwriter-twxml",
  "tokio",
  "tree-sitter",
 ]

@@ -1,0 +1,14 @@
+[package]
+name = "tauwriter-hubgs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jarbear82", "Gemini CLI"]
+description = "Standalone HubGS grammar parser and AST types for TauWriter"
+
+[dependencies]
+tree-sitter = "0.26"
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+
+[build-dependencies]
+cc = "1.0"

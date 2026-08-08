@@ -1,5 +1,4 @@
 use crate::parser::ts_range_to_lsp;
-/// Shared tree-sitter attribute parsing for TWXML nodes.
 use tower_lsp::lsp_types::Range;
 
 pub fn parse_tag(tree: &tree_sitter::Tree) -> Option<&str> {
@@ -52,21 +51,8 @@ pub fn get_all_attributes<F>(
 where
     F: Fn(&str) -> bool,
 {
-    let mut result = Vec::new();
-    let mut cursor = tag_node.walk();
-    for child in tag_node.children(&mut cursor) {
-        if child.kind() == "attribute" {
-            if let (Some(name_node), Some(val_node)) = (child.child(0), child.child(2)) {
-                let attr_name = &contents[name_node.byte_range()];
-                let attr_val = contents[val_node.byte_range()]
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string();
-                if predicate(attr_name) {
-                    result.push((attr_val, ts_range_to_lsp(val_node.range()).into()));
-                }
-            }
-        }
-    }
-    result
+    tauwriter_twxml::get_all_attributes(tag_node, contents, predicate)
+        .into_iter()
+        .map(|(val, _range)| (val, Range::default()))
+        .collect()
 }

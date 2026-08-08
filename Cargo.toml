@@ -3,6 +3,8 @@ members = [
     "lsp",
     "extension",
     "host",
+    "crates/hubgs",
+    "crates/twxml",
 ]
 resolver = "2"
 

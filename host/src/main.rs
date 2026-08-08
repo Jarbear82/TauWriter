@@ -9,8 +9,7 @@
 use gpui::{prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
 use gpui_component_assets::Assets;
 use lsp_client::{Diagnostic, LspClient};
-use parser::load_and_parse_twxml;
-use parser::{Block, TextRun};
+use parser::{load_and_parse_twxml, Block, TextRun};
 use std::path::PathBuf;
 use ui::{DocumentHome, MainView, ParseState, SelectDocumentTab, SelectGraphTab, ToggleSettings};
 
