@@ -1,11 +1,9 @@
 //! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui::GraphCanvas.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use gpui::{div, prelude::*, SharedString, Window};
-use graphene_core::math::Vec2;
 use graphene_core::{DataExpansionMode, NodeId, PropValue};
-use graphene_gpui::render::draw_pipeline::Viewport;
-use graphene_gpui::{CanvasConfig, GraphCanvas, InteractionState};
+use graphene_gpui::{CanvasConfig, GraphCanvas};
 use graphene_style::Theme;
 
 use super::data::{GraphEvent, LayoutMode};
@@ -25,10 +23,14 @@ impl Render for GraphPaneView {
         };
 
         // Align active camera index to visible tab
+        let old_tab_idx = self.active_camera_idx;
         match active_tab {
             crate::ui::GraphTab::DocumentGraph => self.select_tab_camera(0),
             crate::ui::GraphTab::DefinitionsSchema => self.select_tab_camera(1),
             crate::ui::GraphTab::InstancesRelation => self.select_tab_camera(2),
+        }
+        if old_tab_idx != self.active_camera_idx {
+            self.rebuild_interaction_grid();
         }
 
         let active_tab_idx = self.active_camera_idx;
@@ -46,34 +48,25 @@ impl Render for GraphPaneView {
             _ => (&self.instances_state, &self.instances_view, &self.inst_id_map),
         };
 
-        // Determine selected graphene NodeId from workspace selected_hub_id
-        let selected_node_id: Option<NodeId> = selected_hub_id
-            .as_ref()
-            .and_then(|id_str| id_map.get(id_str.as_str()).copied())
-            .or_else(|| {
-                selected_hub_id.as_ref().and_then(|id_str| {
-                    active_state.node_index_to_id.iter().copied().find(|&nid| {
-                        active_state
-                            .display_label(nid)
-                            .map_or(false, |lbl| lbl == id_str.as_str())
+        // Determine selected graphene NodeId from workspace selected_hub_id or self.selected_node
+        let selected_node_id: Option<NodeId> = self.selected_node.or_else(|| {
+            selected_hub_id
+                .as_ref()
+                .and_then(|id_str| id_map.get(id_str.as_str()).copied())
+                .or_else(|| {
+                    selected_hub_id.as_ref().and_then(|id_str| {
+                        active_state.node_index_to_id.iter().copied().find(|&nid| {
+                            active_state
+                                .display_label(nid)
+                                .map_or(false, |lbl| lbl == id_str.as_str())
+                        })
                     })
                 })
-            });
+        });
 
         let cam = self.camera_states[active_tab_idx];
-        let pane_w = self.pane_content_width.max(100.0);
-        let pane_h = self.pane_content_height.max(100.0);
+        let viewport = self.active_viewport();
 
-        let viewport = Viewport {
-            offset: Vec2::new(cam.offset_x, cam.offset_y),
-            zoom: cam.zoom,
-            bounds: gpui::Bounds {
-                origin: gpui::point(0.0, 0.0),
-                size: gpui::size(pane_w, pane_h),
-            },
-        };
-
-        let interaction_state = InteractionState::new(50.0);
         let theme = Theme::catppuccin_mocha();
         let node_labels = HashMap::new();
         let edge_labels = HashMap::new();
@@ -82,7 +75,7 @@ impl Render for GraphPaneView {
         let canvas_element = GraphCanvas::new(
             active_view,
             &viewport,
-            &interaction_state,
+            &self.interaction_state,
             &theme,
             selected_node_id,
             &node_labels,
@@ -110,95 +103,143 @@ impl Render for GraphPaneView {
         })
         .into_element();
 
-        // Mouse handlers
+        // Mouse handlers driven by GraphCanvasController
         let on_mouse_down = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
-            let viewport_clone = viewport.clone();
 
             move |ev: &gpui::MouseDownEvent, _window: &mut Window, cx: &mut gpui::App| {
-                let mouse_p = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
-                let model_p = viewport_clone.screen_to_model(mouse_p);
+                let click_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+                let is_shift = ev.modifiers.shift;
 
-                let mut clicked_id_str: Option<SharedString> = None;
-                let mut hit_node_id: Option<NodeId> = None;
-
-                let _ = pane_entity.update(cx, |this, _| {
-                    let (state, view, _) = match this.active_camera_idx {
-                        0 => (&this.outline_state, &this.outline_view, &this.outline_id_map),
-                        1 => (&this.def_state, &this.def_view, &this.def_id_map),
-                        _ => (&this.instances_state, &this.instances_view, &this.inst_id_map),
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let viewport = this.active_viewport();
+                    let view_ref = match this.active_camera_idx {
+                        0 => &this.outline_view,
+                        1 => &this.def_view,
+                        _ => &this.instances_view,
                     };
 
-                    for &nid in view.node_order.iter().rev() {
-                        if let Some(node) = view.nodes.get(&nid) {
-                            let hw = node.size.w / 2.0;
-                            let hh = node.size.h / 2.0;
-                            if model_p.x >= node.pos.x - hw
-                                && model_p.x <= node.pos.x + hw
-                                && model_p.y >= node.pos.y - hh
-                                && model_p.y <= node.pos.y + hh
-                            {
-                                hit_node_id = Some(nid);
+                    let mut interaction = this.interaction_state.clone();
+                    let mut expansion = this.expansion_state.clone();
+                    let mut controller = this.controller.clone();
 
-                                // Retrieve primary display string ID
-                                if let Some(PropValue::Text(id_val)) = state.get_node_prop(nid, "id") {
-                                    clicked_id_str = Some(SharedString::from(id_val.as_str().to_string()));
-                                } else if let Some(lbl) = state.display_label(nid) {
-                                    clicked_id_str = Some(SharedString::from(lbl.to_string()));
-                                }
-                                break;
-                            }
+                    let res = controller.handle_mouse_down(
+                        click_pos,
+                        is_shift,
+                        this.selected_node,
+                        &viewport,
+                        view_ref,
+                        &mut interaction,
+                        &mut expansion,
+                        this.is_ticking,
+                    );
+
+                    this.controller = controller;
+                    this.interaction_state = interaction;
+                    this.expansion_state = expansion;
+
+                    if let Some(sel) = res.selected_node {
+                        this.selected_node = sel;
+                        if sel.is_none() {
+                            this.workspace.update(cx, |w, cx| {
+                                w.selected_hub_id = None;
+                                cx.notify();
+                            });
                         }
                     }
 
-                    if let Some(nid) = hit_node_id {
-                        this.dragged_node = Some(nid);
-                        this.last_mouse_pos = ev.position;
-                    } else {
-                        let cam_mut = this.active_camera_mut();
-                        cam_mut.is_panning = true;
-                        this.last_mouse_pos = ev.position;
+                    // Drag phase -> update graph state & view positions if needed
+                    if let Some((node_id, target_pos, _phase)) = res.drag_update {
+                        let (state, view) = this.active_state_and_view();
+                        state.set_node_position(node_id, target_pos);
+                        if let Some(vn) = view.nodes.get_mut(&node_id) {
+                            vn.pos = target_pos;
+                        }
                     }
-                });
 
-                if let Some(node_str) = clicked_id_str {
-                    let _ = pane_entity.update(cx, |_, cx| {
-                        cx.emit(GraphEvent::NodeClicked(node_str));
-                    });
-                }
+                    // Emit Hub click for TauWriter
+                    let clicked_node_id = match res.selected_node {
+                        Some(Some(nid)) => Some(nid),
+                        _ => None,
+                    };
+
+                    if let Some(nid) = clicked_node_id {
+                        let (state, _, _) = match this.active_camera_idx {
+                            0 => (&this.outline_state, &this.outline_view, &this.outline_id_map),
+                            1 => (&this.def_state, &this.def_view, &this.def_id_map),
+                            _ => (&this.instances_state, &this.instances_view, &this.inst_id_map),
+                        };
+
+                        let id_str = if let Some(PropValue::Text(id_val)) =
+                            state.get_node_prop(nid, "id")
+                        {
+                            Some(SharedString::from(id_val.as_str().to_string()))
+                        } else if let Some(lbl) = state.display_label(nid) {
+                            Some(SharedString::from(lbl.to_string()))
+                        } else {
+                            None
+                        };
+
+                        if let Some(node_str) = id_str {
+                            this.workspace.update(cx, |w, cx| {
+                                w.selected_hub_id = Some(node_str.clone());
+                                cx.notify();
+                            });
+                            cx.emit(GraphEvent::NodeClicked(node_str));
+                        }
+                    }
+
+                    // Handle CanvasAction if any
+                    if let Some(action) = res.action {
+                        match action {
+                            graphene_gpui::CanvasAction::ToggleParentCollapse { .. } => {
+                                this.rebuild_interaction_grid();
+                            }
+                            graphene_gpui::CanvasAction::CreateEdge { source, target } => {
+                                let _ = (source, target);
+                            }
+                            graphene_gpui::CanvasAction::AddNewNode { .. } => {}
+                        }
+                    }
+
+                    cx.notify();
+                });
             }
         });
 
         let on_mouse_move = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
             move |ev: &gpui::MouseMoveEvent, _window: &mut Window, cx: &mut gpui::App| {
-                let pos = ev.position;
-                let _ = pane_entity.update(cx, |this, _| {
-                    if let Some(dragged_id) = this.dragged_node {
-                        let zoom = this.active_camera().zoom.max(0.01);
-                        let dx = (f32::from(pos.x) - f32::from(this.last_mouse_pos.x)) / zoom;
-                        let dy = (f32::from(pos.y) - f32::from(this.last_mouse_pos.y)) / zoom;
-                        this.last_mouse_pos = pos;
+                let mouse_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
 
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let mut viewport = this.active_viewport();
+                    let view_ref = match this.active_camera_idx {
+                        0 => &this.outline_view,
+                        1 => &this.def_view,
+                        _ => &this.instances_view,
+                    };
+                    let mut interaction = this.interaction_state.clone();
+
+                    if let Some((node_id, target_pos, _phase)) =
+                        this.controller.handle_mouse_move(
+                            mouse_pos,
+                            &mut viewport,
+                            view_ref,
+                            &mut interaction,
+                        )
+                    {
                         let (state, view) = this.active_state_and_view();
-                        if let Some(&idx) = state.node_keys.get(dragged_id) {
-                            let cur_pos = *state.positions.get(idx);
-                            let new_pos = Vec2::new(cur_pos.x + dx, cur_pos.y + dy);
-                            state.set_node_position(dragged_id, new_pos);
-                            if let Some(v_node) = view.nodes.get_mut(&dragged_id) {
-                                v_node.pos = new_pos;
-                            }
+                        state.set_node_position(node_id, target_pos);
+                        if let Some(vn) = view.nodes.get_mut(&node_id) {
+                            vn.pos = target_pos;
                         }
-                    } else if this.active_camera().is_panning {
-                        let zoom = this.active_camera().zoom.max(0.01);
-                        let dx = (f32::from(pos.x) - f32::from(this.last_mouse_pos.x)) / zoom;
-                        let dy = (f32::from(pos.y) - f32::from(this.last_mouse_pos.y)) / zoom;
-                        this.last_mouse_pos = pos;
-
-                        let cam_mut = this.active_camera_mut();
-                        cam_mut.offset_x += dx;
-                        cam_mut.offset_y += dy;
                     }
+
+                    // Controller / interaction state may also pan; sync camera back
+                    this.write_viewport_to_camera(&viewport);
+                    this.interaction_state = interaction;
+                    cx.notify();
                 });
             }
         });
@@ -206,9 +247,27 @@ impl Render for GraphPaneView {
         let on_mouse_up = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
             move |_window: &mut Window, cx: &mut gpui::App| {
-                let _ = pane_entity.update(cx, |this, _| {
-                    this.dragged_node = None;
-                    this.active_camera_mut().is_panning = false;
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let view_ref = match this.active_camera_idx {
+                        0 => &this.outline_view,
+                        1 => &this.def_view,
+                        _ => &this.instances_view,
+                    };
+                    let mut interaction = this.interaction_state.clone();
+
+                    if let Some((node_id, target_pos, _phase)) =
+                        this.controller.handle_mouse_up(&mut interaction, view_ref)
+                    {
+                        let (state, view) = this.active_state_and_view();
+                        state.set_node_position(node_id, target_pos);
+                        if let Some(vn) = view.nodes.get_mut(&node_id) {
+                            vn.pos = target_pos;
+                        }
+                    }
+
+                    this.interaction_state = interaction;
+                    this.rebuild_interaction_grid();
+                    cx.notify();
                 });
             }
         });
@@ -216,15 +275,16 @@ impl Render for GraphPaneView {
         let on_scroll_wheel = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
             move |ev: &gpui::ScrollWheelEvent, _window: &mut Window, cx: &mut gpui::App| {
-                let _ = pane_entity.update(cx, |this, _| {
-                    let cam = this.active_camera();
-                    let old_z = cam.zoom;
-                    let pixel_delta = ev.delta.pixel_delta(gpui::px(20.0));
-                    let zoom_delta = -f32::from(pixel_delta.y) * 0.05;
-                    let new_zoom = (old_z + zoom_delta).clamp(0.1, 5.0);
+                let amount = match ev.delta {
+                    gpui::ScrollDelta::Pixels(p) => f32::from(p.y),
+                    gpui::ScrollDelta::Lines(p) => p.y * 20.0,
+                };
 
-                    let cam_mut = this.active_camera_mut();
-                    cam_mut.zoom = new_zoom;
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let mut viewport = this.active_viewport();
+                    this.controller.handle_scroll(amount, &mut viewport);
+                    this.write_viewport_to_camera(&viewport);
+                    cx.notify();
                 });
             }
         });
@@ -232,9 +292,11 @@ impl Render for GraphPaneView {
         let on_zoom_in = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
             move |_window: &mut Window, cx: &mut gpui::App| {
-                let _ = pane_entity.update(cx, |this, _| {
-                    let cam_mut = this.active_camera_mut();
-                    cam_mut.zoom = (cam_mut.zoom + 0.2).min(5.0);
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let mut viewport = this.active_viewport();
+                    this.controller.handle_scroll(20.0, &mut viewport);
+                    this.write_viewport_to_camera(&viewport);
+                    cx.notify();
                 });
             }
         });
@@ -242,9 +304,11 @@ impl Render for GraphPaneView {
         let on_zoom_out = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
             move |_window: &mut Window, cx: &mut gpui::App| {
-                let _ = pane_entity.update(cx, |this, _| {
-                    let cam_mut = this.active_camera_mut();
-                    cam_mut.zoom = (cam_mut.zoom - 0.2).max(0.1);
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let mut viewport = this.active_viewport();
+                    this.controller.handle_scroll(-20.0, &mut viewport);
+                    this.write_viewport_to_camera(&viewport);
+                    cx.notify();
                 });
             }
         });
@@ -252,42 +316,28 @@ impl Render for GraphPaneView {
         let on_fit_view = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
             move |_window: &mut Window, cx: &mut gpui::App| {
-                let _ = pane_entity.update(cx, |this, _| {
-                    let active_idx = this.active_camera_idx;
-                    let (view, pane_w, pane_h) = (
-                        match active_idx {
-                            0 => &this.outline_view,
-                            1 => &this.def_view,
-                            _ => &this.instances_view,
-                        },
-                        this.pane_content_width.max(100.0),
-                        this.pane_content_height.max(100.0),
-                    );
-
-                    let mut vp = Viewport {
-                        offset: Vec2::default(),
-                        zoom: 1.0,
-                        bounds: gpui::Bounds {
-                            origin: gpui::point(0.0, 0.0),
-                            size: gpui::size(pane_w, pane_h),
-                        },
+                let _ = pane_entity.update(cx, |this, cx| {
+                    let view = match this.active_camera_idx {
+                        0 => &this.outline_view,
+                        1 => &this.def_view,
+                        _ => &this.instances_view,
                     };
+                    let mut vp = this.active_viewport();
                     vp.fit_to_graph(view);
-
-                    let cam_mut = this.active_camera_mut();
-                    cam_mut.offset_x = vp.offset.x;
-                    cam_mut.offset_y = vp.offset.y;
-                    cam_mut.zoom = vp.zoom;
+                    this.write_viewport_to_camera(&vp);
+                    cx.notify();
                 });
             }
         });
 
         let on_bounds_changed = std::sync::Arc::new({
             let pane_entity = cx_entity.clone();
-            move |w: f32, h: f32, _window: &mut Window, cx: &mut gpui::App| {
+            move |bounds: gpui::Bounds<f32>, _window: &mut Window, cx: &mut gpui::App| {
                 let _ = pane_entity.update(cx, |this, _| {
-                    this.pane_content_width = w;
-                    this.pane_content_height = h;
+                    if this.pane_bounds != bounds {
+                        this.pane_bounds = bounds;
+                        this.rebuild_interaction_grid();
+                    }
                 });
             }
         });
@@ -295,9 +345,12 @@ impl Render for GraphPaneView {
         let bounds_reporter = gpui::canvas(
             move |_, _, _| {},
             move |bounds, _, window, cx| {
+                let bounds_f32 = gpui::Bounds {
+                    origin: gpui::point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32()),
+                    size: gpui::size(bounds.size.width.as_f32(), bounds.size.height.as_f32()),
+                };
                 on_bounds_changed(
-                    bounds.size.width.as_f32(),
-                    bounds.size.height.as_f32(),
+                    bounds_f32,
                     window,
                     cx,
                 );

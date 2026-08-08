@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 use gpui::{prelude::*, Entity};
-use graphene_core::{GraphState, NodeId};
-use graphene_gpui::GraphView;
+use graphene_core::{math::Vec2, GraphState, NodeId};
+use graphene_gpui::render::draw_pipeline::Viewport;
+use graphene_gpui::{ExpansionState, GraphCanvasController, GraphView, InteractionState};
 use graphene_style::ComputedStyle;
 
 use crate::graph_adapter::{
@@ -11,7 +12,7 @@ use crate::graph_adapter::{
 };
 use crate::ui::Workspace;
 
-/// Stateful viewer that owns all graph states, views, camera states, and layout mode.
+/// Stateful viewer that owns all graph states, views, camera states, layout mode, and library interaction controllers.
 #[derive(Debug, Clone)]
 pub(crate) struct GraphPaneView {
     pub(crate) workspace: Entity<Workspace>,
@@ -33,10 +34,15 @@ pub(crate) struct GraphPaneView {
     pub(crate) inst_id_map: HashMap<String, NodeId>,
 
     pub(crate) is_ticking: bool,
-    pub(crate) dragged_node: Option<NodeId>,
-    pub(crate) last_mouse_pos: gpui::Point<gpui::Pixels>,
     pub(crate) layout_mode: super::data::LayoutMode,
-    pub(crate) expansion_state: graphene_gpui::ExpansionState,
+
+    /// Library interaction state & controller (persistent per pane view)
+    pub(crate) controller: GraphCanvasController,
+    pub(crate) interaction_state: InteractionState,
+    pub(crate) expansion_state: ExpansionState,
+
+    pub(crate) selected_node: Option<NodeId>,
+
     pub(crate) auto_node_colors: bool,
     pub(crate) auto_edge_colors: bool,
     pub(crate) wcag_contrast_auto: bool,
@@ -45,9 +51,8 @@ pub(crate) struct GraphPaneView {
     pub(crate) camera_states: [CameraState; 3],
     pub(crate) active_camera_idx: usize,
 
-    // Real pane content-box bounds (set by parent via bounds callback)
-    pub(crate) pane_content_width: f32,
-    pub(crate) pane_content_height: f32,
+    // Real pane content-box bounds in window space (set by parent via bounds callback)
+    pub(crate) pane_bounds: gpui::Bounds<f32>,
 }
 
 /// Per-tab camera state so each graph pane has independent pan/zoom.
@@ -56,7 +61,6 @@ pub(crate) struct CameraState {
     pub(crate) offset_x: f32,
     pub(crate) offset_y: f32,
     pub(crate) zoom: f32,
-    pub(crate) is_panning: bool,
 }
 
 impl Default for CameraState {
@@ -65,7 +69,6 @@ impl Default for CameraState {
             offset_x: 0.0,
             offset_y: 0.0,
             zoom: 1.0,
-            is_panning: false,
         }
     }
 }
@@ -96,21 +99,55 @@ impl GraphPaneView {
             inst_id_map: HashMap::new(),
 
             is_ticking: false,
-            dragged_node: None,
-            last_mouse_pos: gpui::point(gpui::px(0.), gpui::px(0.)),
             layout_mode: super::data::LayoutMode::default(),
-            expansion_state: graphene_gpui::ExpansionState::new(),
+            controller: GraphCanvasController::new(),
+            interaction_state: InteractionState::new(64.0),
+            expansion_state: ExpansionState::new(),
+            selected_node: None,
             auto_node_colors: true,
             auto_edge_colors: true,
             wcag_contrast_auto: true,
             camera_states: [CameraState::default(); 3],
             active_camera_idx: 0,
-            pane_content_width: 0.0,
-            pane_content_height: 0.0,
+            pane_bounds: gpui::Bounds::default(),
         };
         // Load graph data on creation
         this.recalculate_data(&workspace, cx);
         this
+    }
+
+    pub(crate) fn active_viewport(&self) -> Viewport {
+        let cam = self.active_camera();
+        let bounds = if self.pane_bounds.size.width <= 0.0 || self.pane_bounds.size.height <= 0.0 {
+            gpui::Bounds {
+                origin: gpui::point(0.0, 0.0),
+                size: gpui::size(100.0, 100.0),
+            }
+        } else {
+            self.pane_bounds
+        };
+        Viewport {
+            offset: Vec2::new(cam.offset_x, cam.offset_y),
+            zoom: cam.zoom,
+            bounds,
+        }
+    }
+
+    pub(crate) fn write_viewport_to_camera(&mut self, vp: &Viewport) {
+        let cam = self.active_camera_mut();
+        cam.offset_x = vp.offset.x;
+        cam.offset_y = vp.offset.y;
+        cam.zoom = vp.zoom;
+    }
+
+    /// Rebuild interaction state spatial grid for the active tab's view
+    pub(crate) fn rebuild_interaction_grid(&mut self) {
+        let view = match self.active_camera_idx {
+            0 => &self.outline_view,
+            1 => &self.def_view,
+            _ => &self.instances_view,
+        };
+        self.interaction_state.rebuild_grid(view);
     }
 
     pub(crate) fn trigger_run_layout(&mut self, cx: &mut Context<Self>) {
@@ -251,6 +288,7 @@ impl GraphPaneView {
         self.instances_view.load_preset(&self.instances_state);
         self.def_view.load_preset(&self.def_state);
         self.outline_view.load_preset(&self.outline_state);
+        self.rebuild_interaction_grid();
 
         self.start_ticking(cx);
         cx.notify();
@@ -367,6 +405,7 @@ impl GraphPaneView {
                             this.outline_state = out_state;
                             this.outline_id_map = out_map;
 
+                            this.rebuild_interaction_grid();
                             cx.notify();
                         }
                     });
