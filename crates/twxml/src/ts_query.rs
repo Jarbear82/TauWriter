@@ -122,7 +122,7 @@ pub fn parse_hub_references(contents: &str) -> Vec<HubReferenceInfo> {
                 _ => continue,
             };
 
-            if let Some((id_val, _range)) = id_val_opt {
+            if let Some((id_val, id_range)) = id_val_opt {
                 let is_reviewed = is_parent_review(node, contents);
                 refs.push(HubReferenceInfo {
                     name: id_val,
@@ -130,6 +130,8 @@ pub fn parse_hub_references(contents: &str) -> Vec<HubReferenceInfo> {
                     text: text_opt,
                     start_offset: node.start_byte(),
                     end_offset: node.end_byte(),
+                    id_start_offset: id_range.start,
+                    id_end_offset: id_range.end,
                     is_reviewed,
                 });
             }
@@ -155,47 +157,77 @@ pub fn get_all_twxml_tags(contents: &str) -> Vec<TwxmlTagInfo> {
         None => return tags,
     };
 
-    let mut cursor = tree.root_node().walk();
-    for node in tree.root_node().children(&mut cursor) {
-        collect_tags_recursive(node, contents, &mut tags);
-    }
-    tags
-}
-
-fn collect_tags_recursive(node: tree_sitter::Node, contents: &str, tags: &mut Vec<TwxmlTagInfo>) {
-    if node.kind() == "element" || node.kind() == "self_closing_element" {
-        let tag_name = get_tag_name(node, contents);
-        if let Some(name) = tag_name {
-            let parent_name = resolve_parent_tag(&node, contents);
-            tags.push(TwxmlTagInfo {
-                name,
-                start_offset: node.start_byte(),
-                end_offset: node.end_byte(),
-                parent_name,
-            });
+    let root = tree.root_node();
+    let container = if root.kind() == "source_file" {
+        root.child(0)
+    } else {
+        Some(root)
+    };
+    let children: Vec<_> = match container {
+        Some(node) => node.children(&mut node.walk()).collect(),
+        None => vec![],
+    };
+    for child in children {
+        match child.kind() {
+            "meta_tag" => {
+                tags.push(TwxmlTagInfo {
+                    name: "meta".to_string(),
+                    start_offset: child.start_byte(),
+                    end_offset: child.end_byte(),
+                    parent_name: Some("document".to_string()),
+                });
+            }
+            "body_block" => {
+                tags.push(TwxmlTagInfo {
+                    name: "body".to_string(),
+                    start_offset: child.start_byte(),
+                    end_offset: child.end_byte(),
+                    parent_name: Some("document".to_string()),
+                });
+            }
+            _ => {}
         }
     }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_tags_recursive(child, contents, tags);
-    }
-}
 
-fn get_tag_name(node: tree_sitter::Node, contents: &str) -> Option<String> {
-    if node.kind() == "self_closing_element" {
-        if let Some(name_node) = node.child_by_field_name("name") {
-            return Some(contents[name_node.byte_range()].to_string());
-        }
-    } else if node.kind() == "element" {
-        if let Some(start_tag) = node.child(0) {
-            if start_tag.kind() == "start_tag" {
-                if let Some(name_node) = start_tag.child_by_field_name("name") {
-                    return Some(contents[name_node.byte_range()].to_string());
+    let query = match tree_sitter::Query::new(&language, "(tag_name) @tag") {
+        Ok(q) => q,
+        Err(_) => return tags,
+    };
+    let mut query_cursor = tree_sitter::QueryCursor::new();
+    let mut matches_result = query_cursor.matches(&query, tree.root_node(), contents.as_bytes());
+
+    while let Some(m) = matches_result.next() {
+        for capture in m.captures {
+            let node = capture.node;
+            let tag_name = contents.get(node.byte_range()).unwrap_or("").to_string();
+
+            if let Some(parent_node) = node.parent() {
+                if parent_node.kind() == "start_tag" {
+                    if let Some(element_node) = parent_node.parent() {
+                        if element_node.kind() == "element" {
+                            let parent_name = resolve_parent_tag(&element_node, contents);
+                            tags.push(TwxmlTagInfo {
+                                name: tag_name.clone(),
+                                start_offset: node.start_byte(),
+                                end_offset: node.end_byte(),
+                                parent_name,
+                            });
+                        }
+                    }
+                } else if parent_node.kind() == "self_closing_element" {
+                    let parent_name = resolve_parent_tag(&parent_node, contents);
+                    tags.push(TwxmlTagInfo {
+                        name: tag_name.clone(),
+                        start_offset: node.start_byte(),
+                        end_offset: node.end_byte(),
+                        parent_name,
+                    });
                 }
             }
         }
     }
-    None
+
+    tags
 }
 
 fn resolve_parent_tag(element_node: &tree_sitter::Node, contents: &str) -> Option<String> {

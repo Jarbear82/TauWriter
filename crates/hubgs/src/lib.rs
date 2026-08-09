@@ -22,6 +22,118 @@ pub fn load_hubgs_language() -> Option<tree_sitter::Language> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SpanPosition {
+    pub line: u32,
+    pub character: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SpanRange {
+    pub start: SpanPosition,
+    pub end: SpanPosition,
+}
+
+pub fn ts_range_to_span(range: tree_sitter::Range) -> SpanRange {
+    SpanRange {
+        start: SpanPosition {
+            line: range.start_point.row as u32,
+            character: range.start_point.column as u32,
+        },
+        end: SpanPosition {
+            line: range.end_point.row as u32,
+            character: range.end_point.column as u32,
+        },
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HubValue {
+    Identifier(String),
+    Number(f64),
+    Text(String),
+    Boolean(bool),
+    Array(Vec<HubValue>),
+}
+
+impl HubValue {
+    pub fn extract_refs(&self) -> Vec<String> {
+        match self {
+            HubValue::Identifier(s) => vec![s.clone()],
+            HubValue::Array(vals) => vals.iter().flat_map(|v| v.extract_refs()).collect(),
+            _ => Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HubFieldDef {
+    pub name: String,
+    pub decorator: Option<String>,
+    pub expression: Option<String>,
+    pub is_display: bool,
+    pub is_background: bool,
+    pub range: SpanRange,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HubRoleDef {
+    pub name: String,
+    pub direction: String,
+    pub multiplicity: String,
+    pub allowed_types: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HubTypeAst {
+    pub name: String,
+    pub range: SpanRange,
+    pub block_range: SpanRange,
+    pub fields: Vec<HubFieldDef>,
+    pub roles: Vec<HubRoleDef>,
+    pub extends_parents: Vec<String>,
+    pub constraints: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HubAssignmentAst {
+    pub name: String,
+    pub range: SpanRange,
+    pub value: HubValue,
+    pub value_range: SpanRange,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HubInstanceAst {
+    pub id: String,
+    pub type_name: String,
+    pub name_range: SpanRange,
+    pub block_range: SpanRange,
+    pub description: Option<String>,
+    pub assignments: Vec<HubAssignmentAst>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GlobalFieldAst {
+    pub name: String,
+    pub type_name: String,
+    pub range: SpanRange,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HubEnumAst {
+    pub name: String,
+    pub variants: Vec<String>,
+    pub range: SpanRange,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HubStructAst {
+    pub name: String,
+    pub field_names: Vec<String>,
+    pub range: SpanRange,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HubgsLink {
     pub name: String,
@@ -76,7 +188,7 @@ pub struct GlobalField {
     pub type_name: String,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HubgsParseOutput {
     pub definitions: Vec<HubgsDefinition>,
     pub instances: Vec<HubgsInstance>,
@@ -84,6 +196,12 @@ pub struct HubgsParseOutput {
     pub enums: Vec<HubEnum>,
     pub structs: Vec<HubStruct>,
     pub global_fields: Vec<GlobalField>,
+
+    pub types_ast: Vec<HubTypeAst>,
+    pub instances_ast: Vec<HubInstanceAst>,
+    pub enums_ast: Vec<HubEnumAst>,
+    pub structs_ast: Vec<HubStructAst>,
+    pub global_fields_ast: Vec<GlobalFieldAst>,
 }
 
 /// Extract text from a tree-sitter node given source bytes.
@@ -127,6 +245,50 @@ pub fn unquote_string(s: &str) -> String {
         }
     }
     out
+}
+
+pub fn node_to_hub_value(node: tree_sitter::Node, contents: &str) -> Option<HubValue> {
+    match node.kind() {
+        "identifier" | "uuid" => Some(HubValue::Identifier(
+            contents[node.byte_range()].to_string(),
+        )),
+        "number" => match contents[node.byte_range()].parse::<f64>() {
+            Ok(n) => Some(HubValue::Number(n)),
+            Err(_) => None,
+        },
+        "string" | "template_string" => Some(HubValue::Text(
+            contents[node.byte_range()]
+                .trim_matches('"')
+                .trim_matches('\'')
+                .trim_matches('`')
+                .to_string(),
+        )),
+        "boolean" => Some(HubValue::Boolean(
+            &contents[node.byte_range()] == "true",
+        )),
+        "array" => {
+            let mut values = Vec::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if let Some(val) = node_to_hub_value(child, contents) {
+                    values.push(val);
+                }
+            }
+            Some(HubValue::Array(values))
+        }
+        "_expression" | "parenthesized_expression" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if !["(", ")", "[", "]", "{", "}", ",", "."].contains(&child.kind()) {
+                    if let Some(val) = node_to_hub_value(child, contents) {
+                        return Some(val);
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 const MAX_RECURSION_DEPTH: usize = 200;
@@ -448,13 +610,321 @@ fn parse_instance_assignment(
             {
                 let inner = &expr_text[1..expr_text.len() - 1];
                 for t in inner.split(',') {
-                    let cleaned = t.trim();
-                    if !cleaned.is_empty() {
+                    let target = t.trim().to_string();
+                    if !target.is_empty() {
                         links.push(InstanceLink {
                             relation: key.clone(),
-                            target: cleaned.to_string(),
+                            target,
                         });
                     }
+                }
+            }
+        }
+    }
+}
+
+fn parse_definitions_ast(
+    root: &tree_sitter::Node,
+    contents: &str,
+    global_fields_ast: &mut Vec<GlobalFieldAst>,
+    global_fields: &mut Vec<GlobalField>,
+    enums_ast: &mut Vec<HubEnumAst>,
+    enums: &mut Vec<HubEnum>,
+    structs_ast: &mut Vec<HubStructAst>,
+    structs: &mut Vec<HubStruct>,
+    types_ast: &mut Vec<HubTypeAst>,
+) {
+    let mut def_cursor = root.walk();
+    for section in root.children(&mut def_cursor) {
+        if section.kind() == "definitions_section" {
+            let mut sec_cursor = section.walk();
+            for block in section.children(&mut sec_cursor) {
+                match block.kind() {
+                    "fields_block" => {
+                        let mut cursor = block.walk();
+                        for child in block.children(&mut cursor) {
+                            if child.kind() == "field_definition" {
+                                if let (Some(id_node), Some(type_node)) = (child.child(0), child.child(2)) {
+                                    let id = contents[id_node.byte_range()].to_string();
+                                    let type_str = contents[type_node.byte_range()].to_string();
+                                    if !id.is_empty() && !type_str.is_empty() {
+                                        global_fields.push(GlobalField {
+                                            name: id.clone(),
+                                            type_name: type_str.clone(),
+                                        });
+                                        global_fields_ast.push(GlobalFieldAst {
+                                            name: id,
+                                            type_name: type_str,
+                                            range: ts_range_to_span(id_node.range()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "enums_block" => {
+                        let mut cursor = block.walk();
+                        for child in block.children(&mut cursor) {
+                            if child.kind() == "enum_definition" {
+                                if let Some(name_node) = child.child(0) {
+                                    let name = contents[name_node.byte_range()].to_string();
+                                    if !name.is_empty() {
+                                        let mut variants = Vec::new();
+                                        let mut var_cursor = child.walk();
+                                        for v_node in child.children(&mut var_cursor) {
+                                            if v_node.kind() == "identifier" && v_node.id() != name_node.id() {
+                                                let v_name = contents[v_node.byte_range()].to_string();
+                                                if !v_name.is_empty() {
+                                                    variants.push(v_name);
+                                                }
+                                            }
+                                        }
+                                        enums.push(HubEnum {
+                                            name: name.clone(),
+                                            variants: variants.clone(),
+                                        });
+                                        enums_ast.push(HubEnumAst {
+                                            name,
+                                            variants,
+                                            range: ts_range_to_span(name_node.range()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "structs_block" => {
+                        let mut cursor = block.walk();
+                        for child in block.children(&mut cursor) {
+                            if child.kind() == "struct_definition" {
+                                if let Some(name_node) = child.child(0) {
+                                    let name = contents[name_node.byte_range()].to_string();
+                                    if !name.is_empty() {
+                                        let mut field_names = Vec::new();
+                                        let mut f_cursor = child.walk();
+                                        for f_node in child.children(&mut f_cursor) {
+                                            if f_node.kind() == "identifier" && f_node.id() != name_node.id() {
+                                                let f_name = contents[f_node.byte_range()].to_string();
+                                                if !f_name.is_empty() {
+                                                    field_names.push(f_name);
+                                                }
+                                            }
+                                        }
+                                        structs.push(HubStruct {
+                                            name: name.clone(),
+                                            field_names: field_names.clone(),
+                                        });
+                                        structs_ast.push(HubStructAst {
+                                            name,
+                                            field_names,
+                                            range: ts_range_to_span(name_node.range()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "hubs_block" => {
+                        let mut cursor = block.walk();
+                        for hub_def in block.children(&mut cursor) {
+                            if hub_def.kind() == "hub_definition" {
+                                let name_node = match hub_def.child(0) {
+                                    Some(n) if !n.is_missing() => n,
+                                    _ => continue,
+                                };
+                                let name = contents[name_node.byte_range()].to_string();
+                                if name.is_empty() {
+                                    continue;
+                                }
+
+                                let mut fields = Vec::new();
+                                let mut roles = Vec::new();
+                                let mut extends_parents = Vec::new();
+                                let mut constraints = Vec::new();
+
+                                let mut body_cursor = hub_def.walk();
+                                for item in hub_def.children(&mut body_cursor) {
+                                    match item.kind() {
+                                        "extension_clause" => {
+                                            let mut ext_cursor = item.walk();
+                                            for p_node in item.children(&mut ext_cursor) {
+                                                if p_node.kind() == "identifier" {
+                                                    extends_parents.push(contents[p_node.byte_range()].to_string());
+                                                }
+                                            }
+                                        }
+                                        "hub_field" => {
+                                            if let Some(id_node) = item.child(0) {
+                                                let f_name = contents[id_node.byte_range()].to_string();
+                                                if !f_name.is_empty() {
+                                                    let mut is_disp = false;
+                                                    let mut is_bg = false;
+                                                    let mut attr_cursor = item.walk();
+                                                    for child in item.children(&mut attr_cursor) {
+                                                        if child.kind() == "field_attribute" {
+                                                            let attr_str = &contents[child.byte_range()];
+                                                            if attr_str.contains("display") {
+                                                                is_disp = true;
+                                                            }
+                                                            if attr_str.contains("background") {
+                                                                is_bg = true;
+                                                            }
+                                                        }
+                                                    }
+                                                    let (dec, expr) = parse_field_decorators(&item, contents);
+                                                    fields.push(HubFieldDef {
+                                                        name: f_name,
+                                                        decorator: dec,
+                                                        expression: expr,
+                                                        is_display: is_disp,
+                                                        is_background: is_bg,
+                                                        range: ts_range_to_span(id_node.range()),
+                                                    });
+                                                }
+                                            }
+                                        }
+                                        "hub_role" => {
+                                            if let Some(role_def) = parse_hub_role_ast(&item, contents) {
+                                                roles.push(role_def);
+                                            }
+                                        }
+                                        "constraints_block" => {
+                                            let mut c_cursor = item.walk();
+                                            for c_child in item.children(&mut c_cursor) {
+                                                if c_child.kind() != "@constraints" && c_child.kind() != "[" && c_child.kind() != "]" && c_child.kind() != "," {
+                                                    let c_str = contents[c_child.byte_range()].to_string();
+                                                    if !c_str.is_empty() {
+                                                        constraints.push(c_str);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                types_ast.push(HubTypeAst {
+                                    name,
+                                    range: ts_range_to_span(name_node.range()),
+                                    block_range: ts_range_to_span(hub_def.range()),
+                                    fields,
+                                    roles,
+                                    extends_parents,
+                                    constraints,
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn parse_field_decorators(item: &tree_sitter::Node, contents: &str) -> (Option<String>, Option<String>) {
+    let mut decorator = None;
+    let mut expression = None;
+    let mut cursor = item.walk();
+    for child in item.children(&mut cursor) {
+        if child.kind() == "decorator" {
+            if let Some(choice_node) = child.child(0) {
+                decorator = Some(contents[choice_node.byte_range()].to_string());
+            }
+            if let Some(expr_node) = child.child(2) {
+                expression = Some(contents[expr_node.byte_range()].to_string());
+            }
+            break;
+        }
+    }
+    (decorator, expression)
+}
+
+fn parse_hub_role_ast(item: &tree_sitter::Node, contents: &str) -> Option<HubRoleDef> {
+    let id_node = item.child(0)?;
+    let role_name = contents[id_node.byte_range()].to_string();
+    let direction = item.child(1).map(|n| contents[n.byte_range()].to_string()).unwrap_or_default();
+    let multiplicity = item.child(3).map(|n| contents[n.byte_range()].to_string()).unwrap_or_default();
+
+    let mut allowed_types = Vec::new();
+    let mut list_cursor = item.walk();
+    for child in item.children(&mut list_cursor) {
+        if child.kind() == "identifier" && child.id() != id_node.id() {
+            allowed_types.push(contents[child.byte_range()].to_string());
+        }
+    }
+
+    Some(HubRoleDef {
+        name: role_name,
+        direction,
+        multiplicity,
+        allowed_types,
+    })
+}
+
+fn parse_instances_ast(
+    root: &tree_sitter::Node,
+    contents: &str,
+    instances_ast: &mut Vec<HubInstanceAst>,
+) {
+    let mut section_cursor = root.walk();
+    for section in root.children(&mut section_cursor) {
+        if section.kind() == "instances_section" {
+            let mut block_cursor = section.walk();
+            for child in section.children(&mut block_cursor) {
+                if child.kind() == "instance_block" {
+                    let ref_node = match child.child_by_field_name("ref") {
+                        Some(n) if !n.is_missing() => n,
+                        _ => continue,
+                    };
+                    let name = contents[ref_node.byte_range()].to_string();
+                    if name.is_empty() {
+                        continue;
+                    }
+
+                    let type_name = child
+                        .child_by_field_name("type")
+                        .map(|n| contents[n.byte_range()].to_string())
+                        .unwrap_or_else(|| "Unknown".to_string());
+
+                    let mut assignments = Vec::new();
+                    let mut b_cursor = child.walk();
+                    for assignment in child.children(&mut b_cursor) {
+                        if assignment.kind() == "instance_assignment" {
+                            if let Some(id_node) = assignment.child(0) {
+                                let attr_name = contents[id_node.byte_range()].to_string();
+                                if !attr_name.is_empty() && !id_node.is_missing() {
+                                    if let Some(expr_node) = assignment.child(2) {
+                                        if let Some(val) = node_to_hub_value(expr_node, contents) {
+                                            assignments.push(HubAssignmentAst {
+                                                name: attr_name,
+                                                range: ts_range_to_span(id_node.range()),
+                                                value: val,
+                                                value_range: ts_range_to_span(expr_node.range()),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let description = assignments
+                        .iter()
+                        .find(|a| a.name == "description")
+                        .and_then(|a| match &a.value {
+                            HubValue::Text(s) => Some(s.clone()),
+                            _ => None,
+                        });
+
+                    instances_ast.push(HubInstanceAst {
+                        id: name,
+                        type_name,
+                        name_range: ts_range_to_span(ref_node.range()),
+                        block_range: ts_range_to_span(child.range()),
+                        description,
+                        assignments,
+                    });
                 }
             }
         }
@@ -466,6 +936,16 @@ pub fn parse_hubgs(
     content: &str,
 ) -> anyhow::Result<(Vec<HubgsDefinition>, Vec<HubgsInstance>)> {
     let output = parse_hubgs_full(content)?;
+    let language = load_hubgs_language()
+        .ok_or_else(|| anyhow::anyhow!("HubGS tree-sitter grammar not linked"))?;
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&language).is_ok() {
+        if let Some(tree) = parser.parse(content, None) {
+            if tree.root_node().has_error() {
+                anyhow::bail!("HubGS parse had error node(s)");
+            }
+        }
+    }
     Ok((output.definitions, output.instances))
 }
 
@@ -487,13 +967,6 @@ pub fn parse_hubgs_full(content: &str) -> anyhow::Result<HubgsParseOutput> {
 
     let root = tree.root_node();
 
-    if root.has_error() {
-        let err_count = count_errors(root);
-        anyhow::bail!(
-            "HubGS parse had {err_count} error node(s) — the file may contain syntax errors"
-        );
-    }
-
     let imports = parse_imports(&root, source);
     let definitions = parse_hubs(&root, source);
 
@@ -504,12 +977,40 @@ pub fn parse_hubgs_full(content: &str) -> anyhow::Result<HubgsParseOutput> {
 
     let instances = parse_instances(&root, source, &relations_by_type);
 
+    let mut global_fields_ast = Vec::new();
+    let mut global_fields = Vec::new();
+    let mut enums_ast = Vec::new();
+    let mut enums = Vec::new();
+    let mut structs_ast = Vec::new();
+    let mut structs = Vec::new();
+    let mut types_ast = Vec::new();
+    let mut instances_ast = Vec::new();
+
+    parse_definitions_ast(
+        &root,
+        content,
+        &mut global_fields_ast,
+        &mut global_fields,
+        &mut enums_ast,
+        &mut enums,
+        &mut structs_ast,
+        &mut structs,
+        &mut types_ast,
+    );
+
+    parse_instances_ast(&root, content, &mut instances_ast);
+
     Ok(HubgsParseOutput {
         definitions,
         instances,
         imports,
-        enums: Vec::new(),
-        structs: Vec::new(),
-        global_fields: Vec::new(),
+        enums,
+        structs,
+        global_fields,
+        types_ast,
+        instances_ast,
+        enums_ast,
+        structs_ast,
+        global_fields_ast,
     })
 }

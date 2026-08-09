@@ -177,6 +177,8 @@ pub struct HubReferenceInfo {
     pub text: Option<String>,
     pub start_offset: usize,
     pub end_offset: usize,
+    pub id_start_offset: usize,
+    pub id_end_offset: usize,
     pub is_reviewed: bool,
 }
 

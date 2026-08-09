@@ -1657,3 +1657,84 @@ INSTANCES [
     // Image validation is implemented — expect 1 error for ".txt" extension
     assert_eq!(image_errors.len(), 1, "Expected Image validation error");
 }
+
+#[test]
+fn test_user_snippet() {
+    let mut db = RootDatabase::default();
+    let hubgs_content = r#"
+DEFINITIONS [
+    FIELDS [
+      name: Text,
+      description: Text,
+      sequence: Number,
+    ],
+    HUBS[
+        Event {
+            name @display,
+            description,
+            sequence,
+        },
+        Season {
+            name @display,
+        },
+        Item {
+            name @display,
+            description,
+        },
+        Creature {
+            name @display,
+            description,
+            lives -> (1) ALLOWS [Location]
+        },
+        Character EXTENDS [Creature]{},
+        Location {
+            name @display
+        }
+    ]
+]
+
+INSTANCES[
+    98775ddb-47b0-4422-b064-804803fdd2e8:Season {
+        name = "Summer"
+    },
+    0a22c21c-87be-452f-aac0-f76a7287d1d9:Character {
+        name = "The Brave Little Tailor",
+        description = "",
+        lives = [59456b4c-e6a1-4b11-94b7-d6f66d308e47]
+    },
+    59456b4c-e6a1-4b11-94b7-d6f66d308e47: Location {
+        name = "Tailor's Workshop",
+    },
+]
+"#;
+
+    let twxml_content = r#"
+<document>
+  <body>
+    <paragraph>
+        One <hubref id="98775ddb-47b0-4422-b064-804803fdd2e8">summer</hubref> morning a little <hubref id="0a22c21c-87be-452f-aac0-f76a7287d1d9">tailor</hubref> was sitting on his table near the window. In good spirits, he was sewing with all his might. A peasant woman came down the street crying, "Good jam for sale! Good jam for sale!"
+    </paragraph>
+  </body>
+</document>
+"#;
+
+    let hubgs_file = db::SourceFile::new(&mut db, "story.hubgs".to_string(), hubgs_content.to_string());
+    let twxml_file = db::SourceFile::new(&mut db, "story.twxml".to_string(), twxml_content.to_string());
+
+    let workspace = db::Workspace::new(&mut db, vec![hubgs_file, twxml_file]);
+
+    let hubgs_errors = db::validate_file(&db, workspace, hubgs_file);
+    let twxml_errors = db::validate_file(&db, workspace, twxml_file);
+
+    assert!(
+        hubgs_errors.is_empty(),
+        "Expected no HubGS validation errors, found: {:?}",
+        hubgs_errors
+    );
+    assert!(
+        twxml_errors.is_empty(),
+        "Expected no TWXML validation errors, found: {:?}",
+        twxml_errors
+    );
+}
+
