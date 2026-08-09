@@ -1,11 +1,13 @@
 //! Stateful viewer for graph panes — GraphPaneView struct definition + business logic.
 
-use std::collections::HashMap;
-use gpui::{prelude::*, Entity};
-use graphene_core::{math::Vec2, GraphState, NodeId};
+use gpui::{prelude::*, Entity, SharedString, Window};
+use graphene_core::{math::Vec2, DataExpansionMode, GraphState, NodeId, PropValue};
 use graphene_gpui::render::draw_pipeline::Viewport;
 use graphene_gpui::{ExpansionState, GraphCanvasController, GraphView, InteractionState};
 use graphene_style::ComputedStyle;
+use std::collections::HashMap;
+
+use super::data::GraphEvent;
 
 use crate::graph_adapter::{
     hubgs_definitions_to_graph_state, hubgs_instances_to_graph_state, outline_to_graph_state,
@@ -306,7 +308,11 @@ impl GraphPaneView {
         cx.notify();
     }
 
-    pub(crate) fn recalculate_data(&mut self, workspace: &Entity<Workspace>, cx: &mut Context<Self>) {
+    pub(crate) fn recalculate_data(
+        &mut self,
+        workspace: &Entity<Workspace>,
+        cx: &mut Context<Self>,
+    ) {
         let active_doc_text = {
             let w = workspace.read(cx);
             if let Some(idx) = w.active_doc_idx {
@@ -373,38 +379,26 @@ impl GraphPaneView {
 
                     // Measure node sizes & build GraphState structures
                     let _ = this.update(&mut cx, |this, cx| {
-                        if let Ok((
-                            inst_state,
-                            inst_map,
-                            def_state,
-                            def_map,
-                            out_state,
-                            out_map,
-                        )) = window_handle.update(cx, |_root, window, _app| {
-                            let mut sizer = crate::graph_sim::sizing::gpui_text_sizer(window);
+                        if let Ok((inst_state, inst_map, def_state, def_map, out_state, out_map)) =
+                            window_handle.update(cx, |_root, window, _app| {
+                                let mut sizer = crate::graph_sim::sizing::gpui_text_sizer(window);
 
-                            let (inst_state, inst_map) = hubgs_instances_to_graph_state(
-                                &parse_result.1,
-                                &parse_result.0,
-                                &mut sizer,
-                            );
+                                let (inst_state, inst_map) = hubgs_instances_to_graph_state(
+                                    &parse_result.1,
+                                    &parse_result.0,
+                                    &mut sizer,
+                                );
 
-                            let (def_state, def_map) = hubgs_definitions_to_graph_state(
-                                &parse_result.0,
-                                &mut sizer,
-                            );
+                                let (def_state, def_map) =
+                                    hubgs_definitions_to_graph_state(&parse_result.0, &mut sizer);
 
-                            let (out_nodes, out_edges) = parse_result.2;
-                            let (out_state, out_map) = outline_to_graph_state(
-                                &out_nodes,
-                                &out_edges,
-                                &mut sizer,
-                            );
+                                let (out_nodes, out_edges) = parse_result.2;
+                                let (out_state, out_map) =
+                                    outline_to_graph_state(&out_nodes, &out_edges, &mut sizer);
 
-                            (
-                                inst_state, inst_map, def_state, def_map, out_state, out_map,
-                            )
-                        }) {
+                                (inst_state, inst_map, def_state, def_map, out_state, out_map)
+                            })
+                        {
                             this.instances_view = GraphView::from_state(&inst_state);
                             this.instances_state = inst_state;
                             this.inst_id_map = inst_map;
@@ -425,5 +419,273 @@ impl GraphPaneView {
             },
         )
         .detach();
+    }
+
+    /// Synchronizes the local camera with the workspace's active tab.
+    pub(crate) fn sync_active_tab(&mut self, cx: &mut Context<Self>) -> Option<SharedString> {
+        let (active_tab, selected_hub_id) = {
+            let w = self.workspace.read(cx);
+            (w.active_graph_tab, w.selected_hub_id.clone())
+        };
+
+        let old_tab_idx = self.active_camera_idx;
+        match active_tab {
+            crate::ui::GraphTab::DocumentGraph => self.select_tab_camera(0),
+            crate::ui::GraphTab::DefinitionsSchema => self.select_tab_camera(1),
+            crate::ui::GraphTab::InstancesRelation => self.select_tab_camera(2),
+        }
+
+        if old_tab_idx != self.active_camera_idx {
+            self.rebuild_interaction_grid();
+        }
+
+        selected_hub_id
+    }
+
+    /// Returns the state, view, and ID map for the currently active tab.
+    pub(crate) fn active_tab_context(
+        &self,
+    ) -> (
+        &GraphState<ComputedStyle>,
+        &GraphView<ComputedStyle>,
+        &HashMap<String, NodeId>,
+    ) {
+        match self.active_camera_idx {
+            0 => (
+                &self.outline_state,
+                &self.outline_view,
+                &self.outline_id_map,
+            ),
+            1 => (&self.def_state, &self.def_view, &self.def_id_map),
+            _ => (
+                &self.instances_state,
+                &self.instances_view,
+                &self.inst_id_map,
+            ),
+        }
+    }
+
+    /// Resolves the selected node ID natively or from the workspace hub ID.
+    pub(crate) fn resolve_selected_node(
+        &self,
+        selected_hub_id: Option<&SharedString>,
+    ) -> Option<NodeId> {
+        self.selected_node.or_else(|| {
+            let id_str = selected_hub_id?.as_str();
+            let (active_state, _, id_map) = self.active_tab_context();
+
+            id_map.get(id_str).copied().or_else(|| {
+                active_state.node_index_to_id.iter().copied().find(|&nid| {
+                    active_state
+                        .display_label(nid)
+                        .map_or(false, |lbl| lbl == id_str)
+                })
+            })
+        })
+    }
+
+    // --- GPUI Event Handlers ---
+
+    pub(crate) fn handle_mouse_down(
+        &mut self,
+        ev: &gpui::MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let click_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+        let viewport = self.active_viewport();
+
+        let view_ref = match self.active_camera_idx {
+            0 => &self.outline_view,
+            1 => &self.def_view,
+            _ => &self.instances_view,
+        };
+
+        let mut interaction = self.interaction_state.clone();
+        let mut expansion = self.expansion_state.clone();
+        let mut controller = self.controller.clone();
+
+        let res = controller.handle_mouse_down(
+            click_pos,
+            ev.modifiers.shift,
+            self.selected_node,
+            &viewport,
+            view_ref,
+            &mut interaction,
+            &mut expansion,
+            self.is_ticking,
+        );
+
+        self.controller = controller;
+        self.interaction_state = interaction;
+        self.expansion_state = expansion;
+
+        // Selection phase
+        if let Some(sel) = res.selected_node {
+            self.selected_node = sel;
+            if sel.is_none() {
+                self.workspace.update(cx, |w, cx| {
+                    w.selected_hub_id = None;
+                    cx.notify();
+                });
+            }
+        }
+
+        // Drag phase
+        if let Some((node_id, target_pos, _phase)) = res.drag_update {
+            let (state, view) = self.active_state_and_view();
+            state.set_node_position(node_id, target_pos);
+            if let Some(vn) = view.nodes.get_mut(&node_id) {
+                vn.pos = target_pos;
+            }
+        }
+
+        // Emit Hub click for TauWriter
+        if let Some(Some(nid)) = res.selected_node {
+            let (state, _, _) = self.active_tab_context();
+
+            let id_str = if let Some(PropValue::Text(id_val)) = state.get_node_prop(nid, "id") {
+                Some(SharedString::from(id_val.as_str().to_string()))
+            } else {
+                state
+                    .display_label(nid)
+                    .map(|lbl| SharedString::from(lbl.to_string()))
+            };
+
+            if let Some(node_str) = id_str {
+                self.workspace.update(cx, |w, cx| {
+                    w.selected_hub_id = Some(node_str.clone());
+                    cx.notify();
+                });
+                cx.emit(GraphEvent::NodeClicked(node_str));
+            }
+        }
+
+        // Handle CanvasAction
+        if let Some(graphene_gpui::CanvasAction::ToggleParentCollapse { .. }) = res.action {
+            self.rebuild_interaction_grid();
+        }
+
+        cx.notify();
+    }
+
+    pub(crate) fn handle_mouse_move(
+        &mut self,
+        ev: &gpui::MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mouse_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+        let mut viewport = self.active_viewport();
+
+        let view_ref = match self.active_camera_idx {
+            0 => &self.outline_view,
+            1 => &self.def_view,
+            _ => &self.instances_view,
+        };
+
+        if let Some((node_id, target_pos, _phase)) = self.controller.handle_mouse_move(
+            mouse_pos,
+            &mut viewport,
+            view_ref,
+            &mut self.interaction_state,
+        ) {
+            let (state, view) = self.active_state_and_view();
+            state.set_node_position(node_id, target_pos);
+            if let Some(vn) = view.nodes.get_mut(&node_id) {
+                vn.pos = target_pos;
+            }
+        }
+
+        self.write_viewport_to_camera(&viewport);
+        cx.notify();
+    }
+
+    pub(crate) fn handle_mouse_up(
+        &mut self,
+        _ev: &gpui::MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view_ref = match self.active_camera_idx {
+            0 => &self.outline_view,
+            1 => &self.def_view,
+            _ => &self.instances_view,
+        };
+
+        if let Some((node_id, target_pos, _phase)) = self
+            .controller
+            .handle_mouse_up(&mut self.interaction_state, view_ref)
+        {
+            let (state, view) = self.active_state_and_view();
+            state.set_node_position(node_id, target_pos);
+            if let Some(vn) = view.nodes.get_mut(&node_id) {
+                vn.pos = target_pos;
+            }
+        }
+
+        self.rebuild_interaction_grid();
+        cx.notify();
+    }
+
+    pub(crate) fn handle_scroll_wheel(
+        &mut self,
+        ev: &gpui::ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let amount = match ev.delta {
+            gpui::ScrollDelta::Pixels(p) => f32::from(p.y),
+            gpui::ScrollDelta::Lines(p) => p.y * 20.0,
+        };
+        self.apply_zoom(amount, cx);
+    }
+
+    pub(crate) fn apply_zoom(&mut self, amount: f32, cx: &mut Context<Self>) {
+        let mut viewport = self.active_viewport();
+        self.controller.handle_scroll(amount, &mut viewport);
+        self.write_viewport_to_camera(&viewport);
+        cx.notify();
+    }
+
+    fn handle_fit_view(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let view = match self.active_camera_idx {
+            0 => &self.outline_view,
+            1 => &self.def_view,
+            _ => &self.instances_view,
+        };
+        let mut vp = self.active_viewport();
+        vp.fit_to_graph(view);
+        self.write_viewport_to_camera(&vp);
+        cx.notify();
+    }
+
+    pub(crate) fn handle_bounds_changed(
+        &mut self,
+        bounds: gpui::Bounds<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let bounds_f32 = gpui::Bounds {
+            origin: gpui::point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32()),
+            size: gpui::size(bounds.size.width.as_f32(), bounds.size.height.as_f32()),
+        };
+
+        if self.pane_bounds != bounds_f32 {
+            self.pane_bounds = bounds_f32;
+            self.rebuild_interaction_grid();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn set_expansion_mode(
+        &mut self,
+        nid: NodeId,
+        mode: DataExpansionMode,
+        cx: &mut Context<Self>,
+    ) {
+        let (state, view) = self.active_state_and_view();
+        state.set_node_expansion_mode(nid, mode);
+        view.load_preset(state);
+        cx.notify();
     }
 }
