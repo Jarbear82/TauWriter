@@ -3435,3 +3435,77 @@ async fn test_selection_range_jsonrpc() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+#[tokio::test]
+async fn test_slash_uuid_completion_jsonrpc() {
+    let mut db = RootDatabase::default();
+    let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir().unwrap().join("test_slash_uuid.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [\n  item:Item {\n    id = /\n  }\n]";
+
+    open_files.insert(uri.clone(), ropey::Rope::from_str(content));
+
+    let db_handle = SalsaThreadHandle::new(db);
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
+    let params = CompletionParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position {
+                line: 2,
+                character: 10,
+            },
+        },
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+        context: None,
+    };
+
+    let request = Request::build("textDocument/completion")
+        .id(2)
+        .params(json!(params))
+        .finish();
+
+    let response = service
+        .call(request)
+        .await
+        .unwrap()
+        .expect("Response should be present");
+    let result = response.result().unwrap();
+
+    assert!(!result.is_null());
+    let items: Vec<CompletionItem> = serde_json::from_value(result.clone()).unwrap();
+    assert_eq!(items.len(), 2);
+
+    let v4 = items.iter().find(|i| i.label == "uuid_v4").expect("Should offer uuid_v4");
+    assert_eq!(v4.detail.as_deref(), Some("Generate a new UUID v4"));
+    let v4_text = v4.insert_text.as_ref().unwrap();
+    assert_eq!(v4_text.len(), 36);
+    assert_eq!(v4_text.split('-').nth(2).unwrap().chars().next(), Some('4'));
+
+    let v7 = items.iter().find(|i| i.label == "uuid_v7").expect("Should offer uuid_v7");
+    assert_eq!(v7.detail.as_deref(), Some("Generate a new UUID v7"));
+    let v7_text = v7.insert_text.as_ref().unwrap();
+    assert_eq!(v7_text.len(), 36);
+    assert_eq!(v7_text.split('-').nth(2).unwrap().chars().next(), Some('7'));
+}

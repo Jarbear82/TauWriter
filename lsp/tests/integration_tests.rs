@@ -981,3 +981,28 @@ fn test_hubgs_formatter_expressions() {
     let expected = "DEFINITIONS [\n    HUBS [\n        Person {\n            full_name = @computed(first_name + ' ' + last_name),\n            companions_count = @computed(this.companions.len()),\n            companions_joined = @computed(this.companions.map(c => c.name).join(',   '))\n        }\n    ]\n]\n";
     assert_eq!(formatted, expected);
 }
+
+#[test]
+fn test_slash_uuid_completion() {
+    use tauwriter_lsp::handlers::check_slash_uuid_completion;
+    use tower_lsp::lsp_types::Position;
+
+    let content = "INSTANCES [\n    tailor:Character {\n        id = /\n    }\n]";
+    // Cursor right after the '/' on line 2, character 14
+    let pos = Position { line: 2, character: 14 };
+
+    let items = check_slash_uuid_completion(content, pos).expect("Slash completion should return items");
+    assert_eq!(items.len(), 2);
+
+    let item_v4 = items.iter().find(|i| i.label == "uuid_v4").expect("Should offer uuid_v4");
+    assert_eq!(item_v4.detail.as_deref(), Some("Generate a new UUID v4"));
+    let v4_text = item_v4.insert_text.as_ref().expect("Should have insert_text");
+    assert_eq!(v4_text.len(), 36);
+    assert_eq!(v4_text.split('-').nth(2).unwrap().chars().next(), Some('4'));
+
+    let item_v7 = items.iter().find(|i| i.label == "uuid_v7").expect("Should offer uuid_v7");
+    assert_eq!(item_v7.detail.as_deref(), Some("Generate a new UUID v7"));
+    let v7_text = item_v7.insert_text.as_ref().expect("Should have insert_text");
+    assert_eq!(v7_text.len(), 36);
+    assert_eq!(v7_text.split('-').nth(2).unwrap().chars().next(), Some('7'));
+}

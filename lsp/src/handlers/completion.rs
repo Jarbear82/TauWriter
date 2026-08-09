@@ -1,7 +1,7 @@
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 
-use super::uuid::{generate_uuid_ref, generate_uuid_v4};
+use super::uuid::{generate_uuid_ref, generate_uuid_v4, generate_uuid_v7};
 use crate::db::TWXML_TAG_INFO;
 use crate::Backend;
 
@@ -10,8 +10,10 @@ use crate::Backend;
 enum OfferUuid {
     /// Offer ref-style UUID (HubGS instance identifiers use _hex32 format).
     Ref,
-    /// Offer standard UUID v4 (for future UUID data type support).
+    /// Offer standard UUID v4.
     V4,
+    /// Offer standard UUID v7.
+    V7,
     /// Offer both.
     Both,
     /// No UUID completions — the context doesn't expect a UUID value.
@@ -51,12 +53,97 @@ fn try_completion_context(
     }
 }
 
+pub fn check_slash_uuid_completion(content: &str, position: Position) -> Option<Vec<CompletionItem>> {
+    let lines: Vec<&str> = content.lines().collect();
+    let line_idx = position.line as usize;
+    if line_idx >= lines.len() {
+        return None;
+    }
+    let line = lines[line_idx];
+    let char_idx = position.character as usize;
+    if char_idx > line.len() {
+        return None;
+    }
+    let prefix = &line[..char_idx];
+
+    let slash_pos = prefix.rfind('/')?;
+    let typed_after_slash = &prefix[slash_pos + 1..];
+
+    if !typed_after_slash.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+
+    let edit_range = Range {
+        start: Position {
+            line: position.line,
+            character: slash_pos as u32,
+        },
+        end: position,
+    };
+
+    let uuid_v4_val = generate_uuid_v4();
+    let uuid_v7_val = generate_uuid_v7();
+
+    let item_v4 = CompletionItem {
+        label: "uuid_v4".to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Generate a new UUID v4".to_string()),
+        filter_text: Some(format!("/uuid_v4")),
+        text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+            range: edit_range,
+            new_text: uuid_v4_val.clone(),
+        })),
+        insert_text: Some(uuid_v4_val),
+        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+        ..Default::default()
+    };
+
+    let item_v7 = CompletionItem {
+        label: "uuid_v7".to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Generate a new UUID v7".to_string()),
+        filter_text: Some(format!("/uuid_v7")),
+        text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+            range: edit_range,
+            new_text: uuid_v7_val.clone(),
+        })),
+        insert_text: Some(uuid_v7_val),
+        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+        ..Default::default()
+    };
+
+    Some(vec![item_v4, item_v7])
+}
+
 pub async fn completion(
     server: &Backend,
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     let uri = params.text_document_position.text_document.uri;
     let position = params.text_document_position.position;
+
+    let content = server
+        .open_files
+        .get(&uri)
+        .map(|r| r.to_string())
+        .or_else(|| {
+            let (db, ws) = server.read_db();
+            if let Ok(path) = uri.to_file_path() {
+                let path_str = path.to_string_lossy();
+                ws.files(&db)
+                    .into_iter()
+                    .find(|f| f.path(&db) == path_str)
+                    .map(|f| f.contents(&db))
+            } else {
+                None
+            }
+        });
+
+    if let Some(content) = &content {
+        if let Some(slash_items) = check_slash_uuid_completion(content, position) {
+            return Ok(Some(CompletionResponse::Array(slash_items)));
+        }
+    }
 
     let (db_val, ws_val) = server.read_db();
     let db_ref = &db_val;
@@ -144,6 +231,17 @@ fn apply_uuid_filter(mut items: Vec<CompletionItem>, offer: OfferUuid) -> Vec<Co
                 label: "uuid-v4".to_string(),
                 kind: Some(CompletionItemKind::SNIPPET),
                 detail: Some("Insert a new standard UUID v4".to_string()),
+                insert_text: Some(uuid_str),
+                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+                ..Default::default()
+            });
+        }
+        OfferUuid::V7 => {
+            let uuid_str = generate_uuid_v7();
+            items.push(CompletionItem {
+                label: "uuid-v7".to_string(),
+                kind: Some(CompletionItemKind::SNIPPET),
+                detail: Some("Insert a new standard UUID v7".to_string()),
                 insert_text: Some(uuid_str),
                 insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
                 ..Default::default()
