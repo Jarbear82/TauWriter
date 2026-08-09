@@ -3,6 +3,9 @@
 
 use gpui::SharedString;
 
+#[cfg(test)]
+mod graph_sim_tests;
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct HubgsLink {
     pub(crate) name: SharedString,

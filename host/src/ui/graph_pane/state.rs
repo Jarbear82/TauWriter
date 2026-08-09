@@ -150,6 +150,18 @@ impl GraphPaneView {
         self.interaction_state.rebuild_grid(view);
     }
 
+    pub(crate) fn fit_view(&mut self, cx: &mut Context<Self>) {
+        let view = match self.active_camera_idx {
+            0 => &self.outline_view,
+            1 => &self.def_view,
+            _ => &self.instances_view,
+        };
+        let mut vp = self.active_viewport();
+        vp.fit_to_graph(view);
+        self.write_viewport_to_camera(&vp);
+        cx.notify();
+    }
+
     pub(crate) fn trigger_run_layout(&mut self, cx: &mut Context<Self>) {
         let layout_type = self.workspace.read(cx).layout_type;
         self.layout_mode = super::data::LayoutMode::RunLayout(layout_type);

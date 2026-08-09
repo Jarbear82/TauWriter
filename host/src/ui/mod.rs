@@ -6,6 +6,7 @@
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
 use gpui::{div, prelude::*, Entity, SharedString, Window};
+use gpui_component::button::{Button, ButtonGroup};
 use gpui_component::input::InputState;
 use gpui_component::IconName;
 use std::path::PathBuf;
@@ -805,21 +806,59 @@ impl gpui::Render for MainView {
                     }),
             )
             .child(
-                gpui::div()
-                    .id("run_layout")
-                    .px_3()
-                    .py_1p5()
-                    .rounded(gpui::px(4.))
-                    .bg(fg_color)
-                    .text_color(bg_color)
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .cursor_pointer()
-                    .hover(|s| s.bg(fg_color.opacity(0.8)))
-                    .on_click(move |_, _, cx| {
-                        let _ = graph_pane_for_layout.update(cx, |pane, cx| pane.run_layout(cx));
+                ButtonGroup::new("button-group")
+                    .child(Button::new("run-layout").label("Run Layout").on_click(
+                        move |_, _, cx| {
+                            let _ =
+                                graph_pane_for_layout.update(cx, |pane, cx| pane.run_layout(cx));
+                        },
+                    ))
+                    .child({
+                        let pane_entity = self.graph_pane.clone();
+                        let auto_colors = self.graph_pane.read(cx).auto_node_colors;
+                        gpui_component::button::Button::new("toggle_auto_colors")
+                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                                let _ = pane_entity.update(cx, |this, cx| {
+                                    this.auto_node_colors = !this.auto_node_colors;
+                                    this.auto_edge_colors = this.auto_node_colors;
+                                    cx.notify();
+                                });
+                            })
+                            .label(if auto_colors {
+                                "Auto Color: ON"
+                            } else {
+                                "Auto Color: OFF"
+                            })
                     })
-                    .child("Run Layout"),
+                    .child({
+                        let pane_entity = self.graph_pane.clone();
+                        let is_ticking = self.graph_pane.read(cx).is_ticking;
+                        gpui_component::button::Button::new("toggle_physics")
+                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                                let _ = pane_entity.update(cx, |this, cx| {
+                                    if this.is_ticking {
+                                        this.is_ticking = false;
+                                    } else {
+                                        this.run_layout(cx);
+                                    }
+                                });
+                            })
+                            .label(if is_ticking {
+                                "Pause Physics"
+                            } else {
+                                "Play Physics"
+                            })
+                    })
+                    .child({
+                        let pane_entity = self.graph_pane.clone();
+                        gpui_component::button::Button::new("fit_view")
+                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                                let _ = pane_entity.update(cx, |this, cx| {
+                                    this.fit_view(cx);
+                                });
+                            })
+                            .label("Fit View")
+                    }),
             );
 
         // ── Resizable layout assembly ──

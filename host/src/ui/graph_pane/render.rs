@@ -1,10 +1,10 @@
 //! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui::GraphCanvas.
 
-use std::collections::HashMap;
 use gpui::{div, prelude::*, SharedString, Window};
 use graphene_core::{DataExpansionMode, NodeId, PropValue};
 use graphene_gpui::{CanvasConfig, GraphCanvas};
 use graphene_style::Theme;
+use std::collections::HashMap;
 
 use super::data::{GraphEvent, LayoutMode};
 use super::state::GraphPaneView;
@@ -43,9 +43,17 @@ impl Render for GraphPaneView {
         let cx_entity = cx.entity().clone();
 
         let (active_state, active_view, id_map) = match active_tab_idx {
-            0 => (&self.outline_state, &self.outline_view, &self.outline_id_map),
+            0 => (
+                &self.outline_state,
+                &self.outline_view,
+                &self.outline_id_map,
+            ),
             1 => (&self.def_state, &self.def_view, &self.def_id_map),
-            _ => (&self.instances_state, &self.instances_view, &self.inst_id_map),
+            _ => (
+                &self.instances_state,
+                &self.instances_view,
+                &self.inst_id_map,
+            ),
         };
 
         // Determine selected graphene NodeId from workspace selected_hub_id or self.selected_node
@@ -93,7 +101,9 @@ impl Render for GraphPaneView {
                 label_contrast_mode: if self.wcag_contrast_auto {
                     graphene_style::LabelContrastMode::WcagAuto
                 } else {
-                    graphene_style::LabelContrastMode::Fixed(graphene_style::Rgb::new(200, 200, 200))
+                    graphene_style::LabelContrastMode::Fixed(graphene_style::Rgb::new(
+                        200, 200, 200,
+                    ))
                 },
                 auto_node_colors: self.auto_node_colors,
                 auto_edge_colors: self.auto_edge_colors,
@@ -165,20 +175,27 @@ impl Render for GraphPaneView {
 
                     if let Some(nid) = clicked_node_id {
                         let (state, _, _) = match this.active_camera_idx {
-                            0 => (&this.outline_state, &this.outline_view, &this.outline_id_map),
+                            0 => (
+                                &this.outline_state,
+                                &this.outline_view,
+                                &this.outline_id_map,
+                            ),
                             1 => (&this.def_state, &this.def_view, &this.def_id_map),
-                            _ => (&this.instances_state, &this.instances_view, &this.inst_id_map),
+                            _ => (
+                                &this.instances_state,
+                                &this.instances_view,
+                                &this.inst_id_map,
+                            ),
                         };
 
-                        let id_str = if let Some(PropValue::Text(id_val)) =
-                            state.get_node_prop(nid, "id")
-                        {
-                            Some(SharedString::from(id_val.as_str().to_string()))
-                        } else if let Some(lbl) = state.display_label(nid) {
-                            Some(SharedString::from(lbl.to_string()))
-                        } else {
-                            None
-                        };
+                        let id_str =
+                            if let Some(PropValue::Text(id_val)) = state.get_node_prop(nid, "id") {
+                                Some(SharedString::from(id_val.as_str().to_string()))
+                            } else if let Some(lbl) = state.display_label(nid) {
+                                Some(SharedString::from(lbl.to_string()))
+                            } else {
+                                None
+                            };
 
                         if let Some(node_str) = id_str {
                             this.workspace.update(cx, |w, cx| {
@@ -212,35 +229,32 @@ impl Render for GraphPaneView {
             move |ev: &gpui::MouseMoveEvent, _window: &mut Window, cx: &mut gpui::App| {
                 let mouse_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
 
-                let _ = pane_entity.update(cx, |this, cx| {
-                    let mut viewport = this.active_viewport();
-                    let view_ref = match this.active_camera_idx {
-                        0 => &this.outline_view,
-                        1 => &this.def_view,
-                        _ => &this.instances_view,
-                    };
-                    let mut interaction = this.interaction_state.clone();
+                let _ =
+                    pane_entity.update(cx, |this, cx| {
+                        let mut viewport = this.active_viewport();
+                        let view_ref = match this.active_camera_idx {
+                            0 => &this.outline_view,
+                            1 => &this.def_view,
+                            _ => &this.instances_view,
+                        };
+                        let mut interaction = this.interaction_state.clone();
 
-                    if let Some((node_id, target_pos, _phase)) =
-                        this.controller.handle_mouse_move(
-                            mouse_pos,
-                            &mut viewport,
-                            view_ref,
-                            &mut interaction,
-                        )
-                    {
-                        let (state, view) = this.active_state_and_view();
-                        state.set_node_position(node_id, target_pos);
-                        if let Some(vn) = view.nodes.get_mut(&node_id) {
-                            vn.pos = target_pos;
+                        if let Some((node_id, target_pos, _phase)) = this
+                            .controller
+                            .handle_mouse_move(mouse_pos, &mut viewport, view_ref, &mut interaction)
+                        {
+                            let (state, view) = this.active_state_and_view();
+                            state.set_node_position(node_id, target_pos);
+                            if let Some(vn) = view.nodes.get_mut(&node_id) {
+                                vn.pos = target_pos;
+                            }
                         }
-                    }
 
-                    // Controller / interaction state may also pan; sync camera back
-                    this.write_viewport_to_camera(&viewport);
-                    this.interaction_state = interaction;
-                    cx.notify();
-                });
+                        // Controller / interaction state may also pan; sync camera back
+                        this.write_viewport_to_camera(&viewport);
+                        this.interaction_state = interaction;
+                        cx.notify();
+                    });
             }
         });
 
@@ -349,11 +363,7 @@ impl Render for GraphPaneView {
                     origin: gpui::point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32()),
                     size: gpui::size(bounds.size.width.as_f32(), bounds.size.height.as_f32()),
                 };
-                on_bounds_changed(
-                    bounds_f32,
-                    window,
-                    cx,
-                );
+                on_bounds_changed(bounds_f32, window, cx);
             },
         )
         .absolute()
@@ -444,83 +454,6 @@ impl Render for GraphPaneView {
                             .border_color(border_color)
                     }),
             )
-            .child({
-                let pane_entity = cx_entity.clone();
-                let auto_colors = self.auto_node_colors;
-                gpui_component::button::Button::new("toggle_auto_colors")
-                    .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                        let _ = pane_entity.update(cx, |this, cx| {
-                            this.auto_node_colors = !this.auto_node_colors;
-                            this.auto_edge_colors = this.auto_node_colors;
-                            cx.notify();
-                        });
-                    })
-                    .label(if auto_colors { "Auto Color: ON" } else { "Auto Color: OFF" })
-                    .text_size(gpui::px(10.))
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .absolute()
-                    .top(gpui::px(8.))
-                    .right(gpui::px(175.))
-                    .bg(sidebar_bg)
-                    .border(gpui::px(1.))
-                    .border_color(border_color)
-                    .rounded(gpui::px(6.))
-                    .px_3()
-                    .py_2()
-                    .text_color(fg_color)
-            })
-            .child({
-                let on_toggle_physics = std::sync::Arc::new({
-                    let pane_entity = cx_entity.clone();
-                    move |_window: &mut Window, cx: &mut gpui::App| {
-                        let _ = pane_entity.update(cx, |this, cx| {
-                            if this.is_ticking {
-                                this.is_ticking = false;
-                            } else {
-                                this.run_layout(cx);
-                            }
-                        });
-                    }
-                });
-                let is_ticking = self.is_ticking;
-                gpui_component::button::Button::new("toggle_physics")
-                    .on_mouse_down(gpui::MouseButton::Left, move |_ev, window, cx| {
-                        on_toggle_physics(window, cx);
-                    })
-                    .label(if is_ticking { "Pause Physics" } else { "Play Physics" })
-                    .text_size(gpui::px(10.))
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .absolute()
-                    .top(gpui::px(8.))
-                    .right(gpui::px(80.))
-                    .bg(sidebar_bg)
-                    .border(gpui::px(1.))
-                    .border_color(border_color)
-                    .rounded(gpui::px(6.))
-                    .px_3()
-                    .py_2()
-                    .text_color(fg_color)
-            })
-            .child({
-                let on_fit_view = on_fit_view.clone();
-                gpui_component::button::Button::new("fit_view")
-                    .on_mouse_down(gpui::MouseButton::Left, move |_ev, window, cx| {
-                        on_fit_view(window, cx);
-                    })
-                    .label("Fit View")
-                    .text_size(gpui::px(10.))
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .absolute()
-                    .top(gpui::px(8.))
-                    .right(gpui::px(8.))
-                    .bg(sidebar_bg)
-                    .border(gpui::px(1.))
-                    .border_color(border_color)
-                    .rounded(gpui::px(6.))
-                    .px_3()
-                    .py_2()
-                    .text_color(fg_color)
-            })
             .child(
                 div()
                     .absolute()
@@ -543,7 +476,9 @@ impl Render for GraphPaneView {
             .child(if let Some(sel_nid) = selected_node_id {
                 if let Some(&idx) = active_state.node_keys.get(sel_nid) {
                     let node_data = active_state.nodes.get(idx);
-                    let display_name = active_state.display_label(sel_nid).unwrap_or("Selected Node");
+                    let display_name = active_state
+                        .display_label(sel_nid)
+                        .unwrap_or("Selected Node");
                     let primary_label = node_data.primary_label().unwrap_or("Node");
                     let cur_exp = node_data.expansion_mode;
 
@@ -590,15 +525,26 @@ impl Render for GraphPaneView {
                                 .child({
                                     let pane_entity = cx_entity.clone();
                                     gpui_component::button::Button::new("exp_compact")
-                                        .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                                            let _ = pane_entity.update(cx, |this, cx| {
-                                                let (state, view) = this.active_state_and_view();
-                                                state.set_node_expansion_mode(sel_nid, DataExpansionMode::Compact);
-                                                view.load_preset(state);
-                                                cx.notify();
-                                            });
+                                        .on_mouse_down(
+                                            gpui::MouseButton::Left,
+                                            move |_ev, _window, cx| {
+                                                let _ = pane_entity.update(cx, |this, cx| {
+                                                    let (state, view) =
+                                                        this.active_state_and_view();
+                                                    state.set_node_expansion_mode(
+                                                        sel_nid,
+                                                        DataExpansionMode::Compact,
+                                                    );
+                                                    view.load_preset(state);
+                                                    cx.notify();
+                                                });
+                                            },
+                                        )
+                                        .label(if cur_exp == DataExpansionMode::Compact {
+                                            "[Compact]"
+                                        } else {
+                                            "Compact"
                                         })
-                                        .label(if cur_exp == DataExpansionMode::Compact { "[Compact]" } else { "Compact" })
                                         .text_size(gpui::px(9.))
                                         .px_2()
                                         .py_1()
@@ -606,15 +552,26 @@ impl Render for GraphPaneView {
                                 .child({
                                     let pane_entity = cx_entity.clone();
                                     gpui_component::button::Button::new("exp_preview")
-                                        .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                                            let _ = pane_entity.update(cx, |this, cx| {
-                                                let (state, view) = this.active_state_and_view();
-                                                state.set_node_expansion_mode(sel_nid, DataExpansionMode::Preview);
-                                                view.load_preset(state);
-                                                cx.notify();
-                                            });
+                                        .on_mouse_down(
+                                            gpui::MouseButton::Left,
+                                            move |_ev, _window, cx| {
+                                                let _ = pane_entity.update(cx, |this, cx| {
+                                                    let (state, view) =
+                                                        this.active_state_and_view();
+                                                    state.set_node_expansion_mode(
+                                                        sel_nid,
+                                                        DataExpansionMode::Preview,
+                                                    );
+                                                    view.load_preset(state);
+                                                    cx.notify();
+                                                });
+                                            },
+                                        )
+                                        .label(if cur_exp == DataExpansionMode::Preview {
+                                            "[Preview]"
+                                        } else {
+                                            "Preview"
                                         })
-                                        .label(if cur_exp == DataExpansionMode::Preview { "[Preview]" } else { "Preview" })
                                         .text_size(gpui::px(9.))
                                         .px_2()
                                         .py_1()
@@ -622,19 +579,30 @@ impl Render for GraphPaneView {
                                 .child({
                                     let pane_entity = cx_entity.clone();
                                     gpui_component::button::Button::new("exp_full")
-                                        .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                                            let _ = pane_entity.update(cx, |this, cx| {
-                                                let (state, view) = this.active_state_and_view();
-                                                state.set_node_expansion_mode(sel_nid, DataExpansionMode::Full);
-                                                view.load_preset(state);
-                                                cx.notify();
-                                            });
+                                        .on_mouse_down(
+                                            gpui::MouseButton::Left,
+                                            move |_ev, _window, cx| {
+                                                let _ = pane_entity.update(cx, |this, cx| {
+                                                    let (state, view) =
+                                                        this.active_state_and_view();
+                                                    state.set_node_expansion_mode(
+                                                        sel_nid,
+                                                        DataExpansionMode::Full,
+                                                    );
+                                                    view.load_preset(state);
+                                                    cx.notify();
+                                                });
+                                            },
+                                        )
+                                        .label(if cur_exp == DataExpansionMode::Full {
+                                            "[Full]"
+                                        } else {
+                                            "Full"
                                         })
-                                        .label(if cur_exp == DataExpansionMode::Full { "[Full]" } else { "Full" })
                                         .text_size(gpui::px(9.))
                                         .px_2()
                                         .py_1()
-                                })
+                                }),
                         )
                         .children(prop_rows.into_iter().map(|row| {
                             div()

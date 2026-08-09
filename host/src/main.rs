@@ -16,8 +16,6 @@ use ui::{DocumentHome, MainView, ParseState, SelectDocumentTab, SelectGraphTab, 
 mod ffi;
 pub(crate) mod graph_adapter;
 pub(crate) mod graph_sim;
-#[cfg(test)]
-mod graph_sim_tests;
 mod lsp_client;
 #[cfg(test)]
 mod lsp_client_tests;

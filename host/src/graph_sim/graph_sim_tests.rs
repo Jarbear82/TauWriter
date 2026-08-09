@@ -1,5 +1,7 @@
-use super::graph_adapter::{hubgs_definitions_to_graph_state, hubgs_instances_to_graph_state};
-use super::graph_sim::*;
+use super::super::graph_adapter::{
+    hubgs_definitions_to_graph_state, hubgs_instances_to_graph_state,
+};
+use super::super::graph_sim::*;
 
 #[test]
 fn test_parse_hubgs_file_valid() {
