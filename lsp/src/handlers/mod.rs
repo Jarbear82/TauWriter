@@ -1,17 +1,24 @@
+pub mod code_actions;
 pub mod code_lens;
 pub mod completion;
 pub mod documents;
 pub mod features;
+pub mod hover;
 pub mod information;
 pub mod inlay_hints;
+pub mod markdown;
 pub mod navigation;
 pub mod symbols;
+pub mod uuid;
 
+pub use code_actions::*;
 pub use code_lens::*;
 pub use completion::*;
 pub use documents::*;
 pub use features::*;
-pub use information::*;
+pub use hover::{format_hub_value, hover, hover_impl};
+pub use information::MarkdownContent;
 pub use inlay_hints::*;
 pub use navigation::*;
 pub use symbols::*;
+pub use uuid::*;

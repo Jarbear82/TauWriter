@@ -1,0 +1,953 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: AGENTS.md, instructions/
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+instructions/
+  DESIGNING.md
+  IMPLEMENTATION.md
+  ORCHESTRATION.md
+  RESEARCHING.md
+  REVIEWING.md
+AGENTS.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="instructions/DESIGNING.md">
+# DESIGNING.md — Architecture & Type Design
+
+## 1. Output Format (Mandatory)
+
+Produce exactly this structure. Omit sections that do not apply.
+
+```markdown
+## Design Proposal
+**Strategy**: [Top-Down | Bottom-Up | Layered | ECS]
+**Strategy Selection Criteria**: [Reason for choosing this strategy over alternatives]
+
+### 1. Encapsulation (Level 3)
+- Structs: [Nouns representing pure data/state layouts]
+- Protection: [Default::default() | Self::new() | Self::try_new()]
+
+### 2. Type Relations (Level 4)
+- Has-A: [Struct composition fields; memory layout impact]
+- Is-A: [Shared behaviors / trait bounds; minimal bounding justification]
+
+### 3. Component Architecture (Level 5)
+- Pattern: [Selected from section 5 Pattern Matrix]
+- Justification: [Why this pattern over the next simplest alternative]
+- Trade-offs: [What is sacrificed for this choice]
+
+### 4. Artifact
+[ASCII Module Hierarchy Tree]
+```
+
+## 2. Design Constraints
+
+Apply every constraint below. Do not waive any without a `// user-review:` comment stating the trade-off ceiling and upgrade path.
+
+| Constraint | Enforcement |
+|---|---|
+| **Fidelity** | Models must completely and accurately represent the domain concept and data flow. No information loss. |
+| **Data Transformations over Taxonomy** | Model the problem as a pipeline of data transformations. Structs = pure data; logic = independent functions/systems/isolated methods. |
+| **Abstraction** | Hide implementation details. Expose minimal surface area via `pub(crate)`. All items default to private unless explicitly marked by Orchestrator. |
+| **No Inheritance** | Composition (struct fields) is the primary structural tool. Shared behavior via traits only. |
+| **Data Protection** | Guarantee valid states via constructor validation. No unguarded public mutable fields on domain types. |
+| **Redundancy Elimination** | Eliminate duplicate logic across types. Type tree maps directly to the problem domain. |
+| **Alignment** | Type relationships must model the data access patterns and problem domain. Names match the user's mental model. |
+
+## 3. Prohibited Patterns (Immediate Validation Failure)
+
+Reject any design containing these patterns. State the violation level and required fix.
+
+1. **Deep trait hierarchies** (simulated inheritance) — Use composition or flat traits instead.
+2. **Global mutable state** (`static mut`, unguarded `Mutex`) — Eliminate; use constructor-passed state or channels.
+3. **Massive data structs passed as function parameters** — Pass only required fields/primitives/slices.
+4. **Public fields on domain types without constructor validation** — Use private fields + `new()`/`try_new()` constructors.
+5. **Singleton pattern** (implicit or explicit) — Use `once_cell::sync::Lazy` or `std::sync::OnceLock` with explicit initialization gates.
+6. **OOP-style Object Graphs** (deeply nested structs containing behavior and state) — Decouple data from behavior; flatten the graph.
+
+## 4. Strategy Selection Decision Tree
+
+Choose one strategy per design. Apply each criterion in order; stop at the first match.
+
+1. **ECS** — Does the task require processing ≥50 entities with overlapping subsets of properties? → Use ECS with SoA component storage.
+2. **Layered** — Do inputs originate from external sources (I/O, network) and flow through distinct validation → transformation → output stages? → Use layered architecture with `pub(crate)` boundaries between layers.
+3. **Bottom-Up** — Are there existing reusable primitives in the codebase that compose directly into the required behavior? → Build from proven primitives upward.
+4. **Top-Down** — Is this a new subsystem with no compatible existing components and ≥3 distinct domain concepts? → Decompose from system-level contracts downward.
+
+## 5. Idiom Enforcement
+
+Apply these rules without exception.
+
+| Rule | Directive |
+|---|---|
+| **Polymorphism** | Compile-time monomorphization via generics. `Box<dyn Trait>` only when proven runtime polymorphism is required by the Strategy Selection Decision Tree. |
+| **Immutability by default** | `let x` over `let mut x`. Side effects at boundaries only. |
+| **Standard method metaphors** | `get_`, `set_` (mut only), `from_`, `into_`, `push_`, `pop_`, `try_new`. Use exclusively; do not invent naming conventions. |
+| **Enums as Commands/States** | Model complex states and commands with Rust enums carrying data payloads. Do not use boolean flags or string discriminators for state representation. |
+
+## 6. Pattern Matrix — Rust-Equivalent Mappings
+
+Match the domain requirement to one entry below. Do not invent new structures. When no entry matches, fall back to Section 4's Strategy Selection Decision Tree.
+
+### Creational
+
+| Requirement | Pattern | Rust Implementation |
+|---|---|---|
+| Simple value types | `Default::default()` or `Self::new()` | — |
+| Factory with unknown concrete type at compile time | Abstract Factory | `trait Creator { fn create(&self) -> Box<dyn Product>; }` |
+| Family of related objects | Abstract Factory | Trait with multiple related constructor methods |
+| 4+ optional parameters or complex initialization | Builder | `struct ConfigBuilder { ... impl ConfigBuilder { fn build(self) -> Config } }` |
+| Expensive-to-create types cloned more than recreated | Prototype | `Clone::clone()` |
+
+### Algorithm Abstraction
+
+| Requirement | Pattern | Rust Implementation |
+|---|---|---|
+| Algorithm chosen at runtime based on context | Strategy | `trait Strategy { fn execute(&self, input: &Input) -> Output; }` |
+| Shared skeleton with customizable step logic | Template Method | `fn process<T: FnMut(Item) -> Result<(), E>>(items: &[Item], config: T)` |
+| Additive behavior without changing underlying type | Decorator | Iterator adapters (`.map()`, `.filter()`) or wrapper types |
+
+### Coupling / Messaging
+
+| Requirement | Pattern | Rust Implementation |
+|---|---|---|
+| 99% of cases | Procedure Call | Direct fn call — start here |
+| Many-to-many communication with complex interdependencies | Mediator | Central context struct coordinating independent types |
+| Multiple handlers where exactly one responds | Chain of Responsibility | `Option<Result<T, E>>` chaining |
+| Decoupled notification on state changes | Observer | `crossbeam::channel` or `tokio::broadcast` |
+| New operations on stable type hierarchy | Visitor | `trait Visitor<T> { fn visit_foo(&self, foo: &Foo) -> R; fn visit_bar(&self, bar: &Bar) -> R; }` |
+
+### Command Passing
+
+| Requirement | Pattern | Rust Implementation |
+|---|---|---|
+| Commands with payloads | Native Commands | Enums with payloads (e.g., `Command::Move { x: i32, y: i32 }`) passed via channels |
+| Immediate execution needed | Direct Invocation | Direct fn call |
+| Defer to subordinate type | Delegate Invocation | Method on owned field |
+| Defer, queue, or undoable operations | Command Pattern | `type Action = Box<dyn FnOnce() -> Result<(), E>>` |
+| Languages, query systems, config formats | Interpreter | Parser combinators (custom or `nom`) |
+
+### Interface Modification
+
+| Requirement | Pattern | Rust Implementation |
+|---|---|---|
+| Conform existing type to local contract | Adapter | `impl LocalTrait for ForeignType { ... }` or wrapper type |
+| Decouple abstraction from implementation independently | Bridge | Trait + concrete impl structs separated from consumer |
+| Simplify complex subsystems behind one interface | Façade | Re-exported convenience API at crate root |
+| Expensive creation or shared ownership with mutation | Proxy | `Box<T>` or `Cell`/`RefCell` interior mutability |
+
+## 7. Structural Requirements
+
+Enforce every rule below. Flag violations as immediate failures.
+
+1. Output a module hierarchy map (ASCII tree) for any design touching ≥2 files.
+2. Struct names are nouns representing data layouts. Actions belong on isolated methods or decoupled systems.
+3. Fields are private by default. Only DTOs and config structs may be public.
+4. Constrain generic types with only the bounds the function actually calls. No speculative trait bounds.
+</file>
+
+<file path="instructions/IMPLEMENTATION.md">
+# IMPLEMENTATION.md — Code & Test TDD Cycle
+
+## 1. Pre-Implementation Ladder (Mandatory)
+
+Stop at the first rung that holds true. Do not skip steps. Do not proceed to write code unless step 7 is reached.
+
+| Step | Directive | Exit Condition |
+|---|---|---|
+| 1. **YAGNI** | Does this need building? If no, stop. | Requirement cannot be justified against the current operational milestone. |
+| 2. **Reuse** | Use existing codebase helpers/utils matching ≥80% of the requirement. | Found ≥1 existing function/struct that solves ≥80% without modification. |
+| 3. **Stdlib** | Use stdlib (iterators, `Option`/`Result` chains, `match`) before custom logic. | No existing helper applies but stdlib adapters cover the core algorithm. |
+| 4. **Native** | Use native platform features before external solutions. | Stdlib insufficient; OS-level primitives fill the gap. |
+| 5. **Dependencies** | Prefer existing `Cargo.toml` crates whose public API directly addresses the requirement. Do not add new crates for transient or one-shot helpers. | No existing crate matches the domain need. |
+| 6. **Simplicity** | Can this be expressed as a chain of standard adapters? Make it that short. | A single expression using `filter_map`, `fold`, or equivalent solves the problem. |
+| 7. **Minimum Viable Code** | Write the absolute minimum code required to pass the test. | Preceding six steps definitively fail. |
+
+## 2. TDD Cycle (Mandatory for ≥3 decision points)
+
+Execute this cycle without deviation. Do not write implementation code to exercise a test; write code solely to fulfill the contract defined by the initially failing test.
+
+`Requirement → Write Test (fail) → Run (expect fail) → Write Code (pass) → Refactor`
+
+Output this YAML block before writing any code:
+
+```yaml
+---
+TEST_PLAN:
+  FunctionUnderTest: fn_name
+  Technique: [UnitTest | IntegrationTest | SystemTest]
+  FourSteps:
+    Setup: "Preconditions only. No logic."
+    Exercise: "Exactly one function call."
+    Verify: "One assertion per outcome."
+    Teardown: "RAII/scope exit."
+  EdgeCases: [empty, zero, boundaries, None]
+---
+```
+
+## 3. Test Derivation & Execution
+
+### V-Model Mapping
+
+| Test Type | Validates | Scope |
+|---|---|---|
+| **Unit** | Function/algorithm design | Single module; `#[cfg(test)]` at bottom of source file |
+| **Integration** | Cross-module contracts | `tests/` directory; each `.rs` is a separate binary crate |
+| **System** | End-to-end headless behavior | Headless execution with CLI flags (e.g., TUI: `--test`) |
+
+### Derivation Matrix — Write tests for all four categories below
+
+| Priority | Category | Directive |
+|---|---|---|
+| **P0** | Requirements | Validate every stated constraint and acceptance criterion. Non-negotiable. |
+| **P1** | Error Conditions | Force logic to handle all I/O failures, invalid parsing, validation breaches without panicking. |
+| **P1** | Scenarios | Exercise normal execution flows, standard domain logic paths, expected use cases. |
+| **P2** | Boundaries | Test empty input, exact threshold values, overflow limits, `None` vs `Some` distinctions. |
+
+### Test Organization
+
+| Type | Location | Rule |
+|---|---|---|
+| Unit tests | `#[cfg(test)] mod tests { ... }` at bottom of source file | — |
+| Integration tests | `tests/` directory — each `.rs` is a separate binary crate | One test per behavioral scenario |
+| Doc tests | `/// \`\`\`rust` blocks for public APIs | — |
+
+### Test Naming Convention
+
+Format: `test_<module>_<scenario>_<expected_result>`
+
+```text
+✅ test_validate_schedule_capacity_violation_detected     — describes verified outcome
+❌ test_two_tours_with_depot                             — describes implementation, not outcome
+```
+
+### When to Skip Tests
+
+Permitted only for these cases:
+- Trivial one-liners (identity transformation, no branching).
+- Boilerplate mapping input → output without logic.
+- Pure pass-through functions (no branching beyond `if let Some`/`if let Ok` for `Option`/`Result` unwrapping).
+- Generated code you did not author.
+
+### When Tests Are Mandatory
+
+Required for any function with:
+- Conditional logic (`if`/`match`/branches).
+- Algorithms (sorting/searching/optimization).
+- Validation/parsing logic.
+- Boundary conditions.
+- Error paths.
+- Public API surfaces that other modules depend on.
+
+### Exception — Trivial Code Override
+
+Functions with **exactly one** `if let` branch (solely for `Option`/`Result` unwrapping) and no additional logic fall under the skip clause regardless of public visibility. V-Model testing applies to all functions with **two or more conditional branches**, not fewer.
+
+## 4. Defect Identification
+
+### Assertions
+
+| Assertion | Use When | Build Mode |
+|---|---|---|
+| `debug_assert!` | Development-only sanity checks for preconditions. Stripped in release builds. | Dev only |
+| `assert!` / `assert_eq!` | Production invariants. Failure = broken logic, not bad input. | All modes |
+
+### Trace Variants
+
+| Variant | Implementation | Use When |
+|---|---|---|
+| Automatic trace | `dbg!()` at key points | Quick inspection during development |
+| Flares | `dbg!()` along data path to mark state transitions | Follow a specific variable through multiple functions |
+| Memory dump | Serialize intermediate state (e.g., full `Edge` list) | Reproduce state-specific bugs |
+| Scoreboards | Aggregate counters tracking items per state | Find where state distribution goes wrong |
+
+## 5. Algorithm Design (Level 1) Constraints
+
+### Efficiency — Memory Layout > Big-O
+
+- Optimize for cache locality and contiguous memory before asymptotic complexity.
+- Iterating over flat arrays/slices `O(n)` is faster in Rust than complex pointer-chasing structures `O(log n)`.
+- Minimize `Box`, `Arc`, and heap allocations at the hot path.
+
+### Control Flow — Linear Paths Only
+
+Apply these rules without exception:
+
+1. Guard clauses and early returns handle invalid states at the top of functions/loops.
+2. Deep nesting is forbidden (maximum two levels of indentation before a guard clause fires).
+3. Break complex `&&`/`||` chains into named, independently testable variables.
+4. Use `match` with pattern guards over chained `if let`.
+
+```rust
+// BAD: buried logic, four conditions in one line
+if (vehicle.capacity >= group_size) && (gap_sec >= deadhead_time) && (!is_restricted || gap_sec <= wait_limit) { ... }
+
+// GOOD: named conditions — each self-documenting and independently testable
+let has_capacity = vehicle.capacity >= group_size;
+let can_deadhead = gap_sec >= deadhead_time;
+let satisfies_wait_restriction = !is_restricted || gap_sec <= wait_limit;
+if has_capacity && can_deadhead && satisfies_wait_restriction { ... }
+```
+
+### Naming — Intent-Revealing Only
+
+- Variable/function names must convey type and intent without comments.
+- If a name needs a comment to explain *what* it is, the name is wrong.
+- Comments explain WHY (trade-offs, business logic, hardware constraints), not WHAT.
+
+```rust
+// BAD: x reveals nothing about type or intent
+let x = get_travel_time(&a, &b, &times);
+
+// GOOD: deadhead_duration_sec describes type and intent
+let deadhead_duration_sec = get_travel_time(start_node, next_node, &travel_times);
+```
+
+### Comments — Only for WHY
+
+```rust
+// user-review: O(n²) acceptable for n ≤ 50 nodes. Upgrade to BTreeMap if node count exceeds ~200.
+let best_deadhead = find_closest_nonrestricted_node(restricted, &nodes);
+```
+
+## 6. Modularization Design (Level 2) Constraints
+
+### Data Transformations over Taxonomy
+
+- Model the problem as a pipeline of data transformations.
+- Functions accept flat arrays/slices of data and output transformed states.
+- Do not build deeply nested OOP method chains.
+
+### Cohesion — Strong: One Task Per Function
+
+```rust
+// BAD: generates, validates, optimizes, assigns — what is this?
+fn handle_tour_change(tour: Tour, app: &mut AppState) { ... }
+
+// GOOD: each fn has exactly one responsibility
+fn rebuild_edges(app: &mut AppState) -> Vec<Edge> { ... }
+fn validate_schedule(edges: &[Edge]) -> HashMap<String, Vec<String>> { ... }
+```
+
+### Coupling — Minimal Interface
+
+Pass only required fields. Never pass entire structs for single-field access.
+
+```rust
+// BAD: passing whole AppState for one lookup
+fn calculate_deadhead(app_state: &AppState) -> i64 { ... }
+
+// GOOD: narrow interface
+fn get_travel_time(a: &str, b: &str, times: &HashMap<(String, String), i64>) -> i64 { ... }
+```
+
+### Loop Structure — Linear at Top Level
+
+```rust
+// BAD: 4 levels deep, work buried inside nested guards
+for leg in &legs {
+    if let Some(v) = vehicle_map.get(&leg.vehicle_id) {
+        if v.capacity >= leg.group_size {
+            if check_timeline(leg) && !is_restricted_wait_violated(leg) { /* who can read this? */ }
+        }
+    }
+}
+
+// GOOD: linear, top-level logic with guard clauses
+for leg in &legs {
+    let vehicle = match vehicle_map.get(&leg.vehicle_id) {
+        Some(v) if v.capacity >= leg.group_size => v,
+        _ => continue,
+    };
+    if !check_timeline(leg) { continue; }
+    if is_restricted_wait_violated(leg) { continue; }
+    // actual work at top level — readable immediately
+}
+```
+
+### No Copy-Paste
+
+Extract duplicated logic immediately. Every repeated pattern is a maintenance debt and triggers a validation failure.
+
+## 7. Coding Constraints (Hard Rules)
+
+1. No abstractions not explicitly requested. No new dependencies. Delete over add. Touch the fewest files possible.
+2. Shortest working diff wins — but only after understanding the problem. Smallest change in the wrong place is a second bug.
+3. Mark intentional simplifications with `// user-review:` naming the ceiling and upgrade path.
+4. **File Length**: Adhere to limits defined in `REVIEWING.md` section 4 (Ideal: 500 lines, Maximum: 1000 lines). Any file exceeding 1000 lines triggers automatic validation failure.
+
+## 8. Rust Conventions
+
+### Construction Patterns — Always Provide Constructors
+
+| Pattern | Use When |
+|---|---|
+| `Default::default()` | Simple value types with sensible defaults |
+| `Self::new()` | Construction requiring internal parameter assembly or arithmetic validation guaranteed to succeed |
+| `Self::try_new()` | Fallible construction (I/O, parsing, external lookups) |
+
+### Trait Bounds Discipline — Minimal Only
+
+```rust
+// GOOD: precise bounds
+fn find_by_id<T: HasId>(items: &[T], id: &str) -> Option<&T> { ... }
+
+// BAD: over-constrained — demands Debug+Serialize when only Id is needed
+fn find_by_id<T: HasId + Debug + Serialize>(items: &[T], id: &str) -> Option<&T> { ... }
+```
+
+## 9. Testing Checklist (Mandatory Before Completion)
+
+Verify every item below before declaring completion. Any unchecked item is a validation failure.
+
+- [ ] Non-trivial logic has at least one runnable check
+- [ ] Four-step structure followed: Setup → Exercise → Verify → Teardown
+- [ ] Edge cases tested: empty input, zero values, `None` vs `Some`, boundaries
+- [ ] Error paths exercised
+- [ ] Test names describe verified behavior (not implementation)
+- [ ] Tests are independently runnable (no ordering dependency)
+- [ ] Integration surfaces have at least one cross-module test
+</file>
+
+<file path="instructions/ORCHESTRATION.md">
+# Orchestration — Agentic Pipeline Control
+
+## 1. Role Definitions
+
+Each agent operates within its declared scopes. Violating read/write scope boundaries is an immediate validation failure.
+
+| Agent | Reads | Writes Scope | Constraints |
+|---|---|---|---|
+| **Researcher** | RESEARCHING.md | Findings documents only; no source changes | Read-only analysis output |
+| **Orchestrator** (main agent) | AGENTS.md + ORCHESTRATION.md | All instruction files; delegates work | Must follow routing table and state machine |
+| **Designer** | DESIGNING.md | Architecture docs, module trees, pattern proposals | No source code writing permitted |
+| **Implementer** | IMPLEMENTATION.md | Code AND test files within declared scope (TDD) | Must satisfy completion signal before reporting success |
+| **Reviewer** | REVIEWING.md | Evaluation outputs; no code changes | Must articulate exact refactoring instructions |
+
+## 2. Strict Context Handoff Protocol
+
+When delegating to a sub-agent, output this exact YAML block. No conversational filler. Omit constraint entries that do not apply.
+
+```yaml
+---
+INVOCATION:
+  Role: [Designer|Implementer|Reviewer]
+  InstructionFile: instructions/[FILE].md
+  WriteScope:
+    - src/module/file.rs        # Added/modified files only
+    - tests/test_file.rs
+  Task: "Declarative description of what to produce"
+  Constraints:
+    - File length per REVIEWING.md §4 (Ideal: 500; Max: 1000)
+    - Follow IMPLEMENTATION.md §[N]
+    - Use Result combinators, no unwrap on public I/O
+  CompletionSignal: cargo check passes && all tests yield ok
+---
+```
+
+Sub-agents MUST reply with a `RESULT_SUMMARY` block (see section 3). If the completion signal fails, regress the pipeline to the appropriate predecessor state.
+
+## 3. Sub-Agent Result Format
+
+Every sub-agent returns this exact structure. Omit fields that are N/A.
+
+```yaml
+---
+RESULT_SUMMARY:
+  Done: "One-line description of what was produced"
+  FilesChanged:
+    - path/to/file.rs — added/modified/deleted: brief rationale
+  CompletionSignalStatus: PASS | FAIL
+  FailureDetails: "If status is FAIL, explain why"
+  RemainingDecisions: []
+    - "Question for Orchestrator" (if any)
+---
+```
+
+## 4. Delegation Logic
+
+### Parallel Delegation — Allowed Only When ALL Apply
+
+- No two agents write the same file or function.
+- No data dependency between tasks (verified via caller/callee tracing).
+- Each agent has its own `WriteScope` listed explicitly in the YAML invocation.
+
+### Serial Delegation — Required When ANY Condition Applies
+
+- Agent B needs Agent A's output to define scope.
+- Tasks touch overlapping files.
+- Evaluation gates progress (reviewer must pass before next phase).
+
+### Default Strategy: Parallel with Serial Gates
+
+```
+Phase 1: DESIGN     → Serial   (one Designer establishes architecture)
+Phase 2: IMPLEMENT+TEST → Parallel  (Implementers work disjoint scopes using TDD)
+Phase 3: REVIEW     → Serial   (Reviewer evaluates all results together)
+```
+
+## 5. Task Breakdown Criteria
+
+Split any task meeting these conditions into independent sub-tasks:
+
+| Condition | Action |
+|---|---|
+| Involves more than 2–3 distinct files | Split into one sub-task per file group |
+| Spans multiple independent concerns | Split by concern (algorithm, domain types, tests) |
+| Contains both read and write operations | Separate the trace from the mutation |
+
+**Example — Correct Breakdown:**
+```text
+Task A: Extract algorithm module (mod/algorithm/)
+Task B: Extract domain types module (mod/domain/)
+Task C: Write integration tests for new structure
+```
+
+**Example — Incorrect (too broad):**
+```text
+"Refactor main.rs into modules and add tests"
+```
+
+## 6. Orchestrator Decision Flow
+
+Execute every task through this sequence. Do not skip steps or short-circuit the flow based on confidence heuristics.
+
+| Step | Action | Gate |
+|---|---|---|
+| 1 | Understand problem — trace actual data flow first | Caller/callee map complete |
+| 2 | Check YAGNI — does this need building? | Requirement justified against current milestone |
+| 3 | Check reuse — does something in the codebase or stdlib already solve it? | Reuse decision recorded; gap analyzed |
+| 4 | Route to correct instruction file via routing table (AGENTS.md §3) | All relevant files loaded |
+| 5 | Choose parallel vs serial based on write scope overlap | Delegation type justified |
+| 6 | Execute delegation with strict YAML handoff block (section 2) | Invocation block outputted |
+| 7 | Verify completion signal before closing the task | Signal confirmed PASS or FAIL documented |
+| 8 | Check retry count: >3 regressions on same task? | Escalate to human with accumulated failure log |
+
+## 7. Prohibited Orchestration Behaviors
+
+1. Delegating tasks to agents outside their declared WriteScope.
+2. Using parallel delegation when any data dependency exists between sub-tasks.
+3. Closing a task without verifying the CompletionSignal.
+4. Bypassing the REVIEW phase before proceeding to implementation on dependent work.
+5. Issuing vague or imperative-free task descriptions (e.g., "make this better").
+
+## 8. Escalation Protocol
+
+When Step 8 triggers (>3 regressions on the same task), execute without exception:
+
+1. **Halt** — Close the current task with `CompletionSignal: FAIL`.
+2. **Accumulate** — Collect all `FailureDetails` from every regression cycle.
+3. **Escalate** — Output this block to the user:
+
+```yaml
+---
+ESCALATION:
+  Task: "<task description>"
+  Regressions: <count>
+  FailureLog:
+    - Step [N]: <failure reason> → regressed to [phase]
+    - ...
+  RequiredAction: human-intervention-required
+---
+```
+4. **Do not retry** — The Implementer or Reviewer must never auto-recover after the escalation threshold.
+
+## 9. State Persistence Protocol
+
+Research Reports and intermediate artifacts MUST be filed to disk, not kept in context.
+
+- Research reports → `.pipeline/reports/<module>/research.md`
+- Design docs → `.pipeline/designs/<module>/architecture.md`
+- Review findings → `.pipeline/reviews/<module>/review.md`
+
+The Orchestrator passes only file *paths* between agents, not the full report content. Agents read their input files directly via the filesystem.
+
+This protocol applies whenever any agent output exceeds 50 lines.
+</file>
+
+<file path="instructions/RESEARCHING.md">
+# RESEARCHING.md — Codebase Analysis & Context Establishment
+
+## 1. Role Definition
+
+| Parameter | Value |
+|---|---|
+| **Agent** | Researcher |
+| **Phase** | Post-ROUTE, Pre-DESIGN (or standalone pre-flight) |
+| **Read Scope** | Entire target module tree; cross-reference adjacent modules as needed |
+| **Write Scope** | `None` — read-only analysis. Outputs are findings documents only. |
+| **Helfrich Levels** | Levels 1–5: System-level mapping with L1–L4 detail as needed for accurate dependency analysis. No code critique or design recommendations. |
+
+The Researcher establishes a factual map of the existing codebase before any design or implementation begins. Trace actual structure — callers, data flows, module boundaries, and dependency graphs. Ensure subsequent phases operate on physical reality, not assumptions.
+
+## 2. Research Constraints (Absolute)
+
+| Constraint | Enforcement |
+|---|---|
+| **Read-Only** | Never modify, create, or delete any source file, test file, or configuration file. |
+| **No Speculation** | Every finding must be grounded in verifiable code evidence. If a path cannot be traced, state "untraceable" — do not infer. |
+| **No Design Recommendations** | Do not suggest refactoring, new modules, trait changes, or architectural shifts. The Researcher maps what exists; the Designer determines what should be. |
+| **No Code Writing** | Zero lines of domain logic, tests, or scaffolding are authored. |
+| **Scope Discipline** | Only analyze files within the `WriteScope` declared by the Orchestrator's invocation block plus directly implicated callees. Do not expand scope without explicit Orchestrator approval. |
+
+## 3. Research Workflow (Mandatory Sequence)
+
+Execute all four phases in order. Each phase produces verifiable artifacts feeding into DESIGNING. Omit a phase only if its inputs are demonstrably empty.
+
+### Phase 1 — Dependency Mapping
+
+Identify every external and internal dependency relevant to the task scope. Verify each exists and is actively used. Flag orphaned imports as informational notes.
+
+```text
+[RESEARCH PHASE 1: DEPENDENCY MAPPING]
+Target Module: src/module/
+Direct Dependencies:
+  - src/types/mod.rs — defines Payload (imported via use)
+  - crate::utils::parser — used for input validation
+External Crates:
+  - serde = "^1.0" — serialization boundary at src/api/handlers.rs
+  - tokio = "1.35" — async runtime at src/service/runner.rs
+Internal Calls:
+  - callers_of(translate_payload): [src/api/handlers.rs:42, src/batch/jobs.rs:17]
+  - callers_of(validate_bounds): [src/algorithm/core.rs:88]
+```
+
+### Phase 2 — Data Flow Analysis
+
+Trace data from its origin to its consumption across module boundaries. Map the transformation pipeline. Identify data shape changes at each boundary, type conversions, serialization/deserialization points, and ownership transfers (owned vs borrowed).
+
+```text
+[RESEARCH PHASE 2: DATA FLOW]
+Origin → Transformation → Sink
+
+InputFile::read() → Parser::parse(&str) → Vec<Event> → Filter::active_only() 
+  → [src/algorithm/core.rs:102] → ScoredEvent → Serializer::to_json() → ResponseBody
+
+Call Sites (in reverse):
+  src/api/handlers.rs:42 — receives Vec<ScoredEvent> via translate_payload()
+  src/batch/jobs.rs:17 — consumes raw Event before filtering
+```
+
+### Phase 3 — Structural Analysis
+
+Map the module hierarchy, public API surfaces, and coupling between modules within scope. Classify coupling per REVIEWING.md canonical levels (Trivial → Encapsulated → Simple → Complex → Document → Interactive → Superfluous).
+
+```text
+[RESEARCH PHASE 3: STRUCTURE]
+Module Hierarchy:
+  src/
+  ├── module/
+  │   ├── mod.rs          — pub use of PublicType, InternalType (pub(crate))
+  │   ├── core.rs         — fn execute() → Result<Output> (public boundary)
+  │   └── internal.rs     — all private; no pub items
+  ├── types/
+  │   └── mod.rs          — struct Payload { ... } (pub, no methods)
+  └── utils/
+      └── parser.rs       — fn parse(&str) -> Vec<Event> (pub(crate))
+
+API Surface:
+  Public (pub):    2 items — [PublicType, execute()]
+  Crate-Local:     3 items — [InternalType, internal::helper(), utils::parser::parse()]
+  Private:         5 items — [internal::private_fn, constants, etc.]
+
+Coupling Classification:
+  module/core.rs ↔ types/mod.rs   : Encapsulated (interface via shared type)
+  module/core.rs ↔ utils/parser.rs: Simple (direct dependency, single direction)
+```
+
+### Phase 4 — Boundary & Edge Case Inventory
+
+Identify all boundary conditions, error paths, and validation points the existing code exercises within scope. Document existing test coverage and gaps.
+
+```text
+[RESEARCH PHASE 4: BOUNDARIES]
+Validation Points:
+  - src/module/core.rs:67 — validate_bounds() returns Err(BoundsViolation) when input > MAX_EVENTS
+  - src/types/mod.rs:12 — Payload::try_new() rejects empty names (validation at construction)
+
+Error Types:
+  - ParseError variants: [InvalidFormat, TruncatedInput, Overflow]
+  - I/O error handling: Result<T, io::Error> propagated via ? operator
+
+Existing Test Coverage:
+  - tests/integration/pipeline_test.rs — covers happy path + parse failure (2 tests)
+  - module/mod.rs #[cfg(test)] mod tests — covers bounds validation (1 test)
+
+GAPS:
+  - No boundary tests for MAX_EVENTS edge case
+  - No error propagation chain tests
+```
+
+## 4. Output Format (Mandatory)
+
+Conclude with this single structured report. This is the contract between Researcher and Designer — contains only facts, not interpretations. Do not add sections beyond what the analyzed data warrants. Omit fields that are empty.
+
+```text
+[RESEARCH REPORT]
+Module Analyzed: src/module/
+Files Inspected: [src/module/mod.rs, src/module/core.rs, src/module/internal.rs, 
+                   src/types/mod.rs, src/api/handlers.rs, src/batch/jobs.rs]
+
+1. Dependencies:
+   - Internal: [list with call sites and line numbers]
+   - External: [crate names, versions from Cargo.toml, usage context]
+
+2. Data Flows:
+   - [flow description with origin → transformations → sink]
+   - [reverse call chain for key functions]
+
+3. Module Structure:
+   - Hierarchy tree
+   - API surface (pub / pub(crate) / private counts)
+   - Coupling classification between modules per REVIEWING.md levels
+
+4. Boundaries & Gaps:
+   - Validation points with line references
+   - Error types and propagation patterns
+   - Existing test coverage and identified gaps
+
+5. Structural Notes:
+   - [Dead code, unused imports, dead branches — only if verifiable]
+   - [Concurrency patterns observed: channels, locks, async fn]
+   - [Data layouts: AoS vs SoA, Box/Arc usage density at boundary]
+
+CONFIRMATION: All findings are grounded in verifiable source evidence.
+No design recommendations or implementation suggestions included.
+```
+
+## 5. Research Quality Metrics (Self-Assessment)
+
+Score the report using these levels before presenting to the Designer. A report failing any metric must be regressed.
+
+| Metric | Levels | Requirement |
+|---|---|---|
+| **Completeness** | `Complete` → `Partial` → `Missing Nodes` | Every call site and data transformation within scope is traced. |
+| **Grounding** | `Verified` → `Partially Verified` → `Speculative` | Every finding cites specific files and line numbers. |
+| **Precision** | `Exact Line References` → `Module-Level` → `Vague` | Findings cite exact source locations, not approximate descriptions. |
+| **Scope Adherence** | `In Scope` → `Minor Overflow` → `Significant Drift` | Research did not expand beyond the declared WriteScope without approval. |
+
+## 6. Handoff to Designer
+
+When all quality metrics score at their highest level, transition the pipeline to DESIGNING. The Research Report becomes the Designer's primary input artifact. The Designer may request additional research on specific nodes if findings are Partial or Speculative.
+
+```yaml
+---
+RESEARCH_COMPLETE:
+  Module: src/module/
+  ReportFiling: [path/to/research_report.md] — stored by Orchestrator for Designer reference
+  QualityCheck: Complete + Verified + Exact Line References + In Scope
+  NextPhase: DESIGNING (serial — single Designer processes report)
+---
+```
+
+The Designer loads its ruleset from `instructions/DESIGNING.md` and uses the Research Report as ground truth for all architectural decisions. Any design contradictcing verified research findings is flagged as misaligned by the Reviewer.
+</file>
+
+<file path="instructions/REVIEWING.md">
+# REVIEWING.md — Quality Evaluation
+
+## 1. Review Workflow (Mandatory)
+
+Execute every review through this sequence. Do not skip steps or combine steps.
+
+| Step | Action | Gate |
+|---|---|---|
+| 1 | Identify the concern: algorithm logic, modularization, type design, module relations, or system architecture? Pull up the relevant checklist section below. | Concern classified to L1–L5 level |
+| 2 | Assess against metrics: Score each metric by naming its specific canonical level. Do not use bare adjectives. Evaluate strictly against Rust/DOD physical realities. | Every applicable metric scored with canonical level + justification |
+| 3 | Verify constraints: Reject files exceeding 1000 lines. Flag untested non-trivial logic immediately. | File length checked; test coverage verified |
+| 4 | Enforce the smallest fix: Propose the least invasive structural change addressing the root cause. Never refactor for its own sake. | Proposed fix addresses root cause, not symptoms |
+
+## 2. Quality Metrics (Canonical Levels)
+
+Score each metric using only the levels listed below. Always state both metric name and level with justification.
+
+### Level 1 & 2: Execution & Modularity
+
+| Metric | Canonical Levels | Evaluation Basis |
+|---|---|---|
+| **Efficiency** | `O(1)` → `O(log n)` → `O(n)` → `O(n log n)` → `O(n²)` → `O(2ⁿ)` | Prioritize memory layout, cache locality, contiguous arrays, minimal pointer chasing. An O(n) flat-iteration outranks an O(log n) heap-allocated tree on modern hardware. |
+| **Maintainability — Understandability** | `Obvious` → `Straightforward` → `Deducible` → `Misleading` → `Puzzling` | Respect ownership rules; minimize explicit lifetimes; names reveal intent without comments. |
+| **Maintainability — Malleability** | `Configurable` → `Data-driven` → `Adjustable` → `Refactorable` → `Prohibitive` | **Malleability measures how easily *existing* code can be modified.** Borrow-checker compliant refactoring that does not trigger cascading lifetime errors scores higher. |
+| **Cohesion** | `Strong` → `Extraneous` → `Partial` → `Weak` | Data transformations are tightly grouped; one responsibility per function. |
+| **Coupling** | `Trivial` → `Encapsulated` → `Simple` → `Complex` → `Document` → `Interactive` → `Superfluous` | Narrow interfaces with minimal parameter passing score higher than broad struct-passing. |
+
+### Level 3, 4 & 5: Encapsulation & System
+
+| Metric | Canonical Levels | Evaluation Basis |
+|---|---|---|
+| **Fidelity** | `Complete` → `Extraneous` → `Partial` → `Poor` | Structs map accurately to physical data flow with no information loss. |
+| **Robustness** | `Proven` → `Resilient` → `Strong` → `Tested` → `Fragile` | Graceful error handling via `Result`/`Option`; invalid states made unrepresentable; no `.unwrap()` on public I/O. |
+| **Convenience** | `Seamless` → `Easy` → `Straightforward` → `Convoluted` → `Prohibitive` | Standard method metaphors (`get_`, `set_`, `from_`, `into_`, `push_`, `pop_`) lower cognitive burden. |
+| **Abstraction** | `Complete` → `Opaque` → `Porous` → `Critical` | Zero-cost abstractions hide memory layout details; minimal `pub` surface. |
+| **Adaptability** | `Enabling` → `Straightforward` → `Convoluted` → `Prohibitive` → `Closed` | **Adaptability measures how easily *new* functionality can be added without modifying existing files.** Composition and ECS enable extension; deep inheritance scores lower. |
+| **Alignment** | `Complete` → `Extraneous` → `Partial` → `Poor` | Type relationships match the user's mental model and data access patterns. |
+| **Redundancy** | `Distinct` → `Minor` → `Critical` → `Redundant` | DRY enforced at compile time via generics and composition, not copy-paste. |
+
+## 3. Strict Evaluation Checklists
+
+Apply each checklist to the relevant concern level. Every unchecked item is a flag requiring action.
+
+### L1 — Algorithm Design
+
+- [ ] Names are intent-revealing (no `x`, no unexplained abbreviations).
+- [ ] Comments explain WHY, not WHAT.
+- [ ] Paths are linear — guard clauses and early returns, no deep nesting.
+- [ ] Boolean chains broken into named variables.
+
+### L2 — Modularization Design
+
+- [ ] Each function has exactly one responsibility (pipeline of data transformations).
+- [ ] Zero code duplication — all repeated patterns extracted.
+- [ ] Inputs minimized — only required data passed (favor flat arrays/slices, never whole structs for single fields).
+
+### L3 — Encapsulation Design
+
+- [ ] Struct names are nouns representing pure data layouts (not active objects).
+- [ ] Fields are private by default; public only for DTOs and config.
+- [ ] Invariants validated in constructors (`new` / `try_new`).
+- [ ] Constructors always provided (`Default::default()`, `Self::new()`, or `Self::try_new()`).
+
+### L4 — Module/Type Relation Design
+
+- [ ] Composition favored over inheritance (struct fields over trait hierarchies).
+- [ ] Trait bounds are minimal — only what the function actually calls.
+- [ ] Invariants enforced by the type system, not caller discipline.
+
+### L5 — Component & System Design
+
+- [ ] Components are swappable behind traits.
+- [ ] Interfaces are narrow (`pub(crate)` visibility, minimal `pub` surface).
+- [ ] Backward compatibility considered — additive changes over breaking ones.
+- [ ] Logic decoupled from state (verbs operate on nouns, rather than nouns owning verbs).
+
+## 4. File Length Limits
+
+Enforce these limits without exception. Flag violations as immediate failures.
+
+| Category | Limit | Action on Violation |
+|---|---|---|
+| **Ideal** | 500 lines | — (target, not gate) |
+| **Maximum** | 1000 lines | Split into multiple files within a sub-directory with `mod.rs` exposing the public API. |
+| **Exception** | Documented reason as `// user-review:` comment at file top | Only for small, cohesive concerns that legitimately need more space. |
+
+## 5. Required Output Format (Mandatory)
+
+Format every review exactly as shown below. Deviation is a validation failure.
+
+```markdown
+## Review: [Filename or Module]
+
+### 1. Algorithm & Modularity
+* **Efficiency**: `O(n)` — [Justification based on complexity/memory layout]
+* **Maintainability**: `Obvious` / `Adjustable` — [Justification based on ownership/borrow checker]
+* **Cohesion**: `Strong` — [Justification]
+* **Coupling**: `Encapsulated` — [Justification]
+
+### 2. Encapsulation & System
+* **Fidelity**: `Complete` — [Justification]
+* **Robustness**: `Strong` — [Justification]
+* **Abstraction**: `Opaque` — [Justification]
+* **Adaptability**: `Enabling` — [Justification]
+
+### 3. File Constraints
+* **Length**: `Pass` (245/1000 lines) OR `FAIL` (1500/1000 — split required)
+
+### ACTION REQUIRED:
+[ ] NONE (Pass)
+[X] REFACTOR: [Specific, imperative instruction to Implementer]
+```
+
+If `ACTION REQUIRED` is not `NONE`, regress the pipeline to the Implementer immediately with the refactoring instructions.
+</file>
+
+<file path="AGENTS.md">
+# SYSTEM DIRECTIVE: AGENTIC PIPELINE
+
+## 1. Understanding Filter
+
+Before executing any request, output this block:
+
+```text
+[UNDERSTANDING FILTER]
+1. Core Concern: (Design | Implement | Research | Review | Orchestrate)
+2. Data Flow/Scope: (List files/functions affected)
+3. Root Cause: (Underlying issue, not just symptom)
+```
+
+For multi-concern tasks (e.g., design + implement), list all applicable concerns. The filter is mandatory for non-trivial tasks (>1 file or >2 decisions). Skip only for single-line cosmetic changes.
+
+## 2. Pipeline State Machine
+
+Operate strictly within this loop. Do not skip states.
+
+`[ROUTE] -> [RESEARCH] -> [EXECUTE] -> [VERIFY]`
+
+* **ROUTE**: Read AGENTS.md. Identify the target concern via the routing table (section 3). Load the required instruction file. For multi-concern tasks, load all relevant files.
+* **RESEARCH**: Trace callers. Map data flow. **DO NOT WRITE CODE YET.**
+* **EXECUTE**: Apply the absolute minimum necessary changes. Follow instruction file constraints.
+* **VERIFY**: Check all constraints from the loaded instruction file(s). If validation fails, regress to RESEARCH.
+
+## 3. Instruction Routing Table
+
+Load the relevant ruleset for each concern in a task. Do not mix scopes within a single section of work.
+
+| Concern | Load |
+| --- | --- |
+| Codebase Analysis & Context Mapping | `instructions/RESEARCHING.md` |
+| Orchestration & Delegation | `instructions/ORCHESTRATION.md` |
+| Architecture, Types & Relations | `instructions/DESIGNING.md` |
+| Implementation & TDD | `instructions/IMPLEMENTATION.md` |
+| Quality Metrics & Limits | `instructions/REVIEWING.md` |
+
+## 4. Universal Constraints (Absolute Directives)
+
+* **Idiomatic Rust > Data Oriented Design**: Default to idiomatic Rust for simple domains; default to Struct of Arrays and flat layouts when processing ≥100 homogenous entities or when cache locality is measurable.
+* **YAGNI**: Build only what is requested. Do not invent or add features, abstractions, or boilerplate not explicitly required by the prompt.
+* **Reuse**: If it exists in the codebase or standard library, use it. Never re-implement stdlib.
+* **Composition > Inheritance**: Use Rust traits for shared behavior and struct fields (`Has-A`) for data. Never simulate inheritance hierarchies.
+* **Delete over Add**: Always prefer removing code to adding it. Touch the fewest files possible.
+</file>
+
+</files>

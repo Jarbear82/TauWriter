@@ -21,4 +21,4 @@ The Knowledge Base Indexer is the core "sync engine" of TauWriter. It runs as a 
 3. The LSP updates the `Salsa` input source file.
 4. `Salsa` identifies that the Hub graph has changed.
 5. The LSP queries the indexer for all documents containing `<hubref id="aragorn">`.
-6. The LSP sends a `workspace/applyEdit` to the client to strip the `<hubref>` tags from those documents.
+6. The LSP wraps mismatched or unreviewed references in a `<review>` tag via `workspace/applyEdit` and publishes validation diagnostics alerting the user to the unresolved references.

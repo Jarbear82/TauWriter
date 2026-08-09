@@ -10,10 +10,11 @@ async fn main() {
 
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let db_handle = tauwriter_lsp::SalsaThreadHandle::new(db);
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(std::sync::Mutex::new(db)),
+        db: db_handle.clone(),
         workspace_input,
         open_files: Arc::new(DashMap::new()),
     });

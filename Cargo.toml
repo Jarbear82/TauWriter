@@ -2,5 +2,25 @@
 members = [
     "lsp",
     "extension",
+    "host",
+    "crates/hubgs",
+    "crates/twxml",
 ]
 resolver = "2"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "allow" }
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+
+[patch.crates-io]
+gpui = { git = "https://github.com/zed-industries/zed.git" }
+
+[patch."https://github.com/Jarbear82/graphene-rs"]
+graphene_core = { path = "../graphene-rs/crates/graphene_core" }
+graphene_layout = { path = "../graphene-rs/crates/graphene_layout" }
+graphene_gpui = { path = "../graphene-rs/crates/graphene_gpui" }
+graphene_style = { path = "../graphene-rs/crates/graphene_style" }
+

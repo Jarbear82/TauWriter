@@ -50,6 +50,10 @@
       {
         "type": "unary_expression",
         "named": true
+      },
+      {
+        "type": "uuid",
+        "named": true
       }
     ]
   },
@@ -137,7 +141,23 @@
             "named": false
           },
           {
+            "type": "<",
+            "named": false
+          },
+          {
+            "type": "<=",
+            "named": false
+          },
+          {
             "type": "==",
+            "named": false
+          },
+          {
+            "type": ">",
+            "named": false
+          },
+          {
+            "type": ">=",
             "named": false
           },
           {
@@ -501,6 +521,10 @@
           {
             "type": "identifier",
             "named": true
+          },
+          {
+            "type": "uuid",
+            "named": true
           }
         ]
       },
@@ -828,6 +852,10 @@
     "named": false
   },
   {
+    "type": "<=",
+    "named": false
+  },
+  {
     "type": "=",
     "named": false
   },
@@ -841,6 +869,10 @@
   },
   {
     "type": ">",
+    "named": false
+  },
+  {
+    "type": ">=",
     "named": false
   },
   {
@@ -943,6 +975,10 @@
   {
     "type": "true",
     "named": false
+  },
+  {
+    "type": "uuid",
+    "named": true
   },
   {
     "type": "{",

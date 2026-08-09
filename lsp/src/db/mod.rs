@@ -7,6 +7,7 @@ pub mod types;
 pub mod validation;
 
 // Re-export everything at the module root for backward compatibility
+pub use evaluator::*;
 pub use resolution::*;
 pub use types::*;
 pub use validation::*;
@@ -69,3 +70,6 @@ pub struct SemanticToken {
     pub token_type: u32,
     pub token_modifiers: u32,
 }
+
+#[cfg(test)]
+mod evaluator_tests;

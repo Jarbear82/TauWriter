@@ -1,4 +1,6 @@
-use super::evaluator::{self};
+use std::collections::HashMap;
+
+use super::evaluator::{self, EvalError};
 use super::types::*;
 
 #[salsa::tracked]
@@ -98,15 +100,35 @@ pub fn all_structs(db: &dyn Db, workspace: Workspace) -> Vec<HubStruct<'_>> {
     all
 }
 
+/// Build a HashMap index of all hub instances, keyed by instance name.
+/// Memoized by Salsa — recomputes when workspace.files changes.
+#[salsa::tracked]
+pub fn build_instance_index(db: &dyn Db, ws: Workspace) -> HashMap<String, Vec<HubInstance<'_>>> {
+    let mut index = HashMap::new();
+    for file in ws.files(db) {
+        if file.path(db).ends_with(".hubgs") {
+            let result = parse_hubgs(db, file);
+            for inst in result.instances(db) {
+                index
+                    .entry(inst.name(db).to_string())
+                    .or_insert_with(Vec::new)
+                    .push(inst.clone());
+            }
+        }
+    }
+    index
+}
+
 #[salsa::tracked]
 pub fn resolve_reference(
     db: &dyn Db,
     workspace: Workspace,
     name: String,
 ) -> Option<HubInstance<'_>> {
-    all_hub_instances(db, workspace)
-        .into_iter()
-        .find(|i| i.name(db) == name)
+    let index = build_instance_index(db, workspace);
+    index
+        .get(&name)
+        .and_then(|instances| instances.first().cloned())
 }
 
 #[salsa::tracked]
@@ -155,30 +177,41 @@ pub fn compute_field_value(
     workspace: Workspace,
     instance: HubInstance<'_>,
     field_name: String,
-) -> Option<HubValue> {
+) -> Result<Option<HubValue>, EvalError> {
     // 1. Check if assigned in instance
     if let Some(assignment) = instance
         .assignments(db)
         .iter()
         .find(|a| a.name == field_name)
     {
-        return Some(assignment.value.clone());
+        return Ok(Some(assignment.value.clone()));
     }
 
     // 2. Check for @computed expression on the type's field definition
-    let hub_type = resolve_type(db, workspace, instance.file(db), instance.type_name(db))?;
+    let hub_type = resolve_type(db, workspace, instance.file(db), instance.type_name(db))
+        .ok_or_else(|| EvalError::UnresolvedHub(instance.type_name(db).clone()))?;
     if let Some(field_def) = hub_type.fields(db).iter().find(|f| f.name == field_name) {
         if let Some(expr) = &field_def.expression {
             if field_def.decorator.as_deref() == Some("@computed") {
-                if let Some(ast) = evaluator::parse_expression(expr) {
-                    return evaluator::evaluate_ast(db, workspace, instance, &ast);
+                use crate::db::parse_expression;
+                if let Some(ast) = parse_expression(expr) {
+                    return evaluator::evaluate_ast(db, workspace, instance, &ast).map(Some);
+                } else {
+                    return Err(EvalError::ParseError(format!(
+                        "Failed to parse expression for field '{}': {}",
+                        field_name, expr
+                    )));
                 }
             }
         }
     }
 
-    // 3. Check for @default value (only when the instance didn't assign this field)
-    evaluator::get_default_value(db, workspace, instance, &field_name)
+    Ok(evaluator::get_default_value(
+        db,
+        workspace,
+        instance,
+        &field_name,
+    )?)
 }
 
 #[salsa::tracked]
@@ -240,19 +273,34 @@ fn find_ref_in_value(
     }
 }
 
+/// Helper: find a metadata field on the instance's type and return its assignment.
+fn metadata_field_by_flag(
+    db: &dyn Db,
+    workspace: Workspace,
+    inst: HubInstance<'_>,
+    is_display: bool,
+    is_background: bool,
+) -> Option<HubAssignment> {
+    let type_name = inst.type_name(db);
+    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
+    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
+    let field = all_fields
+        .into_iter()
+        .find(|f| f.is_display == is_display && f.is_background == is_background)?;
+    inst.assignments(db)
+        .into_iter()
+        .find(|a| a.name == field.name)
+}
+
 pub fn hub_instance_metadata_display(
     db: &dyn Db,
     workspace: Workspace,
     inst: HubInstance<'_>,
 ) -> Option<String> {
-    let type_name = inst.type_name(db);
-    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
-    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
-    let display_field = all_fields.into_iter().find(|f| f.is_display)?;
-    let assign = inst.assignments(db).into_iter().find(|a| a.name == display_field.name)?;
+    let assign = metadata_field_by_flag(db, workspace, inst, true, false)?;
     match &assign.value {
-        crate::db::HubValue::String(s) => Some(s.clone()),
-        crate::db::HubValue::Number(n) => Some(n.clone()),
+        crate::db::HubValue::Text(s) => Some(s.clone()),
+        crate::db::HubValue::Number(n) => Some(n.into_f64().to_string()),
         crate::db::HubValue::Boolean(b) => Some(b.to_string()),
         crate::db::HubValue::Identifier(i) => Some(i.clone()),
         _ => None,
@@ -264,14 +312,10 @@ pub fn hub_instance_metadata_background(
     workspace: Workspace,
     inst: HubInstance<'_>,
 ) -> Option<String> {
-    let type_name = inst.type_name(db);
-    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
-    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
-    let bg_field = all_fields.into_iter().find(|f| f.is_background)?;
-    let assign = inst.assignments(db).into_iter().find(|a| a.name == bg_field.name)?;
+    let assign = metadata_field_by_flag(db, workspace, inst, false, true)?;
     match &assign.value {
-        crate::db::HubValue::String(s) => Some(s.clone()),
-        crate::db::HubValue::Number(n) => Some(n.clone()),
+        crate::db::HubValue::Text(s) => Some(s.clone()),
+        crate::db::HubValue::Number(n) => Some(n.into_f64().to_string()),
         crate::db::HubValue::Boolean(b) => Some(b.to_string()),
         crate::db::HubValue::Identifier(i) => Some(i.clone()),
         _ => None,
@@ -283,10 +327,6 @@ pub fn hub_instance_metadata_background_range(
     workspace: Workspace,
     inst: HubInstance<'_>,
 ) -> Option<super::LspRange> {
-    let type_name = inst.type_name(db);
-    let hub_type = resolve_type(db, workspace, inst.file(db), type_name)?;
-    let all_fields = super::polymorphic::hub_type_all_fields(db, workspace, &hub_type);
-    let bg_field = all_fields.into_iter().find(|f| f.is_background)?;
-    let assign = inst.assignments(db).into_iter().find(|a| a.name == bg_field.name)?;
+    let assign = metadata_field_by_flag(db, workspace, inst, false, true)?;
     Some(assign.value_range)
 }

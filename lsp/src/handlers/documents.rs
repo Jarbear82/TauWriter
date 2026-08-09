@@ -24,16 +24,17 @@ pub async fn did_open(server: &Backend, params: DidOpenTextDocumentParams) {
 
     if let Ok(path_buf) = uri.to_file_path() {
         let path_str = path_buf.to_string_lossy().to_string();
-        let mut db = server.db.lock().unwrap();
-        let ws = server.workspace_input;
-        let mut files = ws.files(&*db).clone();
-        if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
-            files[idx].set_contents(&mut *db).to(text.clone());
-        } else {
-            let source = crate::db::SourceFile::new(&mut *db, path_str, text.clone());
-            files.push(source);
-        }
-        ws.set_files(&mut *db).to(files);
+        server.db.with_db(|db| {
+            let ws = server.workspace_input;
+            let mut files = ws.files(&*db).clone();
+            if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
+                files[idx].set_contents(db).to(text.clone());
+            } else {
+                let source = crate::db::SourceFile::new(db, path_str, text.clone());
+                files.push(source);
+            }
+            ws.set_files(db).to(files);
+        });
     }
 
     server.publish_diagnostics(uri).await;
@@ -49,6 +50,28 @@ pub(crate) fn edit_tree(
     start_line_idx: usize,
     end_line_idx: usize,
 ) {
+    let edit = compute_input_edit(
+        rope,
+        range,
+        new_text,
+        start_char,
+        end_char,
+        start_line_idx,
+        end_line_idx,
+    );
+    tree.edit(&edit);
+}
+
+/// Computes the InputEdit parameters from rope positions and range info.
+pub fn compute_input_edit(
+    rope: &ropey::Rope,
+    range: lsp_types::Range,
+    new_text: &str,
+    start_char: usize,
+    end_char: usize,
+    start_line_idx: usize,
+    end_line_idx: usize,
+) -> tree_sitter::InputEdit {
     let start_byte = rope.char_to_byte(start_char);
     let old_end_byte = rope.char_to_byte(end_char);
     let new_end_byte = start_byte + new_text.len();
@@ -77,16 +100,23 @@ pub(crate) fn edit_tree(
         new_text.split('\n').last().unwrap_or("").len()
     };
 
-    let edit = tree_sitter::InputEdit {
+    tree_sitter::InputEdit {
         start_byte,
         old_end_byte,
         new_end_byte,
-        start_position: tree_sitter::Point { row: start_row, column: start_col },
-        old_end_position: tree_sitter::Point { row: old_end_row, column: old_end_col },
-        new_end_position: tree_sitter::Point { row: new_end_row, column: new_end_col },
-    };
-
-    tree.edit(&edit);
+        start_position: tree_sitter::Point {
+            row: start_row,
+            column: start_col,
+        },
+        old_end_position: tree_sitter::Point {
+            row: old_end_row,
+            column: old_end_col,
+        },
+        new_end_position: tree_sitter::Point {
+            row: new_end_row,
+            column: new_end_col,
+        },
+    }
 }
 
 pub async fn did_change(server: &Backend, params: DidChangeTextDocumentParams) {
@@ -104,7 +134,10 @@ pub async fn did_change(server: &Backend, params: DidChangeTextDocumentParams) {
                 let start_line_idx = range.start.line as usize;
                 let start_char = if start_line_idx < rope_ref.len_lines() {
                     rope_ref.line_to_char(start_line_idx)
-                        + utf16_to_char_offset_in_line(rope_ref.line(start_line_idx), range.start.character as usize)
+                        + utf16_to_char_offset_in_line(
+                            rope_ref.line(start_line_idx),
+                            range.start.character as usize,
+                        )
                 } else {
                     rope_ref.len_chars()
                 };
@@ -112,43 +145,19 @@ pub async fn did_change(server: &Backend, params: DidChangeTextDocumentParams) {
                 let end_line_idx = range.end.line as usize;
                 let end_char = if end_line_idx < rope_ref.len_lines() {
                     rope_ref.line_to_char(end_line_idx)
-                        + utf16_to_char_offset_in_line(rope_ref.line(end_line_idx), range.end.character as usize)
+                        + utf16_to_char_offset_in_line(
+                            rope_ref.line(end_line_idx),
+                            range.end.character as usize,
+                        )
                 } else {
                     rope_ref.len_chars()
                 };
-
-                if !path_str.is_empty() {
-                    if let Some(mut tree_entry) = crate::get_tree_cache().get_mut(&path_str) {
-                        edit_tree(
-                            &mut tree_entry.value_mut().tree,
-                            &rope_ref,
-                            range,
-                            &change.text,
-                            start_char,
-                            end_char,
-                            start_line_idx,
-                            end_line_idx,
-                        );
-
-                        rope_ref.remove(start_char..end_char);
-                        rope_ref.insert(start_char, &change.text);
-
-                        let new_str = rope_ref.to_string();
-                        tree_entry.value_mut().content_len = new_str.len();
-                        tree_entry.value_mut().content_hash = crate::calculate_hash(&new_str);
-                        tree_entry.value_mut().needs_reparse = true;
-                        continue;
-                    }
-                }
 
                 rope_ref.remove(start_char..end_char);
                 rope_ref.insert(start_char, &change.text);
             } else {
                 // Full document replacement fallback (rare; client opted into full sync)
                 *rope_ref = Rope::from_str(&change.text);
-                if !path_str.is_empty() {
-                    crate::get_tree_cache().remove(&path_str);
-                }
             }
         }
         content = rope_ref.to_string();
@@ -156,16 +165,17 @@ pub async fn did_change(server: &Backend, params: DidChangeTextDocumentParams) {
 
     if let Ok(path_buf) = uri.to_file_path() {
         let path_str = path_buf.to_string_lossy().to_string();
-        let mut db = server.db.lock().unwrap();
-        let ws = server.workspace_input;
-        let mut files = ws.files(&*db).clone();
-        if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
-            files[idx].set_contents(&mut *db).to(content);
-        } else {
-            let source = crate::db::SourceFile::new(&mut *db, path_str, content);
-            files.push(source);
-        }
-        ws.set_files(&mut *db).to(files);
+        server.db.with_db(|db| {
+            let ws = server.workspace_input;
+            let mut files = ws.files(&*db).clone();
+            if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
+                files[idx].set_contents(db).to(content);
+            } else {
+                let source = crate::db::SourceFile::new(db, path_str, content);
+                files.push(source);
+            }
+            ws.set_files(db).to(files);
+        });
     }
 
     server.publish_diagnostics(uri.clone()).await;
@@ -306,50 +316,119 @@ pub async fn document_symbol(
     Ok(None)
 }
 
+/// Parses TWXML references from each file, re-evaluates their canonical
+/// values, and returns a list of `TextEdit`s where the predicate matches.
+///
+/// * `files` — iterator over `[SourceFile]` to process
+/// * `workspace` — the workspace scope used for reference resolution
+/// * `only_reviewed` — if `true`, only processes refs whose `is_reviewed` is
+///   `true`; if `false`, only processes unreviewed refs
+/// * `override_content` — optional content string used to extract the original
+///   tag text via [`get_range_text`] when wrapping in `<review>` tags (used by
+///   the `.hubgs` handler); ignored for the `.twxml` single-file path
+/// * `predicate` — closure that decides whether a reference needs an edit:
+///   `(ref, canonical_string, stored_text) -> bool`
+///
+/// **Edit construction strategy:**
+/// - For unreviewed refs (only_reviewed=false): wraps the original tag text in
+///   `<review>...</review>` when the predicate returns `true`.
+/// - For reviewed refs (only_reviewed=true): replaces the review marker with the
+///   canonical `<hubref id="…" field="…">…</hubref>` when the predicate returns
+///   `true`.
+pub(crate) fn process_twxml_files<'a, I>(
+    db: &dyn crate::db::Db,
+    workspace: crate::db::Workspace,
+    files: I,
+    only_reviewed: bool,
+    override_content: Option<&str>,
+    predicate: impl Fn(&crate::db::HubReference, String, &str) -> bool + 'a,
+) -> Vec<TextEdit>
+where
+    I: Iterator<Item = crate::db::SourceFile>,
+{
+    let mut edits = Vec::new();
+    for file in files {
+        let refs = crate::db::parse_twxml(db, file);
+        for r in refs {
+            let is_reviewed = r.is_reviewed(db);
+            if only_reviewed != is_reviewed {
+                continue;
+            }
+            if let (Some(ref text_val), Some(ref field_name)) = (r.text(db), r.field(db)) {
+                let name = r.name(db);
+                if let Some(instance) = crate::db::resolve_reference(db, workspace, name.clone()) {
+                    if let Ok(Some(eval_val)) =
+                        crate::db::compute_field_value(db, workspace, instance, field_name.clone())
+                    {
+                        let canonical_str = eval_val.to_string();
+                        if predicate(&r, canonical_str.clone(), text_val) {
+                            let tag_range = r.tag_range(db);
+                            edits.push(if only_reviewed {
+                                // Ref is reviewed and now matches → remove review marker
+                                TextEdit {
+                                    range: tag_range.into(),
+                                    new_text: format!(
+                                        "<hubref id=\"{}\" field=\"{}\">{}</hubref>",
+                                        name, field_name, text_val
+                                    ),
+                                }
+                            } else {
+                                // Ref is unreviewed and differs → wrap with <review>
+                                if let Some(content) = override_content {
+                                    let original_text = get_range_text(content, tag_range.into());
+                                    if !original_text.is_empty() {
+                                        TextEdit {
+                                            range: tag_range.into(),
+                                            new_text: format!("<review>{}</review>", original_text),
+                                        }
+                                    } else {
+                                        continue;
+                                    }
+                                } else {
+                                    // No content override available — can't extract original text
+                                    continue;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    edits
+}
+
+/// Handles changes to `.twxml` files by spawning a background task that
+/// parses TWXML references, re-evaluates their canonical values, and applies
+/// workspace edits when the stored text differs (or matches, for already-reviewed
+/// refs).
+///
+/// **Sleep timer: 50ms** — debounces rapid edits from the editor so that a
+/// series of keystrokes doesn't trigger redundant re-evaluations. A TWXML
+/// file is typically edited incrementally; waiting half a centisecond lets
+/// the current edit batch complete before we act.
 async fn handle_twxml_change(server: &Backend, uri: &Url) {
     let self_client = server.client.clone();
     let (db, ws) = server.read_db();
     let uri_clone = uri.clone();
 
     tokio::spawn(async move {
+        // Debounce rapid edits so the current edit batch completes first.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let mut edits = Vec::new();
         if let Ok(path_buf) = uri_clone.to_file_path() {
             let path = path_buf.to_string_lossy().to_string();
             if let Some(file) = ws.files(&db).into_iter().find(|f| f.path(&db) == path) {
-                    let refs = crate::db::parse_twxml(&db, file);
-                    for r in refs {
-                        if r.is_reviewed(&db) {
-                            if let (Some(ref text_val), Some(ref field_name)) =
-                                (r.text(&db), r.field(&db))
-                            {
-                                let name = r.name(&db);
-                                if let Some(instance) =
-                                    crate::db::resolve_reference(&db, ws, name.clone())
-                                {
-                                    if let Some(eval_val) = crate::db::compute_field_value(
-                                        &db,
-                                        ws,
-                                        instance,
-                                        field_name.clone(),
-                                    ) {
-                                        let canonical_str = eval_val.to_string();
-                                        if canonical_str == *text_val {
-                                            let review_range = r.tag_range(&db);
-                                        let keep_text = format!(
-                                            r#"<hubref id="{}" field="{}">{}</hubref>"#,
-                                            name, field_name, text_val
-                                        );
-                                        edits.push(TextEdit {
-                                            range: review_range.into(),
-                                            new_text: keep_text,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                process_twxml_files(
+                    &db,
+                    ws,
+                    std::iter::once(file),
+                    true, // only reviewed refs
+                    None, // no content override for single-file path
+                    |_r, canonical_str: String, text_val: &str| canonical_str == *text_val,
+                )
+                .into_iter()
+                .for_each(|e| edits.push(e));
             }
         }
         if !edits.is_empty() {
@@ -364,68 +443,56 @@ async fn handle_twxml_change(server: &Backend, uri: &Url) {
     });
 }
 
+/// Processes `.hubgs` file changes by re-evaluating all workspace `.twxml`
+/// files. For *unreviewed* refs whose canonical value differs from the stored
+/// text, wraps the original tag in `<review>`.
+///
+/// **Sleep timer: 150ms** — hubgs edits trigger a full re-scan of every
+/// `.twxml` file in the workspace. The longer delay reduces contention when
+/// multiple files are saved together and gives the IDE time to flush pending
+/// document changes before we read their contents.
 async fn handle_hubgs_change(server: &Backend, _uri: &Url) {
     let self_client = server.client.clone();
     let (db, ws) = server.read_db();
     let open_files_clone = server.open_files.clone();
 
     tokio::spawn(async move {
+        // Debounce rapid edits; longer delay for full workspace re-scan.
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        let mut changes = std::collections::HashMap::new();
-        {
-            for file in ws.files(&db) {
-                let path = file.path(&db);
-                if path.ends_with(".twxml") {
-                    if let Ok(file_uri) = Url::from_file_path(&path) {
-                        let content = open_files_clone
-                            .get(&file_uri)
-                            .map(|r| r.to_string())
-                            .unwrap_or_else(|| file.contents(&db));
+        let mut changes: std::collections::HashMap<Url, Vec<TextEdit>> =
+            std::collections::HashMap::new();
 
-                        let refs = crate::db::parse_twxml(&db, file);
-                        let mut edits = Vec::new();
-                        for r in refs {
-                            if r.is_reviewed(&db) {
-                                continue;
-                            }
-                            if let (Some(ref text_val), Some(ref field_name)) =
-                                (r.text(&db), r.field(&db))
-                            {
-                                let name = r.name(&db);
-                                if let Some(instance) =
-                                    crate::db::resolve_reference(&db, ws, name.clone())
-                                {
-                                    if let Some(eval_val) = crate::db::compute_field_value(
-                                        &db,
-                                        ws,
-                                        instance,
-                                        field_name.clone(),
-                                    ) {
-                                        let canonical_str = eval_val.to_string();
-                                        if canonical_str != *text_val {
-                                            let tag_range = r.tag_range(&db);
-                                            let original_text =
-                                                get_range_text(&content, tag_range.into());
-                                            if !original_text.is_empty() {
-                                                let new_text =
-                                                    format!("<review>{}</review>", original_text);
-                                                edits.push(TextEdit {
-                                                    range: tag_range.into(),
-                                                    new_text,
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if !edits.is_empty() {
-                            changes.insert(file_uri, edits);
-                        }
-                    }
-                }
+        if ws.files(&db).is_empty() {
+            return;
+        }
+
+        for file in ws.files(&db) {
+            let path = file.path(&db);
+            if !path.ends_with(".twxml") {
+                continue;
+            }
+
+            if let Ok(file_uri) = Url::from_file_path(&path) {
+                let content = open_files_clone
+                    .get(&file_uri)
+                    .map(|r| r.to_string())
+                    .unwrap_or_else(|| file.contents(&db));
+
+                process_twxml_files(
+                    &db,
+                    ws,
+                    std::iter::once(file),
+                    false, // only unreviewed refs
+                    Some(content.as_str()),
+                    |_r, canonical_str: String, text_val: &str| canonical_str != *text_val,
+                )
+                .into_iter()
+                .for_each(|e| {
+                    changes.entry(file_uri.clone()).or_default().push(e);
+                });
             }
         }
+
         if !changes.is_empty() {
             let edit = WorkspaceEdit {
                 changes: Some(changes),
@@ -477,8 +544,7 @@ pub async fn did_change_watched_files(server: &Backend, params: DidChangeWatched
     let mut affected_files = Vec::new();
     let mut deleted_uris = Vec::new();
 
-    {
-        let mut db = server.db.lock().unwrap();
+    server.db.with_db(|db| {
         let ws = server.workspace_input;
         let mut files = ws.files(&*db).clone();
 
@@ -489,13 +555,19 @@ pub async fn did_change_watched_files(server: &Backend, params: DidChangeWatched
                     FileChangeType::CREATED | FileChangeType::CHANGED => {
                         if let Ok(contents) = std::fs::read_to_string(&path) {
                             if let Some(idx) = files.iter().position(|f| f.path(&*db) == path_str) {
-                                files[idx].set_contents(&mut *db).to(contents.clone());
+                                files[idx].set_contents(db).to(contents.clone());
                             } else {
-                                let source = crate::db::SourceFile::new(&mut *db, path_str.clone(), contents.clone());
+                                let source = crate::db::SourceFile::new(
+                                    db,
+                                    path_str.clone(),
+                                    contents.clone(),
+                                );
                                 files.push(source);
                             }
                             if server.open_files.contains_key(&event.uri) {
-                                server.open_files.insert(event.uri.clone(), Rope::from_str(&contents));
+                                server
+                                    .open_files
+                                    .insert(event.uri.clone(), Rope::from_str(&contents));
                             }
                             files_updated = true;
                             affected_files.push(event.uri);
@@ -515,19 +587,26 @@ pub async fn did_change_watched_files(server: &Backend, params: DidChangeWatched
         }
 
         if files_updated {
-            ws.set_files(&mut *db).to(files);
+            ws.set_files(db).to(files);
         }
-    }
+    });
 
     for uri in deleted_uris {
-        server.client.publish_diagnostics(uri, Vec::new(), None).await;
+        server
+            .client
+            .publish_diagnostics(uri, Vec::new(), None)
+            .await;
     }
 
     for uri in affected_files {
         server.publish_diagnostics(uri).await;
     }
 
-    let open_uris: Vec<Url> = server.open_files.iter().map(|kv| kv.key().clone()).collect();
+    let open_uris: Vec<Url> = server
+        .open_files
+        .iter()
+        .map(|kv| kv.key().clone())
+        .collect();
     for uri in open_uris {
         server.publish_diagnostics(uri).await;
     }
@@ -537,8 +616,7 @@ pub async fn did_create_files(server: &Backend, params: CreateFilesParams) {
     let mut files_updated = false;
     let mut affected_files = Vec::new();
 
-    {
-        let mut db = server.db.lock().unwrap();
+    server.db.with_db(|db| {
         let ws = server.workspace_input;
         let mut files = ws.files(&*db).clone();
 
@@ -548,7 +626,7 @@ pub async fn did_create_files(server: &Backend, params: CreateFilesParams) {
                     let path_str = path.to_string_lossy().to_string();
                     if let Ok(contents) = std::fs::read_to_string(&path) {
                         if !files.iter().any(|file| file.path(&*db) == path_str) {
-                            let source = crate::db::SourceFile::new(&mut *db, path_str, contents);
+                            let source = crate::db::SourceFile::new(db, path_str, contents);
                             files.push(source);
                             files_updated = true;
                             affected_files.push(uri);
@@ -559,9 +637,9 @@ pub async fn did_create_files(server: &Backend, params: CreateFilesParams) {
         }
 
         if files_updated {
-            ws.set_files(&mut *db).to(files);
+            ws.set_files(db).to(files);
         }
-    }
+    });
 
     for uri in affected_files {
         server.publish_diagnostics(uri).await;
@@ -573,8 +651,7 @@ pub async fn did_rename_files(server: &Backend, params: RenameFilesParams) {
     let mut affected_files = Vec::new();
     let mut deleted_uris = Vec::new();
 
-    {
-        let mut db = server.db.lock().unwrap();
+    server.db.with_db(|db| {
         let ws = server.workspace_input;
         let mut files = ws.files(&*db).clone();
 
@@ -590,7 +667,10 @@ pub async fn did_rename_files(server: &Backend, params: RenameFilesParams) {
                     let old_path_str = old_p.to_string_lossy().to_string();
                     let new_path_str = new_p.to_string_lossy().to_string();
 
-                    if let Some(idx) = files.iter().position(|file| file.path(&*db) == old_path_str) {
+                    if let Some(idx) = files
+                        .iter()
+                        .position(|file| file.path(&*db) == old_path_str)
+                    {
                         files.remove(idx);
                         server.open_files.remove(&old_uri);
                         deleted_uris.push(old_uri);
@@ -598,7 +678,7 @@ pub async fn did_rename_files(server: &Backend, params: RenameFilesParams) {
                     }
 
                     if let Ok(contents) = std::fs::read_to_string(&new_p) {
-                        let source = crate::db::SourceFile::new(&mut *db, new_path_str, contents);
+                        let source = crate::db::SourceFile::new(db, new_path_str, contents);
                         files.push(source);
                         affected_files.push(new_uri);
                         files_updated = true;
@@ -608,12 +688,15 @@ pub async fn did_rename_files(server: &Backend, params: RenameFilesParams) {
         }
 
         if files_updated {
-            ws.set_files(&mut *db).to(files);
+            ws.set_files(db).to(files);
         }
-    }
+    });
 
     for uri in deleted_uris {
-        server.client.publish_diagnostics(uri, Vec::new(), None).await;
+        server
+            .client
+            .publish_diagnostics(uri, Vec::new(), None)
+            .await;
     }
 
     for uri in affected_files {
@@ -625,8 +708,7 @@ pub async fn did_delete_files(server: &Backend, params: DeleteFilesParams) {
     let mut files_updated = false;
     let mut deleted_uris = Vec::new();
 
-    {
-        let mut db = server.db.lock().unwrap();
+    server.db.with_db(|db| {
         let ws = server.workspace_input;
         let mut files = ws.files(&*db).clone();
 
@@ -645,12 +727,18 @@ pub async fn did_delete_files(server: &Backend, params: DeleteFilesParams) {
         }
 
         if files_updated {
-            ws.set_files(&mut *db).to(files);
+            ws.set_files(db).to(files);
         }
-    }
+    });
 
     for uri in deleted_uris {
-        server.client.publish_diagnostics(uri, Vec::new(), None).await;
+        server
+            .client
+            .publish_diagnostics(uri, Vec::new(), None)
+            .await;
     }
 }
 
+#[cfg(test)]
+#[path = "documents_tests.rs"]
+mod documents_test_module;

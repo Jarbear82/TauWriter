@@ -1,5 +1,16 @@
 use crate::db::{Db, LspRange, SemanticToken, SourceFile};
+use streaming_iterator::StreamingIterator;
 use tree_sitter::Parser;
+
+mod semantic_tokens {
+    pub const TYPE: u32 = 0; // CLASS
+    pub const FIELD: u32 = 1; // PROPERTY
+    pub const INSTANCE: u32 = 2; // VARIABLE
+    pub const ENUM: u32 = 3; // ENUM
+
+    pub const DECLARATION: u32 = 1 << 1; // bit 1
+    pub const DEFINITION: u32 = 1 << 2; // bit 2
+}
 
 pub fn compute_semantic_tokens(db: &dyn Db, file: SourceFile) -> Vec<SemanticToken> {
     let mut tokens = Vec::new();
@@ -23,11 +34,20 @@ pub fn compute_semantic_tokens(db: &dyn Db, file: SourceFile) -> Vec<SemanticTok
 }
 
 fn append_hubgs_semantic_tokens(contents: &str, tokens: &mut Vec<SemanticToken>) {
-    let language = unsafe { super::tree_sitter_hubgs() };
+    let language = match super::get_hubgs_language() {
+        Some(lang) => lang,
+        None => return, // Graceful degradation if grammar unavailable
+    };
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
-    let tree = parser.parse(&contents, None).unwrap();
+    if parser.set_language(&language).is_err() {
+        return;
+    }
+    let tree = match parser.parse(contents, None) {
+        Some(t) => t,
+        None => return,
+    };
 
+    // user-review: Semantic token query for hubgs grammar. Maps AST nodes to LSP token types.
     let query_str = r#"
         (hub_definition (identifier) @type_def)
         (instance_block (identifier) @inst_name (identifier) @inst_type)
@@ -36,22 +56,31 @@ fn append_hubgs_semantic_tokens(contents: &str, tokens: &mut Vec<SemanticToken>)
         (instance_assignment (identifier) @assign_name)
         (enum_definition (identifier) @enum_name)
     "#;
-    let query = tree_sitter::Query::new(language, query_str).unwrap();
+    let query = tree_sitter::Query::new(&language, query_str).expect("query syntax error");
     let mut query_cursor = tree_sitter::QueryCursor::new();
-    let matches = query_cursor.matches(&query, tree.root_node(), contents.as_bytes());
+    let mut matches_result = query_cursor.matches(&query, tree.root_node(), contents.as_bytes());
 
-    for m in matches {
+    while let Some(m) = matches_result.next() {
         for capture in m.captures {
             let name = &query.capture_names()[capture.index as usize];
             let node = capture.node;
             let range = node.range();
-            let (token_type, modifiers) = match name.as_str() {
-                "type_def" => (0, 3),
-                "inst_name" => (2, 2),
-                "inst_type" => (0, 0),
-                "field_name" | "role_name" => (1, 3),
-                "assign_name" => (1, 0),
-                "enum_name" => (3, 3),
+            let (token_type, modifiers) = match *name {
+                "type_def" => (
+                    semantic_tokens::TYPE,
+                    semantic_tokens::DECLARATION | semantic_tokens::DEFINITION,
+                ),
+                "inst_name" => (semantic_tokens::INSTANCE, semantic_tokens::DEFINITION),
+                "inst_type" => (semantic_tokens::TYPE, 0),
+                "field_name" | "role_name" => (
+                    semantic_tokens::FIELD,
+                    semantic_tokens::DECLARATION | semantic_tokens::DEFINITION,
+                ),
+                "assign_name" => (semantic_tokens::FIELD, 0),
+                "enum_name" => (
+                    semantic_tokens::ENUM,
+                    semantic_tokens::DECLARATION | semantic_tokens::DEFINITION,
+                ),
                 _ => continue,
             };
             tokens.push(SemanticToken {
@@ -78,7 +107,7 @@ fn append_twxml_semantic_tokens(db: &dyn Db, file: SourceFile, tokens: &mut Vec<
             line: range.start.line,
             character: range.start.character + 1,
             length,
-            token_type: 2,
+            token_type: semantic_tokens::INSTANCE, // Use named constant instead of magic number
             token_modifiers: 0,
         });
     }
@@ -89,39 +118,49 @@ pub fn compute_folding_ranges(db: &dyn Db, file: SourceFile) -> Vec<LspRange> {
     let contents = file.contents(db);
     let path = file.path(db);
 
-    let language = if path.ends_with(".hubgs") {
-        unsafe { super::tree_sitter_hubgs() }
-    } else if path.ends_with(".twxml") {
-        unsafe { super::tree_sitter_twxml() }
-    } else {
+    let language = match path.as_bytes() {
+        p if p.ends_with(b".hubgs") => super::get_hubgs_language(),
+        p if p.ends_with(b".twxml") => super::get_twxml_language(),
+        _ => return ranges,
+    };
+
+    let Some(language) = language else {
+        eprintln!("TauWriter warning: tree-sitter grammar unavailable for {path}");
         return ranges;
     };
 
     let mut parser = Parser::new();
-    parser.set_language(language).ok();
-    let tree = parser.parse(&contents, None).unwrap();
+    if parser.set_language(&language).is_err() {
+        return ranges;
+    }
+    let tree = match parser.parse(&contents, None) {
+        Some(t) => t,
+        None => return ranges,
+    };
+
+    // Determine foldable node kinds from file extension to avoid matching irrelevant AST shapes
+    let is_hubgs = path.ends_with(".hubgs");
+    let foldable_kinds: &[&str] = if is_hubgs {
+        &[
+            "imports_section",
+            "definitions_section",
+            "fields_block",
+            "enums_block",
+            "hubs_block",
+            "hub_definition",
+            "instances_section",
+            "instance_block",
+        ]
+    } else {
+        &["element"]
+    };
 
     let mut stack = vec![tree.root_node()];
 
     while let Some(node) = stack.pop() {
         let range = node.range();
-        if range.start_point.row != range.end_point.row {
-            let is_foldable = matches!(
-                node.kind(),
-                "imports_section"
-                    | "definitions_section"
-                    | "fields_block"
-                    | "enums_block"
-                    | "hubs_block"
-                    | "hub_definition"
-                    | "instances_section"
-                    | "instance_block"
-                    | "element"
-            );
-
-            if is_foldable {
-                ranges.push(super::ts_range_to_lsp(range));
-            }
+        if range.start_point.row != range.end_point.row && foldable_kinds.contains(&node.kind()) {
+            ranges.push(super::ts_range_to_lsp(range));
         }
 
         let mut child_cursor = node.walk();

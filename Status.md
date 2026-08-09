@@ -52,7 +52,7 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | **Zed Extension** | ⚠️  | Functional skeleton with grammars, language configs, and pre-built binaries in `extension/bin/`. Auto-downloading and one-click install require Zed marketplace verification. |
 | **Editor QoL** | ✅ | Tag auto-closing via `onTypeFormatting`. Snippet generation and structural autocomplete for TWXML still pending. |
 | **Advanced LSP Ops** | ⚠️  | CodeLens implemented. Signature Help, Document Links, and Call Hierarchy mappings pending. |
-| **Graph Expansion** | 🔜 | Traits (Abstract Hubs), `EXTENDS` syntax, Role Metadata, and complex data types (UUID, structs). |
+| **Graph Expansion** | ⚠️ | Traits (Abstract Hubs), `EXTENDS` syntax (In Progress), Role Metadata, and complex data types (UUID, structs). |
 | **AI Integration** | 🔜 | RAG pipeline for Hub summaries and 'AI Provocations' for collaborative critique. |
 | **`db/mod.rs`** — Workspace, SourceFile | ✅ | Core Salsa database traits and workspace state management. |
 | **`db/types.rs`** — HubGS types (Hubs, Fields, Enums, Structs) | ✅ | Full index support for HubGS FIELDS, ENUMS, STRUCTS. |
@@ -82,6 +82,51 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 - [x] Add HubGS formatting support for chained method calls and arrow functions (EXTENDS block is implemented).
 - TWXML formatter fully updated for post-`<metadata>`-deprecation structure. All tests pass.
 
+### 1. Structural Enforcement & Validation Pipeline ⚠️
+Strict schema enforcement for document and graph structures to ensure data integrity.
+- [x] **TWXML Skeleton Enforcement:** Update validation to enforce that all TWXML documents strictly adhere to the root `<document>` schema containing zero or more `<meta/>` tags directly, followed by exactly one `<body>` block (removing the deprecated `<metadata>` wrapper).
+- [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
+- [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
+- [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
+- [x] Implement TWXML Referential Integrity (Unresolved references for `<hubref>`)
+- [x] Implement HubGS Type & Multiplicity Enforcement
+
+### 2. Dynamic Evaluation Engine ⚠️
+Robust engine for computed graph data.
+- [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
+- [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
+- [x] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
+- [x] Enforce `@default` override rules during instance instantiation.
+
+### 3. Formatter Module (`lsp/src/formatter/`) ⚠️
+Tree-sitter based formatter for both TWXML and HubGS. Not a separate crate — lives inline in the LSP crate.
+- [x] Update TWXML formatter to drop `format_metadata_block` and natively format `<meta />` tags directly under `<document>`.
+- [x] Standardized indentation (2-space) and line-breaking rules for nested TWXML blocks. Block-level elements indent children at `indent_level + 1`, self-closing tags respect indentation, inline content stays compact.
+- [x] Add HubGS formatting support for the `EXTENDS` block, chained method calls, and arrow functions.
+- [x] Full block tag coverage — 26 TWXML block tags known to the formatter (`section`, `heading`, `paragraph`, `table`, etc.).
+- [x] LSP `textDocument/formatting` handler wired up and JSON-RPC tested.
+
+### 4. Editor Experience & LSP Capabilities (In Progress)
+Enhancing the writing and data-entry flow natively within the editor.
+- [x] **TWXML Tag Auto-closing:** Update existing `onTypeFormatting` to stop inserting `</metadata>` and adjust autocomplete context to suggest `<meta />` at the root level.
+- [x] **TWXML Tag Auto-completion:** Context-aware suggestions for structural tags (`<section>`, `<heading>`, `<body>`). Triggered on `<`, filters out structurally invalid tags based on parent context.
+- [x] **CodeLens Integration:** Display actionable inline hints (e.g., "X references") directly above Hub instances.
+- [x] **Signature Help:** Show parameter and field hints while authors are filling out HubGS definitions.
+- [x] **Advanced Formatting Hooks:** Implement `textDocument/rangeFormatting`.
+- [x] Context-aware autocomplete for Hub IDs, fields, and roles.
+- [x] Inlay hints for HubGS instance types (`: TypeName`). Implemented, no test yet.
+- [x] Code actions for resolving `<review>` tags to `<hubref>`. Two quickfix actions implemented.
+
+### 5. HubGS Inheritance & Extensibility (In Progress)
+- [x] **EXTENDS AST Parsing:** Update AST extraction to support composite inheritance definitions.
+- [x] **Set-Union Compilation:** Ensure child hubs correctly inherit all `FIELDS` and roles from `EXTENDS` parents.
+- [x] **Polymorphism Rules:** Update type-checking so instances of a child type are valid targets for roles that `ALLOWS` the parent type.
+- [x] **Decorator Precedence:** Enforce validation rules where a child type can override a parent's `@default()`, but cannot override a parent's `@computed()` field.
+
+### 6. HubGS Language & Graph Capabilities (Planned)
+- [ ] **Role Metadata:** Support weighted edges and edge-properties (e.g., temporal bounds on a role like `owns { start: Date, end: Date }`).
+- [ ] **Expanded Data Types:** Introduce `UUID`, structured records (`struct`), and string templates ("expressive strings").
+- [ ] **Circular Import Resolution:** Define a robust two-pass merge strategy for `.hubgs` files with cyclic dependencies.
 
 ### JSON-RPC API
 
@@ -177,11 +222,11 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `grammar` | ✅ | `"twxml"` |
 | `path_suffixes` | ✅ | `["twxml"]` |
 | `line_comments` | ✅ | `[]` (none) |
-| `tab_size` | ⬜ Not set | Default (4 per Zed convention) |
-| `hard_tabs` | ⬜ Not set | Default (false) |
+| `tab_size` | ✅ | `2` (matches formatter's 2-space indentation) |
+| `hard_tabs` | ✅ | `false` |
 | `first_line_patterns` | ⬜ Not set | No regex patterns for file type detection beyond suffix |
 | `debuggers` | ❌ Not implemented | — |
-| `injections` | ⚠️ Planned | Requires `queries/twxml/injections.scm` targeting `<codeblock>` elements (grammar already exposes `(tag_name)`, `attribute → (attribute_name)/(attribute_value)`, and `(text)` as injectable content).
+| `injections` | ✅ Implemented | Requires `queries/twxml/injections.scm` targeting `<codeblock>` elements (grammar already exposes `(tag_name)`, `attribute → (attribute_name)/(attribute_value)`, and `(text)` as injectable content).
 
 ##### Grammar
 | Property | Status | Value |
@@ -196,8 +241,6 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `meta_tag` (self-closing) | ✅ | Replaces deprecated `<metadata>` wrapper; optional, zero or more |
 | `body_block` (required) | ✅ | Exactly one required between `<document>` and `</document>` |
 | C parser (`parser.c`) | ✅ | ABI 14, regenerated via `tree-sitter generate` |
-
-##### Queries
 
 ###### Syntax Highlighting (`highlights.scm`)
 | Capture | Status | Target |
@@ -280,8 +323,8 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `grammar` | ✅ | `"hubgs"` |
 | `path_suffixes` | ✅ | `["hubgs"]` |
 | `line_comments` | ✅ | `["// "]` (C++-style) |
-| `tab_size` | ⬜ Not set | Default (4 per Zed convention) |
-| `hard_tabs` | ⬜ Not set | Default (false) |
+| `tab_size` | ✅ | `4` |
+| `hard_tabs` | ✅ | `false` |
 | `first_line_patterns` | ⬜ Not set | No regex patterns for file type detection beyond suffix |
 | `debuggers` | ❌ Not implemented | — |
 
@@ -291,8 +334,18 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 | `repository` (extension.toml) | ✅ | `"https://github.com/Jarbear82/TauWriter"` |
 | `rev` (extension.toml) | ✅ | `"main"` |
 | `path` (extension.toml) | ✅ | `"extension/languages/hubgs"` |
-
-##### Queries
+##### Grammar Structure
+| Rule | Status | Notes |
+|:---|:---:|:---|
+| `source_file` → `hubgs_file` | ✅ | Root node |
+| `hub_definition` | ✅ | Hub blocks with FIELDS/EXTENDS/INSTANCES |
+| `field_definition` | ✅ | Field declarations with types and decorators |
+| `enum_definition` | ✅ | Enum type definitions |
+| `struct_definition` | ✅ | Struct type definitions |
+| `type_reference` (incl. generics) | ✅ | Simple, generic, and nullable types |
+| `instance_block` | ✅ | Instance declarations with type + fields |
+| `EXTENDS` clause | ✅ | Inheritance grammar support |
+| C parser (`parser.c`) | ✅ | ABI 14, regenerated via `tree-sitter generate` |
 
 ###### Syntax Highlighting (`highlights.scm`)
 | Capture | Status | Target |
@@ -423,25 +476,6 @@ Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, ena
 
 ---
 
-## Current Focus: Structural Enforcement & Validation Pipeline ⚠️
-
-Strict schema enforcement for document and graph structures to ensure data integrity.
-
-- [x] **TWXML Skeleton Enforcement:** Update validation to enforce that all TWXML documents strictly adhere to the root `<document>` schema containing zero or more `<meta/>` tags directly, followed by exactly one `<body>` block (removing the deprecated `<metadata>` wrapper).
-- [x] **HubGS Dependency Validation:** Enforce section-level dependencies. If an `INSTANCES` block exists, validate that a `DEFINITIONS` block is present locally or fully satisfied via an `IMPORTS` statement.
-- [x] **Instance Resolution:** Ensure all declared instances successfully resolve to a defined Hub type.
-- [x] Implement TWXML Nesting Rules (e.g., `<heading>` levels inside `<body>` or `<section>`)
-- [x] Implement TWXML Referential Integrity (Unresolved references for `<hubref>`)
-- [x] Implement HubGS Type & Multiplicity Enforcement
-
-## Dynamic Evaluation Engine ⚠️
-
-Robust engine for computed graph data.
-
-- [x] Implement AST evaluator for `@computed` formulas (arithmetic, string concatenation).
-- [x] Implement cross-Hub field access via roles (e.g., `this.companions.length`).
-- [x] Extend AST evaluator to execute collection operators (`.len()`, `.map(expr)`, `.join(delimiter)`) and arrow functions.
-- [x] Enforce `@default` override rules during instance instantiation.
 
 ## Things To Remove
 - [x] Deprecated `<metadata>` wrapper support — migration path from old TWXML schema is complete.

@@ -12,10 +12,11 @@ const OP_PREC = {
   ARROW: 0,
   LOGICAL: 1,
   EQUALITY: 2,
-  ADD: 3,
-  MULTIPLY: 4,
-  UNARY: 5,
-  MEMBER: 6,
+  RELATIONAL: 3,
+  ADD: 4,
+  MULTIPLY: 5,
+  UNARY: 6,
+  MEMBER: 7,
 };
 
 module.exports = grammar({
@@ -33,8 +34,8 @@ module.exports = grammar({
 
     source_file: ($) =>
       seq(
-        optional($.imports_section),
-        optional($.definitions_section),
+        optional(seq($.imports_section, optional(","))),
+        optional(seq($.definitions_section, optional(","))),
         optional($.instances_section),
       ),
 
@@ -94,7 +95,7 @@ module.exports = grammar({
     hub_field: ($) =>
       seq(
         $.identifier,
-        optional(seq("=", $.decorator)),
+        optional(seq(optional("="), $.decorator)),
         repeat($.field_attribute),
       ),
 
@@ -130,7 +131,7 @@ module.exports = grammar({
 
     instance_block: ($) =>
       seq(
-        field("ref", $.identifier),
+        field("ref", choice($.identifier, $.uuid)),
         ":",
         field("type", $.identifier),
         "{",
@@ -139,6 +140,8 @@ module.exports = grammar({
       ),
 
     instance_assignment: ($) => seq($.identifier, "=", $._expression),
+
+    uuid: (_) => /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/,
 
 
 
@@ -165,6 +168,7 @@ module.exports = grammar({
         $.call_expression,
         $.arrow_function,
         $.identifier,
+        $.uuid,
         $.number,
         $.string,
         $.template_string,
@@ -232,6 +236,14 @@ module.exports = grammar({
           seq(
             field("left", $._expression),
             field("operator", choice("==", "!=")),
+            field("right", $._expression),
+          ),
+        ),
+        prec.left(
+          OP_PREC.RELATIONAL,
+          seq(
+            field("left", $._expression),
+            field("operator", choice("<", ">", "<=", ">=")),
             field("right", $._expression),
           ),
         ),

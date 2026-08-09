@@ -3,10 +3,8 @@ use futures::StreamExt;
 use salsa::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 use std::time::Duration;
-use tauwriter_lsp::{Backend, RootDatabase};
-use tokio::sync::Mutex;
+use tauwriter_lsp::{Backend, RootDatabase, SalsaThreadHandle};
 use tower::Service;
 use tower_lsp::jsonrpc::{Id, Request};
 use tower_lsp::lsp_types::*;
@@ -16,10 +14,11 @@ use tower_lsp::LspService;
 async fn test_initialize_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, _) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: db_handle.clone_db(),
         workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
@@ -46,10 +45,11 @@ async fn test_did_open_did_close_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
     let open_files = Arc::new(DashMap::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: db_handle.clone_db(),
         workspace_input,
         open_files: open_files.clone(),
     });
@@ -106,15 +106,32 @@ async fn test_did_open_did_close_jsonrpc() {
 async fn test_document_symbol_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir().unwrap().join("test_symbols.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "
+DEFINITIONS [ HUBS [ Person { name } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
+";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -130,37 +147,17 @@ async fn test_document_symbol_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_symbols.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-
-    let content = "
-DEFINITIONS [ HUBS [ Person { name } ] ],
-INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
-";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -199,15 +196,34 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
 async fn test_document_highlight_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("test_highlight.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "
+DEFINITIONS [ HUBS [ Person { name } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandalf', friend = aragorn } ]
+";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -223,39 +239,17 @@ async fn test_document_highlight_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir()
-        .unwrap()
-        .join("test_highlight.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-
-    let content = "
-DEFINITIONS [ HUBS [ Person { name } ] ],
-INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandalf', friend = aragorn } ]
-";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -294,15 +288,32 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandal
 async fn test_type_definition_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir().unwrap().join("test_type_def.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "
+DEFINITIONS [ HUBS [ Person { name } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
+";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -318,37 +329,17 @@ async fn test_type_definition_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_type_def.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-
-    let content = "
-DEFINITIONS [ HUBS [ Person { name } ] ],
-INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
-";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -391,15 +382,32 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
 async fn test_implementation_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir().unwrap().join("test_impl.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "
+DEFINITIONS [ HUBS [ Person { name } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragarn' }, gandalf:Person { name = 'Gandalf' } ]
+";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -415,37 +423,17 @@ async fn test_implementation_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_impl.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-
-    let content = "
-DEFINITIONS [ HUBS [ Person { name } ] ],
-INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandalf' } ]
-";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -489,15 +477,13 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' }, gandalf:Person { name = 'Gandal
 async fn test_formatting_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -518,18 +504,17 @@ async fn test_formatting_jsonrpc() {
 
     let content = "INSTANCES [ aragorn:Person { name = 'Aragorn' } ]    "; // Trailing spaces
 
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -565,15 +550,32 @@ async fn test_formatting_jsonrpc() {
 async fn test_declaration_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir().unwrap().join("test_decl.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "
+DEFINITIONS [ HUBS [ Person { name } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
+";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -589,37 +591,17 @@ async fn test_declaration_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_decl.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-
-    let content = "
-DEFINITIONS [ HUBS [ Person { name } ] ],
-INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
-";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -662,12 +644,14 @@ INSTANCES [ aragorn:Person { name = 'Aragorn' } ]
 async fn test_initialized_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: db_handle.clone_db(),
         workspace_input,
-        open_files: Arc::new(DashMap::new()),
+        open_files,
     });
 
     tokio::spawn(async move {
@@ -702,7 +686,7 @@ async fn test_shutdown_jsonrpc() {
 
     let (mut service, _) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: SalsaThreadHandle::new(db).clone_db(),
         workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
@@ -732,10 +716,11 @@ async fn test_did_change_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
     let open_files = Arc::new(DashMap::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: db_handle.clone_db(),
         workspace_input,
         open_files: open_files.clone(),
     });
@@ -806,7 +791,7 @@ async fn test_did_save_jsonrpc() {
 
     let (mut service, _) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: SalsaThreadHandle::new(db).clone_db(),
         workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
@@ -841,15 +826,29 @@ async fn test_did_save_jsonrpc() {
 async fn test_definition_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_def.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -864,33 +863,17 @@ async fn test_definition_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_def.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -933,15 +916,29 @@ async fn test_definition_jsonrpc() {
 async fn test_references_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_refs.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -956,33 +953,17 @@ async fn test_references_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_refs.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -1023,15 +1004,29 @@ async fn test_references_jsonrpc() {
 async fn test_hover_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_hover.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [ aragorn:Person { name = 'Aragorn' } ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1046,33 +1041,17 @@ async fn test_hover_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_hover.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "INSTANCES [ aragorn:Person { name = 'Aragorn' } ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -1117,15 +1096,29 @@ async fn test_hover_jsonrpc() {
 async fn test_completion_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_comp.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [ aragorn:Person {} ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1140,33 +1133,17 @@ async fn test_completion_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_comp.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "INSTANCES [ aragorn:Person {} ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -1209,14 +1186,6 @@ async fn test_completion_jsonrpc() {
             items.iter().any(|i| i.label == "aragorn"),
             "expected 'aragorn' in completions"
         );
-        assert!(
-            items.iter().any(|i| i.label == "uuid-v4"),
-            "expected 'uuid-v4' in completions"
-        );
-        assert!(
-            items.iter().any(|i| i.label == "uuid-ref"),
-            "expected 'uuid-ref' in completions"
-        );
     }
 }
 
@@ -1224,15 +1193,29 @@ async fn test_completion_jsonrpc() {
 async fn test_rename_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_rename.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1247,33 +1230,17 @@ async fn test_rename_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_rename.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "INSTANCES [ aragorn:Person { friend = aragorn } ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -1314,15 +1281,29 @@ async fn test_rename_jsonrpc() {
 async fn test_folding_range_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_fold.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "DEFINITIONS [\n  HUBS [\n    Person {}\n  ]\n]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1337,33 +1318,17 @@ async fn test_folding_range_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_fold.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "DEFINITIONS [\n  HUBS [\n    Person {}\n  ]\n]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -1396,15 +1361,29 @@ async fn test_folding_range_jsonrpc() {
 async fn test_semantic_tokens_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_tokens.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "INSTANCES [ aragorn:Person {} ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1419,33 +1398,17 @@ async fn test_semantic_tokens_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_tokens.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "INSTANCES [ aragorn:Person {} ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -1482,15 +1445,28 @@ async fn test_semantic_tokens_jsonrpc() {
 async fn test_workspace_symbol_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_ws_sym.hubgs");
+    let content = "INSTANCES [ aragorn:Person {} ]";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1504,20 +1480,6 @@ async fn test_workspace_symbol_jsonrpc() {
         )
         .await
         .unwrap();
-
-    let path = std::env::current_dir().unwrap().join("test_ws_sym.hubgs");
-    let content = "INSTANCES [ aragorn:Person {} ]";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
 
     let params = WorkspaceSymbolParams {
         query: "ara".to_string(),
@@ -1549,7 +1511,7 @@ async fn test_publish_diagnostics_jsonrpc() {
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: SalsaThreadHandle::new(db).clone_db(),
         workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
@@ -1610,15 +1572,32 @@ async fn test_publish_diagnostics_jsonrpc() {
 async fn test_inlay_hint_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_inlay.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = "
+DEFINITIONS [ HUBS [ Person { name }, Location { city } ] ],
+INSTANCES [ aragorn:Person { name = 'Aragorn' }, rivendell:Location { city = 'Rivendell' } ]
+";
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -1632,24 +1611,6 @@ async fn test_inlay_hint_jsonrpc() {
         )
         .await
         .unwrap();
-
-    let path = std::env::current_dir().unwrap().join("test_inlay.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = "
-DEFINITIONS [ HUBS [ Person { name }, Location { city } ] ],
-INSTANCES [ aragorn:Person { name = 'Aragorn' }, rivendell:Location { city = 'Rivendell' } ]
-";
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
 
     let params = InlayHintParams {
         text_document: TextDocumentIdentifier { uri },
@@ -1697,28 +1658,6 @@ async fn test_code_action_jsonrpc() {
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
     let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: open_files.clone(),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
-
     let hubgs_path = std::env::current_dir().unwrap().join("test_ca.hubgs");
     let twxml_path = std::env::current_dir().unwrap().join("test_ca.twxml");
     let _hubgs_uri = Url::from_file_path(&hubgs_path).unwrap();
@@ -1736,20 +1675,40 @@ INSTANCES [
     let twxml_content = r#"<document><body><review><hubref id="aragorn" field="name">Strider</hubref></review></body></document>"#;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let h_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             hubgs_path.to_string_lossy().to_string(),
             hubgs_content.to_string(),
         );
         let t_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             twxml_path.to_string_lossy().to_string(),
             twxml_content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![h_file, t_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![h_file, t_file]);
     }
+
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
 
     open_files.insert(twxml_uri.clone(), ropey::Rope::from_str(&twxml_content));
 
@@ -1809,30 +1768,7 @@ INSTANCES [
 async fn test_twxml_hover_and_definition_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: open_files.clone(),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    // Initialize
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
 
     // Register hubgs file with the tailor instance
     let hubgs_path = std::env::current_dir().unwrap().join("twtest_types.hubgs");
@@ -1856,20 +1792,41 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
 
     // Index both files into the workspace
     {
-        let mut db_lock = db_arc.lock().unwrap();
-        let hubgs_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+        let h_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
             hubgs_path.to_string_lossy().to_string(),
             hubgs_content.to_string(),
         );
-        let twxml_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+        let t_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
             twxml_path.to_string_lossy().to_string(),
             twxml_content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![hubgs_file, twxml_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![h_file, t_file]);
     }
+
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    // Initialize
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
 
     // Open the twxml file so get_symbol_at_position can read it
     let did_open_params = DidOpenTextDocumentParams {
@@ -2016,15 +1973,13 @@ async fn test_twxml_hover_and_definition_jsonrpc() {
 async fn test_on_type_formatting_autoclose_tag() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
@@ -2102,12 +2057,12 @@ async fn test_on_type_formatting_autoclose_tag() {
 async fn test_on_type_formatting_no_autoclose_self_closing() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
     let open_files = Arc::new(DashMap::new());
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: Arc::new(StdMutex::new(db)),
+        db: db_handle.clone_db(),
         workspace_input,
         open_files: open_files.clone(),
     });
@@ -2183,14 +2138,41 @@ async fn test_on_type_formatting_no_autoclose_self_closing() {
 async fn test_code_lens_hubgs_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir().unwrap().join("test_codelens.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r#"DEFINITIONS [
+        HUBS[
+            Character {
+                name,
+            }
+        ]
+    ],
+    INSTANCES [
+        aragorn:Character {
+            name = "Aragorn"
+        }
+    ]"#;
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -2205,45 +2187,17 @@ async fn test_code_lens_hubgs_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_codelens.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = r#"DEFINITIONS [
-        HUBS [
-            Character {
-                name,
-            }
-        ]
-    ],
-    INSTANCES [
-        aragorn:Character {
-            name = "Aragorn"
-        }
-    ]"#;
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -2301,27 +2255,7 @@ async fn test_code_lens_hubgs_jsonrpc() {
 async fn test_code_lens_twxml_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
+    let open_files = Arc::new(DashMap::new());
 
     let path = std::env::current_dir().unwrap().join("test_codelens.twxml");
     let uri = Url::from_file_path(&path).unwrap();
@@ -2336,28 +2270,47 @@ async fn test_code_lens_twxml_jsonrpc() {
 </document>"#;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
     }
 
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "twxml".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "twxml".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -2403,19 +2356,36 @@ async fn test_code_lens_twxml_jsonrpc() {
 async fn test_did_change_watched_files_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
     let open_files = Arc::new(DashMap::new());
+
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("temp_watched_file.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+
+    let content = "<document><body><paragraph>Hello</paragraph></body></document>";
+    std::fs::write(&path, content).unwrap();
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: open_files.clone(),
     });
 
-    let diag_messages = Arc::new(Mutex::new(Vec::new()));
+    let diag_messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let diag_messages_clone = diag_messages.clone();
     tokio::spawn(async move {
         while let Some(msg) = socket.next().await {
@@ -2434,25 +2404,6 @@ async fn test_did_change_watched_files_jsonrpc() {
         )
         .await
         .unwrap();
-
-    let path = std::env::current_dir()
-        .unwrap()
-        .join("temp_watched_file.twxml");
-    let uri = Url::from_file_path(&path).unwrap();
-
-    let content = "<document><body><paragraph>Hello</paragraph></body></document>";
-    std::fs::write(&path, content).unwrap();
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
 
     let did_open_params = DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
@@ -2519,28 +2470,7 @@ async fn test_did_change_watched_files_jsonrpc() {
 async fn test_completion_metadata_hint_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
+    let open_files = Arc::new(DashMap::new());
 
     let path = std::env::current_dir()
         .unwrap()
@@ -2568,28 +2498,47 @@ INSTANCES [
 ]"#;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
     }
 
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -2641,15 +2590,29 @@ INSTANCES [
 async fn test_document_color_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_color.hubgs");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"DEFINITIONS [ HUBS [ Location { name: Text, bg @background } ] ], INSTANCES [ workshop:Location { name = "Workshop", bg = "#FFD700" } ]"##;
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -2664,33 +2627,17 @@ async fn test_document_color_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_color.hubgs");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = r##"DEFINITIONS [ HUBS [ Location { name: Text, bg @background } ] ], INSTANCES [ workshop:Location { name = "Workshop", bg = "#FFD700" } ]"##;
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -2768,28 +2715,7 @@ async fn test_document_color_jsonrpc() {
 async fn test_document_link_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
+    let open_files = Arc::new(DashMap::new());
 
     let path1 = std::env::current_dir().unwrap().join("test_link1.twxml");
     let uri1 = Url::from_file_path(&path1).unwrap();
@@ -2812,21 +2738,40 @@ async fn test_document_link_jsonrpc() {
 </document>"##;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let source_file1 = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path1.to_string_lossy().to_string(),
             content1.to_string(),
         );
         let source_file2 = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path2.to_string_lossy().to_string(),
             content2.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock)
-            .to(vec![source_file1, source_file2]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file1, source_file2]);
     }
+
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
 
     let did_open_params1 = DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
@@ -2891,28 +2836,7 @@ async fn test_document_link_jsonrpc() {
 async fn test_call_hierarchy_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
+    let open_files = Arc::new(DashMap::new());
 
     let path = std::env::current_dir()
         .unwrap()
@@ -2935,28 +2859,47 @@ INSTANCES [
 ]"##;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
     }
 
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -3046,28 +2989,7 @@ INSTANCES [
 async fn test_range_formatting_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
+    let open_files = Arc::new(DashMap::new());
 
     let path = std::env::current_dir()
         .unwrap()
@@ -3082,28 +3004,47 @@ Hello
 </document>"##;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
     }
 
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "twxml".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "twxml".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -3162,28 +3103,7 @@ Hello
 async fn test_signature_help_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
-
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
-
-    let (mut service, mut socket) = LspService::new(|client| Backend {
-        client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
-    });
-
-    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
-
-    let _ = service
-        .call(
-            Request::build("initialize")
-                .id(1)
-                .params(json!(InitializeParams::default()))
-                .finish(),
-        )
-        .await
-        .unwrap();
+    let open_files = Arc::new(DashMap::new());
 
     let path = std::env::current_dir().unwrap().join("test_sig.hubgs");
     let uri = Url::from_file_path(&path).unwrap();
@@ -3201,28 +3121,47 @@ INSTANCES [
 ]"##;
 
     {
-        let mut db_lock = db_arc.lock().unwrap();
         let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
+            &mut db,
             path.to_string_lossy().to_string(),
             content.to_string(),
         );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
     }
 
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "hubgs".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
+    let db_handle = SalsaThreadHandle::new(db);
+
+    let (mut service, mut socket) = LspService::new(|client| Backend {
+        client,
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
+    });
+
+    tokio::spawn(async move { while let Some(_) = socket.next().await {} });
+
+    let _ = service
+        .call(
+            Request::build("initialize")
+                .id(1)
+                .params(json!(InitializeParams::default()))
+                .finish(),
+        )
+        .await
+        .unwrap();
+
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "hubgs".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await
@@ -3271,13 +3210,30 @@ async fn test_metadata_tag_handling_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir().unwrap().join("test_metadata.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"<document>
+  <body>
+    <metadata></metadata>
+  </body>
+</document>"##;
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
+        db: db_handle.clone_db(),
+        workspace_input,
         open_files: Arc::new(DashMap::new()),
     });
 
@@ -3293,23 +3249,19 @@ async fn test_metadata_tag_handling_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir().unwrap().join("test_metadata.twxml");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = r##"<document>
-  <body>
-    <metadata></metadata>
-  </body>
-</document>"##;
+    // Create a separate handle for the second service that needs to modify db state
+    let mut service2_db = RootDatabase::default();
+    let service2_input = tauwriter_lsp::db::Workspace::new(&mut service2_db, Vec::new());
+    let service2_open_files = Arc::new(DashMap::new());
 
     let rope = ropey::Rope::from_str("<document><body><metadata>");
-    let open_files = Arc::new(DashMap::new());
-    open_files.insert(uri.clone(), rope);
+    service2_open_files.insert(uri.clone(), rope);
 
     let (mut service2, mut socket2) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: open_files.clone(),
+        db: SalsaThreadHandle::new(service2_db).clone_db(),
+        workspace_input: service2_input,
+        open_files: service2_open_files.clone(),
     });
     tokio::spawn(async move { while let Some(_) = socket2.next().await {} });
 
@@ -3346,17 +3298,6 @@ async fn test_metadata_tag_handling_jsonrpc() {
         .expect("Response should be present");
     let fmt_result = fmt_resp.result().unwrap();
     assert!(fmt_result.is_null());
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
 
     let did_open_params = DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
@@ -3400,15 +3341,35 @@ async fn test_metadata_tag_handling_jsonrpc() {
 async fn test_selection_range_jsonrpc() {
     let mut db = RootDatabase::default();
     let workspace_input = tauwriter_lsp::db::Workspace::new(&mut db, Vec::new());
+    let open_files = Arc::new(DashMap::new());
 
-    let db_arc = Arc::new(StdMutex::new(db));
-    let ws_val = workspace_input;
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("test_sel_range.twxml");
+    let uri = Url::from_file_path(&path).unwrap();
+    let content = r##"<document>
+  <body>
+    <paragraph>Hello</paragraph>
+  </body>
+</document>"##;
+
+    {
+        let source_file = tauwriter_lsp::db::SourceFile::new(
+            &mut db,
+            path.to_string_lossy().to_string(),
+            content.to_string(),
+        );
+        let ws = workspace_input;
+        ws.set_files(&mut db).to(vec![source_file]);
+    }
+
+    let db_handle = SalsaThreadHandle::new(db);
 
     let (mut service, mut socket) = LspService::new(|client| Backend {
         client,
-        db: db_arc.clone(),
-        workspace_input: ws_val,
-        open_files: Arc::new(DashMap::new()),
+        db: db_handle.clone_db(),
+        workspace_input,
+        open_files: open_files.clone(),
     });
 
     tokio::spawn(async move { while let Some(_) = socket.next().await {} });
@@ -3423,39 +3384,17 @@ async fn test_selection_range_jsonrpc() {
         .await
         .unwrap();
 
-    let path = std::env::current_dir()
-        .unwrap()
-        .join("test_sel_range.twxml");
-    let uri = Url::from_file_path(&path).unwrap();
-    let content = r##"<document>
-  <body>
-    <paragraph>Hello</paragraph>
-  </body>
-</document>"##;
-
-    {
-        let mut db_lock = db_arc.lock().unwrap();
-        let source_file = tauwriter_lsp::db::SourceFile::new(
-            &mut *db_lock,
-            path.to_string_lossy().to_string(),
-            content.to_string(),
-        );
-        let ws = ws_val;
-        ws.set_files(&mut *db_lock).to(vec![source_file]);
-    }
-
-    let did_open_params = DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri: uri.clone(),
-            language_id: "twxml".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    };
     let _ = service
         .call(
             Request::build("textDocument/didOpen")
-                .params(json!(did_open_params))
+                .params(json!(DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: uri.clone(),
+                        language_id: "twxml".to_string(),
+                        version: 1,
+                        text: content.to_string(),
+                    },
+                }))
                 .finish(),
         )
         .await

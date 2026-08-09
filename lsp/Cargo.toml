@@ -11,14 +11,17 @@ lsp-types = "0.94"
 tower = "0.4"
 futures = "0.3"
 tokio = { version = "1.0", features = ["full"] }
-salsa = "0.27"
-tree-sitter = "0.20"
+salsa = { version = "0.27" }
+tree-sitter = "0.26"
+streaming-iterator = "0.1"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dashmap = "5.5" # Concurrent maps for open file state
 ropey = "1.6"
 walkdir = "2.4" # For indexing unopened files
+tauwriter-hubgs = { path = "../crates/hubgs" }
+tauwriter-twxml = { path = "../crates/twxml" }
 
 [build-dependencies]
 cc = "1.0"

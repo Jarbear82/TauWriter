@@ -1,7 +1,28 @@
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 
+use super::uuid::{generate_uuid_ref, generate_uuid_v4};
+use crate::db::TWXML_TAG_INFO;
 use crate::Backend;
+
+/// Which UUID completions to offer based on cursor context.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum OfferUuid {
+    /// Offer ref-style UUID (HubGS instance identifiers use _hex32 format).
+    Ref,
+    /// Offer standard UUID v4 (for future UUID data type support).
+    V4,
+    /// Offer both.
+    Both,
+    /// No UUID completions — the context doesn't expect a UUID value.
+    None,
+}
+
+/// Combined result from context-specific completion handlers.
+struct CompletionResult {
+    response: CompletionResponse,
+    offer_uuid: OfferUuid,
+}
 
 fn try_completion_context(
     db: &dyn crate::db::Db,
@@ -9,17 +30,23 @@ fn try_completion_context(
     file: crate::db::SourceFile,
     content: &str,
     position: Position,
-) -> Option<Result<Option<CompletionResponse>>> {
+) -> Option<CompletionResult> {
     let ctx = crate::parser::get_hubgs_completion_context(content, position);
 
     match ctx {
-        crate::parser::HubgsCompletionContext::AllowsList => Some(complete_allows_list(db, ws)),
+        crate::parser::HubgsCompletionContext::AllowsList => Some(CompletionResult {
+            response: complete_allows_list(db, ws),
+            offer_uuid: OfferUuid::None,
+        }),
         crate::parser::HubgsCompletionContext::InstanceAssignment {
             type_name,
             role_name,
-        } => Some(complete_role_instances(
-            db, ws, file, &type_name, &role_name,
-        )),
+        } => Some(CompletionResult {
+            response: CompletionResponse::Array(complete_role_instances(
+                db, ws, file, &type_name, &role_name,
+            )),
+            offer_uuid: OfferUuid::Ref,
+        }),
         crate::parser::HubgsCompletionContext::None => None,
     }
 }
@@ -35,7 +62,7 @@ pub async fn completion(
     let db_ref = &db_val;
     let ws_ref = ws_val;
 
-    let res = if let Ok(path) = uri.to_file_path() {
+    let (items, offer_uuid) = if let Ok(path) = uri.to_file_path() {
         let path_str = path.to_string_lossy().to_string();
         let file = ws_ref
             .files(db_ref)
@@ -46,221 +73,176 @@ pub async fn completion(
             let content = file.contents(db_ref);
 
             if path_str.ends_with(".twxml") {
-                handle_twxml_completion(db_ref, ws_ref, &content, position)
+                match handle_twxml_completion(db_ref, ws_ref, &content, position) {
+                    Some(r) => (r.response.unwrap_array(), r.offer_uuid),
+                    None => default_fallback_items(db_ref, ws_ref),
+                }
             } else if path_str.ends_with(".hubgs") {
-                handle_hubgs_completion(db_ref, ws_ref, file, &content, position)
+                match handle_hubgs_completion(db_ref, ws_ref, file, &content, position) {
+                    Some(r) => (r.response.unwrap_array(), r.offer_uuid),
+                    None => default_fallback_items(db_ref, ws_ref),
+                }
             } else {
-                Ok(None)
+                default_fallback_items(db_ref, ws_ref)
             }
         } else {
-            Ok(None)
+            default_fallback_items(db_ref, ws_ref)
         }
     } else {
-        Ok(None)
+        default_fallback_items(db_ref, ws_ref)
     };
 
-    let mut items = match res {
-        Ok(Some(CompletionResponse::Array(arr))) => arr,
-        Ok(Some(CompletionResponse::List(list))) => list.items,
-        _ => {
-            // Fallback: list all hub instances
-            let instances = crate::db::all_hub_instances(db_ref, ws_ref);
-            instances
-                .into_iter()
-                .map(|i| {
-                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db_ref, ws_ref, i) {
-                        format!("Hub Instance ({}) - {}", i.type_name(db_ref), disp)
-                    } else {
-                        format!("Hub Instance ({})", i.type_name(db_ref))
-                    };
-                    CompletionItem {
-                        label: i.name(db_ref),
-                        kind: Some(CompletionItemKind::REFERENCE),
-                        detail: Some(detail),
-                        ..Default::default()
-                    }
-                })
-                .collect()
-        }
-    };
-
-    // Generate fresh UUIDs for insertion!
-    let uuid_str = generate_uuid_v4();
-    let uuid_ref = generate_uuid_ref();
-
-    items.push(CompletionItem {
-        label: "uuid-v4".to_string(),
-        kind: Some(CompletionItemKind::SNIPPET),
-        detail: Some("Insert a new standard UUID v4".to_string()),
-        insert_text: Some(uuid_str),
-        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
-        ..Default::default()
-    });
-
-    items.push(CompletionItem {
-        label: "uuid-ref".to_string(),
-        kind: Some(CompletionItemKind::SNIPPET),
-        detail: Some("Insert a valid HubGS ref UUID (prefixed, no hyphens)".to_string()),
-        insert_text: Some(uuid_ref),
-        insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
-        ..Default::default()
-    });
+    let mut items = apply_uuid_filter(items, offer_uuid);
 
     Ok(Some(CompletionResponse::Array(items)))
 }
 
-fn get_pseudorandom_bytes(len: usize) -> Vec<u8> {
-    use std::io::Read;
-    // Try reading from /dev/urandom first
-    if let Ok(mut file) = std::fs::File::open("/dev/urandom") {
-        let mut buf = vec![0u8; len];
-        if file.read_exact(&mut buf).is_ok() {
-            return buf;
+/// Helper: unwrap a CompletionResponse to Vec<CompletionItem>.
+trait ResponseExt {
+    fn unwrap_array(self) -> Vec<CompletionItem>;
+}
+
+impl ResponseExt for CompletionResponse {
+    fn unwrap_array(self) -> Vec<CompletionItem> {
+        match self {
+            CompletionResponse::Array(arr) => arr,
+            CompletionResponse::List(list) => list.items,
         }
     }
-    // Fallback to LCG seeded with time
-    let mut seed = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(123456789) as u64;
-    let mut buf = vec![0u8; len];
-    for byte in buf.iter_mut() {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        *byte = (seed >> 32) as u8;
+}
+
+/// Default fallback items (used when no context-specific handler matches).
+fn default_fallback_items(
+    db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
+) -> (Vec<CompletionItem>, OfferUuid) {
+    let instances = crate::db::all_hub_instances(db, ws);
+    let items = instances
+        .into_iter()
+        .map(|i| instance_completion_item(db, ws, i))
+        .collect();
+    (items, OfferUuid::None)
+}
+
+/// Conditionally append UUID completions based on context.
+fn apply_uuid_filter(mut items: Vec<CompletionItem>, offer: OfferUuid) -> Vec<CompletionItem> {
+    match offer {
+        OfferUuid::Ref => {
+            let uuid_ref = generate_uuid_ref();
+            items.push(CompletionItem {
+                label: "uuid-ref".to_string(),
+                kind: Some(CompletionItemKind::SNIPPET),
+                detail: Some("Insert a valid HubGS ref UUID (prefixed, no hyphens)".to_string()),
+                insert_text: Some(uuid_ref),
+                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+                ..Default::default()
+            });
+        }
+        OfferUuid::V4 => {
+            let uuid_str = generate_uuid_v4();
+            items.push(CompletionItem {
+                label: "uuid-v4".to_string(),
+                kind: Some(CompletionItemKind::SNIPPET),
+                detail: Some("Insert a new standard UUID v4".to_string()),
+                insert_text: Some(uuid_str),
+                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+                ..Default::default()
+            });
+        }
+        OfferUuid::Both => {
+            let uuid_v4 = generate_uuid_v4();
+            let uuid_ref = generate_uuid_ref();
+            items.push(CompletionItem {
+                label: "uuid-v4".to_string(),
+                kind: Some(CompletionItemKind::SNIPPET),
+                detail: Some("Insert a new standard UUID v4".to_string()),
+                insert_text: Some(uuid_v4),
+                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+                ..Default::default()
+            });
+            items.push(CompletionItem {
+                label: "uuid-ref".to_string(),
+                kind: Some(CompletionItemKind::SNIPPET),
+                detail: Some("Insert a valid HubGS ref UUID (prefixed, no hyphens)".to_string()),
+                insert_text: Some(uuid_ref),
+                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
+                ..Default::default()
+            });
+        }
+        OfferUuid::None => {}
     }
-    buf
+    items
 }
 
-fn generate_uuid_v4() -> String {
-    let mut bytes = get_pseudorandom_bytes(16);
-    // Set version to 4
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    // Set variant to RFC 4122
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5],
-        bytes[6], bytes[7],
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
-    )
-}
-
-fn generate_uuid_ref() -> String {
-    let mut bytes = get_pseudorandom_bytes(16);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = format!(
-        "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5], bytes[6], bytes[7],
-        bytes[8], bytes[9], bytes[10], bytes[11],
-        bytes[12], bytes[13], bytes[14], bytes[15]
-    );
-    format!("_{}", hex)
-}
-
+/// Handle completion requests for TWXML files.
 fn handle_twxml_completion(
     db: &dyn crate::db::Db,
     ws: crate::db::Workspace,
     content: &str,
     position: Position,
-) -> Result<Option<CompletionResponse>> {
+) -> Option<CompletionResult> {
     let ctx = crate::parser::get_twxml_completion_context(content, position);
 
     match ctx {
-        crate::parser::TwxmlCompletionContext::HubrefId => {
-            let instances = crate::db::all_hub_instances(db, ws);
-            let items: Vec<CompletionItem> = instances
-                .into_iter()
-                .map(|i| {
-                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db, ws, i) {
-                        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
-                    } else {
-                        format!("Hub Instance ({})", i.type_name(db))
-                    };
-                    CompletionItem {
-                        label: i.name(db),
-                        kind: Some(CompletionItemKind::REFERENCE),
-                        detail: Some(detail),
-                        ..Default::default()
-                    }
-                })
-                .collect();
-            Ok(Some(CompletionResponse::Array(items)))
-        }
+        crate::parser::TwxmlCompletionContext::HubrefId => Some(CompletionResult {
+            response: CompletionResponse::Array(complete_hubref_id_instances(db, ws)),
+            offer_uuid: OfferUuid::Ref,
+        }),
         crate::parser::TwxmlCompletionContext::HubrefField { id_val } => {
-            complete_hub_fields(db, ws, &id_val)
+            complete_hub_fields(db, ws, &id_val).map(|items| CompletionResult {
+                response: CompletionResponse::Array(items),
+                offer_uuid: OfferUuid::None,
+            })
         }
-        crate::parser::TwxmlCompletionContext::Tag { parent } => {
-            complete_twxml_tags(parent.as_deref())
-        }
-        crate::parser::TwxmlCompletionContext::None => Ok(None),
+        crate::parser::TwxmlCompletionContext::Tag { parent } => Some(CompletionResult {
+            response: complete_twxml_tags(parent.as_deref()),
+            offer_uuid: OfferUuid::None,
+        }),
+        crate::parser::TwxmlCompletionContext::None => None,
+    }
+}
+
+/// Complete hubref instance suggestions for TWXML.
+fn complete_hubref_id_instances(
+    db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
+) -> Vec<CompletionItem> {
+    let instances = crate::db::all_hub_instances(db, ws);
+    instances
+        .into_iter()
+        .map(|i| instance_completion_item(db, ws, i))
+        .collect()
+}
+
+/// Build a completion item for a HubGS instance.
+fn instance_completion_item(
+    db: &dyn crate::db::Db,
+    ws: crate::db::Workspace,
+    i: crate::db::HubInstance<'_>,
+) -> CompletionItem {
+    let display = crate::db::resolution::hub_instance_metadata_display(db, ws, i);
+    let detail = if let Some(disp) = display {
+        format!("Hub Instance ({}) - {}", i.type_name(db), disp)
+    } else {
+        format!("Hub Instance ({})", i.type_name(db))
+    };
+    CompletionItem {
+        label: i.name(db),
+        kind: Some(CompletionItemKind::REFERENCE),
+        detail: Some(detail),
+        ..Default::default()
     }
 }
 
 /// Suggest TWXML structural tags based on the current parent context.
-fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse>> {
-    // ponytail: full nesting rules not yet implemented — suggest all known tags.
-    // Upgrade path: build a parent->allowed_children map from validation rules.
-    let all_tags: [(&str, CompletionItemKind, &str); 38] = [
-        // Structural
-        ("document", CompletionItemKind::CLASS, "TWXML Document"),
-        ("body", CompletionItemKind::CLASS, "Body Block"),
-        ("meta", CompletionItemKind::CLASS, "Meta Tag"),
-        // Content blocks
-        ("section", CompletionItemKind::CLASS, "Section"),
-        ("heading", CompletionItemKind::CLASS, "Heading"),
-        ("paragraph", CompletionItemKind::CLASS, "Paragraph"),
-        ("aside", CompletionItemKind::CLASS, "Aside"),
-        ("blockquote", CompletionItemKind::CLASS, "Blockquote"),
-        ("codeblock", CompletionItemKind::CLASS, "Code Block"),
-        // Lists
-        ("ul", CompletionItemKind::CLASS, "Unordered List"),
-        ("ol", CompletionItemKind::CLASS, "Ordered List"),
-        ("li", CompletionItemKind::CLASS, "List Item"),
-        ("dl", CompletionItemKind::CLASS, "Definition List"),
-        ("dt", CompletionItemKind::CLASS, "Definition Term"),
-        ("dd", CompletionItemKind::CLASS, "Definition Description"),
-        // Interactive
-        ("details", CompletionItemKind::CLASS, "Details"),
-        ("summary", CompletionItemKind::CLASS, "Summary"),
-        // Tables
-        ("table", CompletionItemKind::CLASS, "Table"),
-        ("tr", CompletionItemKind::CLASS, "Table Row"),
-        ("th", CompletionItemKind::CLASS, "Table Header"),
-        ("td", CompletionItemKind::CLASS, "Table Cell"),
-        // Inline
-        ("hubref", CompletionItemKind::REFERENCE, "Hub Reference"),
-        ("link", CompletionItemKind::REFERENCE, "Link"),
-        ("image", CompletionItemKind::VALUE, "Image"),
-        ("audio", CompletionItemKind::VALUE, "Audio"),
-        ("video", CompletionItemKind::VALUE, "Video"),
-        ("code", CompletionItemKind::VALUE, "Inline Code"),
-        ("bold", CompletionItemKind::VALUE, "Bold"),
-        ("italic", CompletionItemKind::VALUE, "Italic"),
-        ("underline", CompletionItemKind::VALUE, "Underline"),
-        ("strikethrough", CompletionItemKind::VALUE, "Strikethrough"),
-        ("super", CompletionItemKind::VALUE, "Superscript"),
-        ("sub", CompletionItemKind::VALUE, "Subscript"),
-        // Special
-        ("br", CompletionItemKind::VALUE, "Line Break"),
-        ("hr", CompletionItemKind::VALUE, "Horizontal Rule"),
-        ("fr", CompletionItemKind::REFERENCE, "Footnote Reference"),
-        ("footnote", CompletionItemKind::CLASS, "Footnote"),
-        ("review", CompletionItemKind::CLASS, "Review"),
-    ];
-
-    let items: Vec<CompletionItem> = all_tags
-        .into_iter()
-        .filter(|(name, _, _)| {
-            // Don't suggest document inside nested content
+fn complete_twxml_tags(parent: Option<&str>) -> CompletionResponse {
+    // Filter out root-level tags that don't belong inside a parent.
+    let items: Vec<CompletionItem> = TWXML_TAG_INFO
+        .iter()
+        .filter(|(name, _kind, _detail)| {
             if parent.is_some() && *name == "document" {
                 return false;
             }
-            // Don't suggest body inside another body
             if parent == Some("body") && *name == "body" {
                 return false;
             }
@@ -268,20 +250,20 @@ fn complete_twxml_tags(parent: Option<&str>) -> Result<Option<CompletionResponse
         })
         .map(|(name, kind, detail)| CompletionItem {
             label: name.to_string(),
-            kind: Some(kind),
+            kind: Some(*kind),
             detail: Some(detail.to_string()),
             ..Default::default()
         })
         .collect();
 
-    Ok(Some(CompletionResponse::Array(items)))
+    CompletionResponse::Array(items)
 }
 
 fn complete_hub_fields(
     db: &dyn crate::db::Db,
     ws: crate::db::Workspace,
     id_val: &str,
-) -> Result<Option<CompletionResponse>> {
+) -> Option<Vec<CompletionItem>> {
     if let Some(instance) = crate::db::resolve_reference(db, ws, id_val.to_string()) {
         let type_name = instance.type_name(db);
         if let Some(hub_type) = crate::db::resolve_type(db, ws, instance.file(db), type_name) {
@@ -305,10 +287,10 @@ fn complete_hub_fields(
                     ..Default::default()
                 });
             }
-            return Ok(Some(CompletionResponse::Array(items)));
+            return Some(items);
         }
     }
-    Ok(None)
+    None
 }
 
 fn handle_hubgs_completion(
@@ -317,32 +299,35 @@ fn handle_hubgs_completion(
     file: crate::db::SourceFile,
     content: &str,
     position: Position,
-) -> Result<Option<CompletionResponse>> {
+) -> Option<CompletionResult> {
     if let Some(result) = try_completion_context(db, ws, file, content, position) {
-        return result;
+        return Some(result);
     }
 
     // Try field/role completion on current type at position
     if let Some(type_name) = crate::db::get_hub_type_at_position(db, file, position.into()) {
         if let Some(hub_type) = crate::db::resolve_type(db, ws, file, type_name) {
             let items = complete_fields_and_roles(db, ws, &hub_type);
-            return Ok(Some(CompletionResponse::Array(items)));
+            return Some(CompletionResult {
+                response: CompletionResponse::Array(items),
+                offer_uuid: OfferUuid::None,
+            });
         }
     }
 
     // Inside a hub definition — offer global fields
     if crate::db::is_in_hub_definition(db, file, position.into()) {
         let globals = complete_global_fields(db, ws);
-        return Ok(Some(CompletionResponse::Array(globals)));
+        return Some(CompletionResult {
+            response: CompletionResponse::Array(globals),
+            offer_uuid: OfferUuid::None,
+        });
     }
 
-    Ok(None)
+    None
 }
 
-fn complete_allows_list(
-    db: &dyn crate::db::Db,
-    ws: crate::db::Workspace,
-) -> Result<Option<CompletionResponse>> {
+fn complete_allows_list(db: &dyn crate::db::Db, ws: crate::db::Workspace) -> CompletionResponse {
     let types = crate::db::all_hub_types(db, ws);
     let items: Vec<CompletionItem> = types
         .into_iter()
@@ -353,7 +338,7 @@ fn complete_allows_list(
             ..Default::default()
         })
         .collect();
-    Ok(Some(CompletionResponse::Array(items)))
+    CompletionResponse::Array(items)
 }
 
 fn complete_role_instances(
@@ -362,7 +347,7 @@ fn complete_role_instances(
     file: crate::db::SourceFile,
     type_name: &str,
     role_name: &str,
-) -> Result<Option<CompletionResponse>> {
+) -> Vec<CompletionItem> {
     if let Some(hub_type) = crate::db::resolve_type(db, ws, file, type_name.to_string()) {
         if let Some(role) = hub_type.roles(db).iter().find(|r| r.name == role_name) {
             let instances = crate::db::all_hub_instances(db, ws);
@@ -380,7 +365,9 @@ fn complete_role_instances(
                     }
                 })
                 .map(|i| {
-                    let detail = if let Some(disp) = crate::db::resolution::hub_instance_metadata_display(db, ws, i) {
+                    let detail = if let Some(disp) =
+                        crate::db::resolution::hub_instance_metadata_display(db, ws, i)
+                    {
                         format!("Hub Instance ({}) - {}", i.type_name(db), disp)
                     } else {
                         format!("Hub Instance ({})", i.type_name(db))
@@ -393,10 +380,10 @@ fn complete_role_instances(
                     }
                 })
                 .collect();
-            return Ok(Some(CompletionResponse::Array(items)));
+            return items;
         }
     }
-    Ok(None)
+    Vec::new()
 }
 
 fn complete_fields_and_roles(
@@ -438,45 +425,4 @@ fn complete_global_fields(db: &dyn crate::db::Db, ws: crate::db::Workspace) -> V
             ..Default::default()
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_uuid_generation_formats() {
-        // Test standard UUID v4 format
-        let uuid_v4 = generate_uuid_v4();
-        assert_eq!(uuid_v4.len(), 36);
-        
-        let parts: Vec<&str> = uuid_v4.split('-').collect();
-        assert_eq!(parts.len(), 5);
-        assert_eq!(parts[0].len(), 8);
-        assert_eq!(parts[1].len(), 4);
-        assert_eq!(parts[2].len(), 4);
-        assert_eq!(parts[3].len(), 4);
-        assert_eq!(parts[4].len(), 12);
-        
-        // Assert version is 4 (the first character of the 3rd group must be '4')
-        assert_eq!(parts[2].chars().next(), Some('4'));
-        
-        // Assert variant is RFC 4122 (the first character of the 4th group must be '8', '9', 'a', or 'b')
-        let var_char = parts[3].chars().next().unwrap().to_ascii_lowercase();
-        assert!(vec!['8', '9', 'a', 'b'].contains(&var_char));
-
-        // Test HubGS ref UUID format
-        let uuid_ref = generate_uuid_ref();
-        assert_eq!(uuid_ref.len(), 33); // '_' prefix + 32 hex chars
-        assert!(uuid_ref.starts_with('_'));
-        
-        // Ensure only alphanumeric/underscore chars are present
-        assert!(uuid_ref.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
-
-        // Entropy check: ensure consecutive UUIDs are different
-        let uuid_v4_2 = generate_uuid_v4();
-        let uuid_ref_2 = generate_uuid_ref();
-        assert_ne!(uuid_v4, uuid_v4_2);
-        assert_ne!(uuid_ref, uuid_ref_2);
-    }
 }

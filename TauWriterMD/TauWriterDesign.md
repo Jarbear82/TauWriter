@@ -30,7 +30,7 @@ The core idea: prose lives in a custom XML document format (TWXML), while struct
 +---------------------+         
 ```
 
-The default UI layout is a split view: document editor on one side, HubGS graph visualization on the other. Editor views are switchable per tab and support split-pane mode (e.g., WYSIWYG alongside Raw TWXML).
+The default UI layout is a split view consisting of two side-by-side panes. The left pane is for Document Views (with one tab per open document, where each tab has a dropdown menu to select the mode: Raw Editor, WYSIWYG Preview, or Markdown View). The right pane is for Graph Views (with tabs for Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation).
 
 ---
 
@@ -104,18 +104,23 @@ Key points:
 - Formatting (bold, italic) wraps the reference tag — not the other way around
 - Multiple hubs can be referenced within a single paragraph or even a single phrase
 
-### Editor Views
-The document side offers four switchable views. Each tab can independently select its active view, and split-pane mode allows two views side-by-side:
+### Editor Modes
+The left pane contains open document tabs. Each tab represents an open document and has a dropdown menu to select the active mode. The Raw Editor, WYSIWYG Preview, and Markdown View share the same document buffer (the user is always editing the raw syntax, but rendered/styled differently):
 
-| View | Description |
+| Mode | Description |
 |------|-------------|
-| **WYSIWYG** | Primary editing mode — what you see is what you get, similar to a modern word processor (no page breaks; continuous scroll) |
-| **Markdown** | Alternate view that renders TWXML as Markdown for users who prefer plain-text workflows |
-| **Raw TWXML** | Shows the underlying XML with all `<hubref>` tags visible; precise and IDE-like, intended for power users |
-| **Document Tree** | Graph visualization of the document's hierarchical structure. Nodes can represent chapters, sections (by heading level), or paragraphs. Granularity is adjustable — zoom from chapter-level nodes down to paragraph-level detail |
+| **Raw Editor** | Shows the underlying XML with all `<hubref>` tags visible; precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is. |
+| **WYSIWYG Preview** | Primary reading/preview mode (continuous scroll). Renders `<include src="..." />` by inlining the referenced document contents as a flat document. |
+| **Markdown View** | Read-only view (eventually to become an editor) that renders TWXML as Markdown for users who prefer plain-text workflows. Renders includes using `![[document-name]]` syntax. |
 
-### Document Graph View Details
-The Document Tree view treats the XML hierarchy as a graph since trees are a type of graph. Powered by standard XML parsers and language servers — not HubGS tools. The default UI resembles an IDE file explorer but can toggle to full 2D graph visualization. Adjusting granularity collapses or expands nodes at different heading levels, letting writers navigate large documents spatially.
+### Graph Views
+The right pane is a tabbed area offering visual representations of document structure and structured knowledge:
+
+| Tab | Description |
+|-----|-------------|
+| **Twxml Document Graph** | Graph visualization of the document's hierarchical structure (chapters, sections, etc.). The outline structure is derived using the `outlines.scm` file from the extension. Note that the file explorer sidebar is distinct from this tree graph. |
+| **HubGs Definitions Schema** | Show Hub types and their roles as a relation graph. |
+| **HubGs Instances Relation** | Show concrete instances and their role links. |
 
 ---
 
@@ -168,8 +173,8 @@ Fields are typed property declarations. They define what scalar data a Hub can h
 
 ```hubgs
 FIELDS [
-    name: String,
-    description: String,
+    name: Text,
+    description: Text,
     hit_points: Number,
     is_active: Boolean,
     realm_association: Realm,   // Enum type reference
@@ -180,7 +185,7 @@ FIELDS [
 #### Field Types
 | Type | Example | Description |
 |------|---------|-------------|
-| `String` | `"Aragorn"` | Free-form text |
+| `Text` | `Aragorn` | Free-form text |
 | `Number` | `42`, `3.14` | Integer or floating-point |
 | `Boolean` | `true`, `false` | True/false values |
 | `Date` | `2024-01-15` | Timestamp/date values |
@@ -328,20 +333,25 @@ INSTANCES [
 ```
 
 ### Hub Metadata (Visualization)
-Hubs can include a metadata section for controlling visual appearance in the graph view. This includes properties like node labels, colors, and background styling:
+Hub visual properties (display labels and background styling) are resolved dynamically from fields annotated with the `@display` and `@background` attributes in the Hub definition.
 
+For example, given the Hub definition:
 ```hubgs
-aragorn:Person {
-    first_name = "Aragorn",
-    last_name = "Elessar",
-    resides_in = [middle_earth],
-    
-    @metadata {
-        display = "Aragorn Elessar",       // Must be stringifiable; shown as node label
-        background = "#FFD700",            // Supported: color codes, image URLs of supported types
-    }
+Character {
+    name @display,
+    theme_color @background
 }
 ```
+
+The matching instance assignments provide the visual metadata values:
+```hubgs
+aragorn:Character {
+    name = "Aragorn",
+    theme_color = "#FFD700"
+}
+```
+Here, the LSP automatically determines that the display label is `"Aragorn"` and the background color is `"#FFD700"`.
+
 
 ---
 
@@ -450,8 +460,10 @@ Powered by a custom LSP (Language Server Protocol) implementation:
 4. **Autocomplete:** When typing Hub refs (e.g., in raw view or role assignments), the LSP provides predictive suggestions based on existing Hubs and valid types.
 
 ### Bidirectional Linking
-- **Document → Graph:** Click a referenced word in prose → jump to the Hub detail panel in graph view. If the node is already within an open graph's scope, it highlights there; otherwise a new graph tab opens with that node as root.
-- **Graph → Document:** Click a Hub → see all document locations where it's referenced (computed by LSP at query time, cached while open). The displayed text in documents acts like a hyperlink — it references the Hub but does not modify its data.
+- **Document → Graph:** Click a `<hubref>` link in the WYSIWYG preview → the right Graph pane automatically switches to the HubGs Instances Relation tab, highlights the matching node, and centers/zooms the canvas on it.
+- **Graph → Document:** Click a node in the HubGs Instances Relation graph → the document editor will respond:
+  - If the document tab containing the reference is not open or stitched into an open document, open the document as a new document tab.
+  - Highlight all occurrences of that Hub ID in the gutter, and scroll and move the cursor to the nearest instance relative to the cursor's position (kind of like pressing Ctrl+F in a browser). Note: Gutter highlighting and scroll-to-nearest is planned but will be implemented later.
 
 ---
 
@@ -480,14 +492,14 @@ IMPORTS [
 DEFINITIONS [
     FIELDS [
         access_systems: Array<AccessSystem>,
-        alt_name: String,
-        description: String,
+        alt_name: Text,
+        description: Text,
         essence_groups: Array<EssenceGroup>,
         essences: Array<Essence>,
-        first_name: String,
-        full_name: String,
-        last_name: String,
-        name: String,
+        first_name: Text,
+        full_name: Text,
+        last_name: Text,
+        name: Text,
         realm_association: Realm,
         worlds: Array<World>
     ],
@@ -641,8 +653,8 @@ IMPORTS [
 
 DEFINITIONS [
     FIELDS [
-        name: String,
-        description: String,
+        name: Text,
+        description: Text,
     ],
 
     HUBS [
@@ -708,7 +720,7 @@ In this setup:
 
 | # | Question | Context |
 |---|----------|---------|
-| Q1 | **Document fragmentation details**[cite: 1] | Solved via `<include src="..." />`[cite: 1]. The compiler/LSP pipeline swaps this tag with the targeted file's `<body>` children at runtime[cite: 1]. |
+| Q1 | **Document fragmentation details**[cite: 1] | Solved via `<include src="..." />`. Flat compilation behaves per editor mode: WYSIWYG mode renders a flat document inlining children; Raw mode renders the raw `<include />` tag; Markdown mode uses `![[document-name]]` syntax. |
 | Q2 | **Collaboration architecture** | Future goal: Zed-inspired multiplayer editing and Discord-like server organization. Should the current architecture doc lay groundwork for this now (CRDTs, operational transforms, server-authoritative state), or keep it entirely aspirational? If groundwork is needed, what minimal abstractions should be in place today? |
 | Q3 | **Tauri vs. GPUI** | Both are viable desktop targets. Tauri enables web tech (e.g., Svelte) for the frontend with a Rust backend; GPUI is fully native Rust rendering. Does either choice have implications for how editor views or graph visualization should be architected? Is this decision deferred until prototype phase? |
 
@@ -721,6 +733,6 @@ In this setup:
 | **Traits (Abstract Hubs)** | Hub types that can be inherited from but not directly instantiated. Enables shared behavior patterns across unrelated hub types without requiring full inheritance chains. |
 | **Expanded Data Types** | Additional supported types beyond current set: `UUID`, structured records (`struct`), and other useful primitives. Formal type system expansion needed. |
 | **Expressive Strings / String Templates** | A template mechanism for constructing typed string values (e.g., date formatting, interpolated display names). Naming TBD — "expressive strings" is a working title. |
-| **Decorators Reference Section** | A dedicated documentation section enumerating all decorators (`@computed()`, `@default()`, `@metadata`, and any future additions) with formal syntax, semantics, and examples. |
+| **Decorators Reference Section** | A dedicated documentation section enumerating all decorators and attributes (`@computed()`, `@default()`, `@display`, `@background`, and any future additions) with formal syntax, semantics, and examples. |
 | **Schema Graph vs. Instance Graph** | Potential distinction between a "schema graph" (showing type relationships and inheritance) and an "instance graph" (showing concrete data). May partially reintroduce schema-level module concepts. Needs evaluation. |
 | **Enums as inline field types?** | Should Enums remain as top-level definitions in DEFINITIONS, or could they be defined inline as field types? E.g., `status: Enum { ACTIVE, INACTIVE }`. Trade-off between convenience and cross-hub type sharing. |

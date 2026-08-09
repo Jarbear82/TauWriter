@@ -1,6 +1,36 @@
 use super::resolution::*;
 use super::types::*;
 
+/// Errors that can occur during @computed expression evaluation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EvalError {
+    FieldNotFound { field: String },
+    UnresolvedHub(String),
+    TypeMismatch { expected: String, actual: String },
+    ParseError(String),
+}
+
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalError::FieldNotFound { field } => {
+                write!(f, "Field '{}' not found on current instance", field)
+            }
+            EvalError::UnresolvedHub(name) => {
+                write!(f, "Cannot resolve hub reference '{}'", name)
+            }
+            EvalError::TypeMismatch { expected, actual } => {
+                write!(f, "Expected type {}, got {}", expected, actual)
+            }
+            EvalError::ParseError(msg) => {
+                write!(f, "Expression parse error: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for EvalError {}
+
 /// Minimal expression AST for @computed formulas.
 /// ponytail: Hand-rolled tokenizer/parser instead of pulling in nom/pom.
 /// The expression grammar is simple enough that a recursive descent parser is fewer lines than any framework's boilerplate.
@@ -207,7 +237,9 @@ impl Parser {
 
     fn parse_arrow(&mut self) -> Option<Expr> {
         if self.pos + 1 < self.tokens.len() {
-            if let (Tok::Ident(param), Tok::Op(ref op)) = (&self.tokens[self.pos], &self.tokens[self.pos + 1]) {
+            if let (Tok::Ident(param), Tok::Op(ref op)) =
+                (&self.tokens[self.pos], &self.tokens[self.pos + 1])
+            {
                 if op == "=>" {
                     let param = param.clone();
                     self.pos += 2; // consume param and =>
@@ -355,7 +387,7 @@ pub fn evaluate_ast(
     workspace: Workspace,
     instance: HubInstance<'_>,
     expr: &Expr,
-) -> Option<HubValue> {
+) -> Result<HubValue, EvalError> {
     evaluate_ast_impl(db, workspace, instance, expr, None)
 }
 
@@ -365,19 +397,24 @@ fn evaluate_ast_impl(
     instance: HubInstance<'_>,
     expr: &Expr,
     lambda_ctx: Option<(&str, &HubValue)>,
-) -> Option<HubValue> {
+) -> Result<HubValue, EvalError> {
     match expr {
-        Expr::Literal(ExprValue::Number(n)) => Some(HubValue::Number(format!("{}", n))),
-        Expr::Literal(ExprValue::String(s)) => Some(HubValue::String(s.clone())),
-        Expr::Literal(ExprValue::Boolean(b)) => Some(HubValue::Boolean(*b)),
+        Expr::Literal(ExprValue::Number(n)) => Ok(HubValue::Number(RawF64::from_f64(*n))),
+        Expr::Literal(ExprValue::String(s)) => Ok(HubValue::Text(s.clone())),
+        Expr::Literal(ExprValue::Boolean(b)) => Ok(HubValue::Boolean(*b)),
 
         Expr::Ident(name) => {
             if let Some((param_name, param_val)) = lambda_ctx {
                 if name == param_name {
-                    return Some(param_val.clone());
+                    return Ok(param_val.clone());
                 }
             }
-            resolve_field_or_this(db, workspace, instance, name)
+            match resolve_field_or_this(db, workspace, instance, name)? {
+                Some(val) => Ok(val),
+                None => Err(EvalError::FieldNotFound {
+                    field: name.to_string(),
+                }),
+            }
         }
 
         Expr::Binary { op, left, right } => {
@@ -389,58 +426,91 @@ fn evaluate_ast_impl(
         Expr::Unary { op, operand } => {
             let oval = evaluate_ast_impl(db, workspace, instance, operand, lambda_ctx)?;
             apply_unary(op, &oval)
+                .ok_or_else(|| EvalError::ParseError(format!("Invalid unary operation: {}", op)))
         }
 
-        Expr::Group(inner) => evaluate_ast_impl(db, workspace, instance, inner, lambda_ctx),
+        Expr::Group(inner) => {
+            let inner_val = evaluate_ast_impl(db, workspace, instance, inner, lambda_ctx)?;
+            Ok(inner_val)
+        }
 
         Expr::DotAccess { target, member } => {
             if let Expr::Ident(ref id) = **target {
                 if id == "this" {
-                    return resolve_this_member(db, workspace, instance, member);
+                    return resolve_this_member(db, workspace, instance, member).map(|opt| {
+                        opt.ok_or_else(|| EvalError::FieldNotFound {
+                            field: member.to_string(),
+                        })
+                    })?;
                 }
                 if let Some((param_name, param_val)) = lambda_ctx {
                     if id == param_name {
-                        return resolve_dot_member(db, workspace, instance, param_val, member);
+                        return resolve_dot_member(db, workspace, instance, param_val, member)
+                            .map(|opt| {
+                                opt.ok_or_else(|| EvalError::FieldNotFound {
+                                    field: format!("{}", param_name),
+                                })
+                            })?;
                     }
                 }
             }
             let target_val = evaluate_ast_impl(db, workspace, instance, target, lambda_ctx)?;
-            resolve_dot_member(db, workspace, instance, &target_val, member)
+            match resolve_dot_member(db, workspace, instance, &target_val, member)? {
+                Some(val) => Ok(val),
+                None => Err(EvalError::FieldNotFound {
+                    field: member.to_string(),
+                }),
+            }
         }
 
         Expr::Call { target, args } => {
-            if let Expr::DotAccess { target: ref sub_target, ref member } = **target {
-                let target_val = evaluate_ast_impl(db, workspace, instance, sub_target, lambda_ctx)?;
+            if let Expr::DotAccess {
+                target: ref sub_target,
+                ref member,
+            } = **target
+            {
+                let target_val =
+                    evaluate_ast_impl(db, workspace, instance, sub_target, lambda_ctx)?;
                 match member.as_str() {
                     "len" => {
                         if let HubValue::Array(vals) = target_val {
-                            return Some(HubValue::Number(format!("{}", vals.len())));
+                            return Ok(HubValue::Number(RawF64::from_f64(vals.len() as f64)));
                         }
                     }
                     "map" => {
                         if let HubValue::Array(vals) = target_val {
-                            if let Some(Expr::Arrow { ref param, ref body }) = args.first() {
+                            if let Some(Expr::Arrow {
+                                ref param,
+                                ref body,
+                            }) = args.first()
+                            {
                                 let mut mapped_vals = Vec::new();
                                 for val in vals {
-                                    if let Some(res) = evaluate_lambda(db, workspace, instance, body, param, &val) {
-                                        mapped_vals.push(res);
+                                    match evaluate_lambda(
+                                        db, workspace, instance, body, param, &val,
+                                    ) {
+                                        Ok(res) => mapped_vals.push(res),
+                                        Err(e) => return Err(e),
                                     }
                                 }
-                                return Some(HubValue::Array(mapped_vals));
+                                return Ok(HubValue::Array(mapped_vals));
                             }
                         }
                     }
                     "join" => {
                         if let HubValue::Array(vals) = target_val {
                             if let Some(arg_expr) = args.first() {
-                                if let Some(HubValue::String(delim)) = evaluate_ast_impl(db, workspace, instance, arg_expr, lambda_ctx) {
+                                let delim_result = evaluate_ast_impl(
+                                    db, workspace, instance, arg_expr, lambda_ctx,
+                                )?;
+                                if let HubValue::Text(delim) = delim_result {
                                     let mut string_parts = Vec::new();
                                     for val in vals {
-                                        if let Some(s) = hub_value_to_string(&val) {
+                                        if let Ok(s) = String::try_from(&val) {
                                             string_parts.push(s);
                                         }
                                     }
-                                    return Some(HubValue::String(string_parts.join(&delim)));
+                                    return Ok(HubValue::Text(string_parts.join(&delim)));
                                 }
                             }
                         }
@@ -448,10 +518,14 @@ fn evaluate_ast_impl(
                     _ => {}
                 }
             }
-            None
+            Err(EvalError::ParseError("Unknown call expression".to_string()))
         }
 
-        Expr::Arrow { .. } => None,
+        Expr::Arrow { .. } => {
+            return Err(EvalError::ParseError(
+                "Arrow expressions cannot be evaluated directly".to_string(),
+            ));
+        }
     }
 }
 
@@ -462,7 +536,7 @@ fn evaluate_lambda(
     body: &Expr,
     param: &str,
     val: &HubValue,
-) -> Option<HubValue> {
+) -> Result<HubValue, EvalError> {
     evaluate_ast_impl(db, workspace, instance, body, Some((param, val)))
 }
 
@@ -472,13 +546,13 @@ fn resolve_this_member(
     workspace: Workspace,
     instance: HubInstance<'_>,
     member: &str,
-) -> Option<HubValue> {
+) -> Result<Option<HubValue>, EvalError> {
     // Try as a field first
-    if let Some(val) = compute_field_value(db, workspace, instance, member.to_string()) {
-        return Some(val);
+    if let Ok(Some(val)) = compute_field_value(db, workspace, instance, member.to_string()) {
+        return Ok(Some(val));
     }
     // Try as a role -> returns array of linked instance identifiers
-    resolve_role_targets(db, workspace, instance, member)
+    Ok(resolve_role_targets(db, workspace, instance, member))
 }
 
 /// Resolve a bare identifier: "this" returns the current instance context,
@@ -488,9 +562,9 @@ fn resolve_field_or_this(
     workspace: Workspace,
     instance: HubInstance<'_>,
     name: &str,
-) -> Option<HubValue> {
+) -> Result<Option<HubValue>, EvalError> {
     if name == "this" {
-        return Some(HubValue::Identifier(name.to_string()));
+        return Ok(Some(HubValue::Identifier(name.to_string())));
     }
     compute_field_value(db, workspace, instance, name.to_string())
 }
@@ -506,37 +580,38 @@ fn resolve_dot_member(
     _self_inst: HubInstance<'_>,
     target_val: &HubValue,
     member: &str,
-) -> Option<HubValue> {
+) -> Result<Option<HubValue>, EvalError> {
     match target_val {
         HubValue::Identifier(id) => {
             if id == "this" {
-                return None;
+                return Ok(None);
             }
-            let inst = resolve_reference(db, workspace, id.clone())?;
-            if let Some(val) = compute_field_value(db, workspace, inst, member.to_string()) {
-                return Some(val);
+            let inst = resolve_reference(db, workspace, id.clone())
+                .ok_or_else(|| EvalError::UnresolvedHub(id.clone()))?;
+            if let Some(val) = compute_field_value(db, workspace, inst, member.to_string())? {
+                return Ok(Some(val));
             }
-            resolve_role_targets(db, workspace, inst, member)
+            Ok(resolve_role_targets(db, workspace, inst, member))
         }
 
         HubValue::Array(vals) => {
             // .length on an array
             if member == "length" {
-                return Some(HubValue::Number(format!("{}", vals.len())));
+                return Ok(Some(HubValue::Number(RawF64::from_f64(vals.len() as f64))));
             }
             // For single-target roles (e.g. this.owner.name), resolve field on the first element
             if let Some(HubValue::Identifier(ref id)) = vals.first() {
                 if let Some(inst) = resolve_reference(db, workspace, id.clone()) {
-                    if let Some(val) = compute_field_value(db, workspace, inst, member.to_string())
+                    if let Some(val) = compute_field_value(db, workspace, inst, member.to_string())?
                     {
-                        return Some(val);
+                        return Ok(Some(val));
                     }
                 }
             }
-            None
+            Ok(None)
         }
 
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -558,7 +633,7 @@ fn resolve_role_targets(
     let assignments = instance.assignments(db);
     let assignment = assignments.iter().find(|a| a.name == role_name)?;
 
-    let refs = get_refs_from_value(&assignment.value);
+    let refs = assignment.value.extract_refs();
 
     let mut targets = Vec::new();
     for ref_name in refs {
@@ -591,60 +666,71 @@ fn resolve_role_targets(
     Some(HubValue::Array(targets))
 }
 
-/// Extract instance reference names from a HubValue (used for role assignments).
-fn get_refs_from_value(value: &HubValue) -> Vec<String> {
-    match value {
-        HubValue::Identifier(s) => vec![s.clone()],
-        HubValue::Array(vals) => vals.iter().flat_map(get_refs_from_value).collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// Apply a binary operator to two HubValues.
-fn apply_binary(op: &str, left: &HubValue, right: &HubValue) -> Option<HubValue> {
+fn apply_binary(op: &str, left: &HubValue, right: &HubValue) -> Result<HubValue, EvalError> {
     match op {
         "+" => {
-            if matches!(left, HubValue::String(_)) || matches!(right, HubValue::String(_)) {
-                let ls = hub_value_to_string(left)?;
-                let rs = hub_value_to_string(right)?;
-                return Some(HubValue::String(format!("{}{}", ls, rs)));
+            if matches!(left, HubValue::Text(_)) || matches!(right, HubValue::Text(_)) {
+                let ls: String = left
+                    .try_into()
+                    .map_err(|_| EvalError::ParseError("Expected string".to_string()))?;
+                let rs: String = right
+                    .try_into()
+                    .map_err(|_| EvalError::ParseError("Expected string".to_string()))?;
+                return Ok(HubValue::Text(format!("{}{}", ls, rs)));
             }
-            let ln = hub_value_to_number(left)?;
-            let rn = hub_value_to_number(right)?;
-            Some(HubValue::Number(format!("{}", ln + rn)))
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            Ok(HubValue::Number(RawF64::from_f64(ln + rn)))
         }
         "-" => {
-            let ln = hub_value_to_number(left)?;
-            let rn = hub_value_to_number(right)?;
-            Some(HubValue::Number(format!("{}", ln - rn)))
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            Ok(HubValue::Number(RawF64::from_f64(ln - rn)))
         }
         "*" => {
-            let ln = hub_value_to_number(left)?;
-            let rn = hub_value_to_number(right)?;
-            Some(HubValue::Number(format!("{}", ln * rn)))
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            Ok(HubValue::Number(RawF64::from_f64(ln * rn)))
         }
         "/" => {
-            let ln = hub_value_to_number(left)?;
-            let rn = hub_value_to_number(right)?;
+            let ln: f64 = left
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
+            let rn: f64 = right
+                .try_into()
+                .map_err(|_| EvalError::ParseError("Expected number".to_string()))?;
             if rn == 0.0 {
-                return None;
+                return Err(EvalError::ParseError("Division by zero".to_string()));
             }
-            Some(HubValue::Number(format!("{}", ln / rn)))
+            Ok(HubValue::Number(RawF64::from_f64(ln / rn)))
         }
-        _ => None,
+        _ => Err(EvalError::ParseError(format!("Unknown operator: {}", op))),
     }
 }
 
 fn apply_unary(op: &str, val: &HubValue) -> Option<HubValue> {
     match op {
         "-" => {
-            let n = hub_value_to_number(val)?;
-            Some(HubValue::Number(format!("{}", -n)))
+            let n = f64::try_from(val).ok()?;
+            Some(HubValue::Number(RawF64::from_f64(-n)))
         }
         "!" => match val {
             HubValue::Boolean(b) => Some(HubValue::Boolean(!b)),
             HubValue::Number(_) => {
-                let n = hub_value_to_number(val)?;
+                let n = f64::try_from(val).ok()?;
                 Some(HubValue::Boolean(n == 0.0))
             }
             _ => None,
@@ -653,46 +739,35 @@ fn apply_unary(op: &str, val: &HubValue) -> Option<HubValue> {
     }
 }
 
-fn hub_value_to_number(v: &HubValue) -> Option<f64> {
-    match v {
-        HubValue::Number(s) => s.parse::<f64>().ok(),
-        _ => None,
-    }
-}
-
-fn hub_value_to_string(v: &HubValue) -> Option<String> {
-    Some(match v {
-        HubValue::String(s) => s.clone(),
-        HubValue::Number(n) => n.clone(),
-        HubValue::Boolean(b) => b.to_string(),
-        HubValue::Identifier(i) => i.clone(),
-        _ => return None,
-    })
-}
-
 /// Check if a field definition has @default and the instance did NOT assign it.
-/// Returns Some(true) if default should be applied, Some(false) if overridden, None if no default.
+/// Returns Ok(true) if default should be applied, Ok(false) if overridden, Err if type not found.
 pub fn needs_default(
     db: &dyn Db,
     workspace: Workspace,
     instance: HubInstance<'_>,
     field_name: &str,
-) -> Option<bool> {
-    let type_name = instance.type_name(db);
+) -> Result<bool, EvalError> {
+    let type_name = instance.type_name(db).to_string();
     let file = instance.file(db);
-    let hub_type = resolve_type(db, workspace, file, type_name)?;
+    let hub_type = resolve_type(db, workspace, file, type_name.clone())
+        .ok_or_else(|| EvalError::UnresolvedHub(type_name))?;
 
     let fields = hub_type.fields(db);
-    let field_def = fields.iter().find(|f| f.name == field_name)?;
+    let field_def = fields
+        .iter()
+        .find(|f| f.name == field_name)
+        .ok_or_else(|| EvalError::FieldNotFound {
+            field: field_name.to_string(),
+        })?;
     let has_default = field_def.decorator.as_deref() == Some("@default");
     if !has_default {
-        return None;
+        return Ok(false);
     }
     let is_assigned = instance
         .assignments(db)
         .iter()
         .any(|a| a.name == field_name);
-    Some(!is_assigned)
+    Ok(!is_assigned)
 }
 
 /// Get the default expression for a field if it has one and wasn't overridden by the instance.
@@ -701,19 +776,28 @@ pub fn get_default_value(
     workspace: Workspace,
     instance: HubInstance<'_>,
     field_name: &str,
-) -> Option<HubValue> {
+) -> Result<Option<HubValue>, EvalError> {
     let needs = needs_default(db, workspace, instance, field_name)?;
     if !needs {
-        return None;
+        return Ok(None);
     }
 
-    let type_name = instance.type_name(db);
+    let type_name = instance.type_name(db).to_string();
     let file = instance.file(db);
-    let hub_type = resolve_type(db, workspace, file, type_name)?;
+    let hub_type = resolve_type(db, workspace, file, type_name.clone())
+        .ok_or_else(|| EvalError::UnresolvedHub(type_name))?;
     let fields = hub_type.fields(db);
-    let field_def = fields.iter().find(|f| f.name == field_name)?;
-    let expr_str = field_def.expression.as_ref()?;
+    let field_def = fields
+        .iter()
+        .find(|f| f.name == field_name)
+        .ok_or_else(|| EvalError::FieldNotFound {
+            field: field_name.to_string(),
+        })?;
+    let expr_str = field_def.expression.as_ref().ok_or_else(|| {
+        EvalError::ParseError(format!("Field '{}' has no expression", field_name))
+    })?;
 
-    let ast = parse_expression(expr_str)?;
-    evaluate_ast(db, workspace, instance, &ast)
+    let ast = parse_expression(expr_str)
+        .ok_or_else(|| EvalError::ParseError(format!("Failed to parse '{}'", expr_str)))?;
+    evaluate_ast(db, workspace, instance, &ast).map(Some)
 }
