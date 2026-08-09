@@ -1,12 +1,11 @@
 //! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui::GraphCanvas.
 
-use gpui::{div, prelude::*, SharedString, Window};
-use graphene_core::{DataExpansionMode, NodeId, PropValue};
+use gpui::{div, prelude::*, Window};
+use graphene_core::DataExpansionMode;
 use graphene_gpui::{CanvasConfig, GraphCanvas};
-use graphene_style::Theme;
 use std::collections::HashMap;
 
-use super::data::{GraphEvent, LayoutMode};
+use super::data::LayoutMode;
 use super::state::GraphPaneView;
 
 impl Render for GraphPaneView {
@@ -35,6 +34,19 @@ impl Render for GraphPaneView {
         let sidebar_bg = theme_ui.sidebar;
         let fg_color = theme_ui.foreground;
 
+        let canvas_bg_rgb = hsla_to_graphene_rgb(theme_ui.background);
+        let theme_fg_rgb = hsla_to_graphene_rgb(theme_ui.foreground);
+
+        let active_theme = graphene_style::Theme {
+            name: "GPUI Dynamic Theme",
+            bg: hsla_to_graphene_color(theme_ui.background),
+            text: hsla_to_graphene_color(theme_ui.foreground),
+            text_dim: hsla_to_graphene_color(theme_ui.muted_foreground),
+            accent: hsla_to_graphene_color(theme_ui.primary),
+            border: hsla_to_graphene_color(theme_ui.border),
+            ..graphene_style::Theme::catppuccin_mocha()
+        };
+
         let canvas_config = CanvasConfig {
             edge_stroke_width: 2.0,
             arrow_length: 10.0,
@@ -45,13 +57,11 @@ impl Render for GraphPaneView {
                 label_contrast_mode: if self.wcag_contrast_auto {
                     graphene_style::LabelContrastMode::WcagAuto
                 } else {
-                    graphene_style::LabelContrastMode::Fixed(graphene_style::Rgb::new(
-                        200, 200, 200,
-                    ))
+                    graphene_style::LabelContrastMode::Fixed(theme_fg_rgb)
                 },
                 auto_node_colors: self.auto_node_colors,
                 auto_edge_colors: self.auto_edge_colors,
-                canvas_background: graphene_style::Rgb::new(30, 30, 46),
+                canvas_background: canvas_bg_rgb,
             },
             ..CanvasConfig::default()
         };
@@ -60,7 +70,7 @@ impl Render for GraphPaneView {
             active_view,
             &viewport,
             &self.interaction_state,
-            &Theme::catppuccin_mocha(),
+            &active_theme,
             selected_node_id,
             &HashMap::new(), // node_labels
             &HashMap::new(), // edge_labels
@@ -305,4 +315,18 @@ impl Render for GraphPaneView {
                 )
             }))
     }
+}
+
+fn hsla_to_graphene_rgb(hsla: gpui::Hsla) -> graphene_style::Rgb {
+    let rgba = hsla.to_rgb();
+    graphene_style::Rgb::new(
+        (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8,
+        (rgba.g * 255.0).round().clamp(0.0, 255.0) as u8,
+        (rgba.b * 255.0).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+fn hsla_to_graphene_color(hsla: gpui::Hsla) -> graphene_style::ColorValue {
+    let rgba = hsla.to_rgb();
+    graphene_style::ColorValue::Rgba(rgba.r, rgba.g, rgba.b, rgba.a)
 }
