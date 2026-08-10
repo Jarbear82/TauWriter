@@ -84,6 +84,7 @@ pub(crate) fn render_block(
                 _ => px(16.),
             };
             let tooltip_text = format!("Element: Heading\nLevel: {}", shifted_level);
+            let clean_heading = text.replace("\r\n", " ").replace('\n', " ");
             div()
                 .id(("heading", idx))
                 .w_full()
@@ -91,10 +92,12 @@ pub(crate) fn render_block(
                 .mb_2()
                 .font_weight(gpui::FontWeight::BOLD)
                 .text_size(size)
+                .flex()
+                .flex_wrap()
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
-                .child(text.clone())
+                .child(clean_heading)
                 .into_any_element()
         }
         Block::Paragraph {
@@ -135,24 +138,27 @@ pub(crate) fn render_block(
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
 
+            let body_runs: Vec<AnyElement> = runs
+                .iter()
+                .enumerate()
+                .map(|(run_idx, run)| {
+                    render_run(
+                        doc_blocks,
+                        hubgs_instances,
+                        footnote_map,
+                        input_state.clone(),
+                        run,
+                        idx,
+                        run_idx,
+                        &theme,
+                    )
+                })
+                .collect();
+
             CollapsibleBlock::new("Quote".to_string(), theme.border, theme.group_box)
-                .with_body(
-                    runs.iter()
-                        .enumerate()
-                        .map(|(run_idx, run)| {
-                            render_run(
-                                doc_blocks,
-                                hubgs_instances,
-                                footnote_map,
-                                input_state.clone(),
-                                run,
-                                idx,
-                                run_idx,
-                                &theme,
-                            )
-                        })
-                        .collect(),
-                )
+                .with_body(vec![
+                    div().flex().flex_wrap().w_full().children(body_runs).into_any_element()
+                ])
                 .render(start_offset, expanded_blocks.clone(), cx)
         }
         Block::Aside {
@@ -225,6 +231,11 @@ pub(crate) fn render_block(
                     .build(window, cx)
                 });
 
+            let code_lines: Vec<AnyElement> = trimmed_code
+                .lines()
+                .map(|line| div().child(line.to_string()).into_any_element())
+                .collect();
+
             // Use CollapsibleBlock for the toggle/header logic
             let collapsible_content = CollapsibleBlock::new(
                 lang_display.to_string(),
@@ -232,13 +243,14 @@ pub(crate) fn render_block(
                 *CODE_BLOCK_BG,                 // inner bg (VS Code dark style)
             )
             .with_body(vec![div()
+                .flex()
+                .flex_col()
                 .p_4()
                 .text_color(*CODE_BLOCK_TEXT_COLOR)
                 .font_family("Courier New")
                 .text_size(px(13.))
                 .overflow_x_scrollbar()
-                .overflow_x_hidden()
-                .child(trimmed_code)
+                .children(code_lines)
                 .into_any_element()]);
 
             // Wrap in outer container with border/tooltip
@@ -313,12 +325,13 @@ pub(crate) fn render_block(
         } => {
             let tooltip_text = element_tooltip("dl", id, attributes);
             let items_elements = items.iter().enumerate().map(|(item_idx, (term, runs))| {
+                let clean_term = term.replace("\r\n", " ").replace('\n', " ");
                 div()
                     .child(
                         div()
                             .font_weight(gpui::FontWeight::BOLD)
                             .mb_1()
-                            .child(term.clone()),
+                            .child(clean_term),
                     )
                     .child(div().pl_4().mb_2().flex().flex_wrap().children(
                         runs.iter().enumerate().map(|(run_idx, run)| {
@@ -354,12 +367,12 @@ pub(crate) fn render_block(
             rows,
             id: _,
             attributes: _,
-            range: _,
+            range,
         } => {
             // Build header cells — simple clones.
             let header_cells: Vec<_> = headers
                 .iter()
-                .map(|h| TableHead::new().child(h.clone()))
+                .map(|h| TableHead::new().child(h.replace("\r\n", " ").replace('\n', " ")))
                 .collect();
 
             // Arc-wrapped references for cheap per-cell closure captures.
@@ -404,12 +417,163 @@ pub(crate) fn render_block(
                 table_body = table_body.child(table_row);
             }
 
-            Table::new()
+            let table_range = range.clone();
+            let headers_clone = headers.to_vec();
+            let rows_clone = rows.to_vec();
+
+            let input_state_row_add = input_state.clone();
+            let headers_row_add = headers_clone.clone();
+            let rows_row_add = rows_clone.clone();
+            let range_row_add = table_range.clone();
+
+            let input_state_col_add = input_state.clone();
+            let headers_col_add = headers_clone.clone();
+            let rows_col_add = rows_clone.clone();
+            let range_col_add = table_range.clone();
+
+            let input_state_row_del = input_state.clone();
+            let headers_row_del = headers_clone.clone();
+            let rows_row_del = rows_clone.clone();
+            let range_row_del = table_range.clone();
+
+            let input_state_col_del = input_state.clone();
+            let headers_col_del = headers_clone.clone();
+            let rows_col_del = rows_clone.clone();
+            let range_col_del = table_range.clone();
+
+            let toolbar = div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .mb_2()
+                .text_xs()
+                .child(
+                    div()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(3.))
+                        .bg(theme.accent)
+                        .text_color(theme.accent_foreground)
+                        .cursor_pointer()
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                            if let Some(ref r) = range_row_add {
+                                let h = headers_row_add.clone();
+                                let mut rw = rows_row_add.clone();
+                                let target_len = rw.len();
+                                crate::parser::table_add_row(h.len(), &mut rw, target_len);
+                                let new_twxml = crate::parser::table_to_twxml(&h, &rw);
+                                input_state_row_add.update(cx, |state, cx| {
+                                    let full_text = state.value().to_string();
+                                    if r.end <= full_text.len() {
+                                        let mut updated = full_text;
+                                        updated.replace_range(r.clone(), &new_twxml);
+                                        state.set_value(updated, window, cx);
+                                        cx.emit(gpui_component::input::InputEvent::Change);
+                                    }
+                                });
+                            }
+                        })
+                        .child("+ Row"),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(3.))
+                        .bg(theme.accent)
+                        .text_color(theme.accent_foreground)
+                        .cursor_pointer()
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                            if let Some(ref r) = range_col_add {
+                                let mut h = headers_col_add.clone();
+                                let mut rw = rows_col_add.clone();
+                                let target_len = h.len();
+                                crate::parser::table_add_column(&mut h, &mut rw, target_len);
+                                let new_twxml = crate::parser::table_to_twxml(&h, &rw);
+                                input_state_col_add.update(cx, |state, cx| {
+                                    let full_text = state.value().to_string();
+                                    if r.end <= full_text.len() {
+                                        let mut updated = full_text;
+                                        updated.replace_range(r.clone(), &new_twxml);
+                                        state.set_value(updated, window, cx);
+                                        cx.emit(gpui_component::input::InputEvent::Change);
+                                    }
+                                });
+                            }
+                        })
+                        .child("+ Col"),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(3.))
+                        .bg(theme.muted_foreground.opacity(0.3))
+                        .cursor_pointer()
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                            if let Some(ref r) = range_row_del {
+                                let h = headers_row_del.clone();
+                                let mut rw = rows_row_del.clone();
+                                if rw.len() > 1 {
+                                    let last_idx = rw.len() - 1;
+                                    crate::parser::table_delete_row(&mut rw, last_idx);
+                                    let new_twxml = crate::parser::table_to_twxml(&h, &rw);
+                                    input_state_row_del.update(cx, |state, cx| {
+                                        let full_text = state.value().to_string();
+                                        if r.end <= full_text.len() {
+                                            let mut updated = full_text;
+                                            updated.replace_range(r.clone(), &new_twxml);
+                                            state.set_value(updated, window, cx);
+                                            cx.emit(gpui_component::input::InputEvent::Change);
+                                        }
+                                    });
+                                }
+                            }
+                        })
+                        .child("- Row"),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_0p5()
+                        .rounded(px(3.))
+                        .bg(theme.muted_foreground.opacity(0.3))
+                        .cursor_pointer()
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                            if let Some(ref r) = range_col_del {
+                                let mut h = headers_col_del.clone();
+                                let mut rw = rows_col_del.clone();
+                                if h.len() > 1 {
+                                    let last_idx = h.len() - 1;
+                                    crate::parser::table_delete_column(&mut h, &mut rw, last_idx);
+                                    let new_twxml = crate::parser::table_to_twxml(&h, &rw);
+                                    input_state_col_del.update(cx, |state, cx| {
+                                        let full_text = state.value().to_string();
+                                        if r.end <= full_text.len() {
+                                            let mut updated = full_text;
+                                            updated.replace_range(r.clone(), &new_twxml);
+                                            state.set_value(updated, window, cx);
+                                            cx.emit(gpui_component::input::InputEvent::Change);
+                                        }
+                                    });
+                                }
+                            }
+                        })
+                        .child("- Col"),
+                );
+
+            div()
+                .id(("table_wrapper", idx))
                 .w_full()
-                .overflow_x_hidden()
                 .mb_4()
-                .child(TableHeader::new().children(header_cells))
-                .child(table_body)
+                .child(toolbar)
+                .child(
+                    Table::new()
+                        .w_full()
+                        .overflow_x_hidden()
+                        .child(TableHeader::new().children(header_cells))
+                        .child(table_body),
+                )
                 .into_any_element()
         }
         Block::HorizontalRule {
@@ -557,6 +721,7 @@ pub(crate) fn render_block(
                 .w_full()
                 .mb_2()
                 .flex()
+                .flex_wrap()
                 .gap_2()
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
@@ -668,10 +833,11 @@ pub(crate) fn render_run(
     run_idx: usize,
     theme: &gpui_component::Theme,
 ) -> AnyElement {
-    if run.text == "\n" {
+    let clean_text = run.text.replace("\r\n", " ").replace('\n', " ");
+    if clean_text.trim().is_empty() && run.text.contains('\n') {
         return div().w_full().into_any_element();
     }
-    let mut text_el = div().child(run.text.clone());
+    let mut text_el = div().child(clean_text);
 
     if run.bold {
         text_el = text_el.font_weight(gpui::FontWeight::BOLD);
@@ -706,9 +872,9 @@ pub(crate) fn render_run(
         // O(1) HashMap lookup instead of Entity::read on every render frame
         let mut tooltip_text = format!("HubRef: {}", hub_id);
         if let Some((type_name, name, links)) = hubgs_instances.get(hub_id.as_ref()) {
-            tooltip_text = format!("Hub: {}\nname: \"{}\"", type_name, name);
+            tooltip_text = format!("Hub: {} | name: \"{}\"", type_name, name);
             for link in links {
-                tooltip_text.push_str(&format!("\n- {} -> {}", link.relation, link.target));
+                tooltip_text.push_str(&format!(" | {} -> {}", link.relation, link.target));
             }
         }
         run_tooltip = tooltip_text;
@@ -718,8 +884,6 @@ pub(crate) fn render_run(
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
-                // HubRef click — the workspace.selected_hub_id is set by handle_node_click
-                // which is already wired up via graph_pane event subscription in main.rs.
                 log::debug!("[host] User clicked on Hub Reference ID: {}", hub_id);
             });
     } else if let Some(ref fn_id) = run.footnote_ref {
@@ -730,7 +894,7 @@ pub(crate) fn render_run(
             .get(fn_id.as_ref())
             .cloned()
             .unwrap_or_else(|| -> SharedString { "Footnote definition not found".into() });
-        run_tooltip = format!("Footnote Ref: {}\n{}", fn_id, footnote_content);
+        run_tooltip = format!("Footnote Ref: {} | {}", fn_id, footnote_content.replace("\r\n", " ").replace('\n', " "));
 
         text_el = text_el
             .text_color(theme.accent)
@@ -747,41 +911,62 @@ pub(crate) fn render_run(
         if link.starts_with('#') {
             let target_id = &link[1..];
             if let Some(target_type) = find_block_type_by_id(doc_blocks, target_id) {
-                tooltip_text = format!("Jump to element: {}\nType: {}", target_id, target_type);
+                tooltip_text = format!("Jump to element: {} | Type: {}", target_id, target_type);
             }
         }
         run_tooltip = tooltip_text;
 
-        // Clone doc_blocks for closure capture (avoids lifetime escape)
-        let blocks_for_closure = doc_blocks.to_vec();
+        let input_state_link = input_state.clone();
+        let doc_blocks_vec = doc_blocks.to_vec();
+
         text_el = text_el
             .text_color(theme.accent)
             .underline()
+            .cursor_pointer()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                log::debug!("[host] User clicked internal/external link: {}", link);
                 if link.starts_with("http") {
                     cx.open_url(&link);
                 } else if link.starts_with('#') {
-                    let target_id = link[1..].to_string();
-                    if let Some(target_range) =
-                        find_block_range_by_id(&blocks_for_closure, &target_id)
-                    {
-                        let value = input_state.read(cx).value().to_string();
-                        if let Some(pos) = offset_to_position(&value, target_range.start) {
-                            input_state.update(cx, |state, cx| {
+                    let target_id = &link[1..];
+                    if let Some(target_range) = find_block_range_by_id(&doc_blocks_vec, target_id) {
+                        input_state_link.update(cx, |state, cx| {
+                            let text = state.value().to_string();
+                            if let Some(pos) = offset_to_position(&text, target_range.start) {
                                 state.set_cursor_position(pos, window, cx);
-                            });
-                        }
+                            }
+                        });
                     }
                 }
             });
     }
 
-    // Attach run tooltip
+    let clean_run_tooltip = run_tooltip.replace("\r\n", " | ").replace('\n', " | ");
+
+    let run_range_fmt = run.range.clone();
+    let run_text_fmt = run.text.to_string();
+    let input_state_fmt = input_state.clone();
+
+    // Attach run tooltip and context menu action
     text_el
         .id(("run", block_idx * 1000 + run_idx))
         .tooltip(move |window, cx| {
-            gpui_component::tooltip::Tooltip::new(run_tooltip.clone()).build(window, cx)
+            gpui_component::tooltip::Tooltip::new(clean_run_tooltip.clone()).build(window, cx)
+        })
+        .on_mouse_down(gpui::MouseButton::Right, move |_, window, cx| {
+            if let Some(ref r) = run_range_fmt {
+                let formatted = crate::parser::wrap_text_in_inline_format(&run_text_fmt, "bold", None);
+                input_state_fmt.update(cx, |state, cx| {
+                    let full_text = state.value().to_string();
+                    if r.end <= full_text.len() {
+                        let mut updated = full_text;
+                        updated.replace_range(r.clone(), &formatted);
+                        state.set_value(updated, window, cx);
+                        cx.emit(gpui_component::input::InputEvent::Change);
+                    }
+                });
+            }
         })
         .into_any_element()
 }
@@ -793,9 +978,9 @@ pub(crate) fn element_tooltip(
 ) -> String {
     let mut attrs_str = String::new();
     for (k, v) in attributes {
-        attrs_str.push_str(&format!("\n{}: \"{}\"", k, v));
+        attrs_str.push_str(&format!(" | {}: \"{}\"", k, v));
     }
-    format!("Element: {}\nid: {:?}{}", tag_name, id, attrs_str)
+    format!("Element: {} | id: {:?}{}", tag_name, id, attrs_str)
 }
 
 pub(crate) fn trim_codeblock_indentation(code: &str) -> String {

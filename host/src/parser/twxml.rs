@@ -230,6 +230,29 @@ pub enum Block {
     },
 }
 
+impl Block {
+    pub fn range(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Block::Heading { range, .. }
+            | Block::Paragraph { range, .. }
+            | Block::BlockQuote { range, .. }
+            | Block::Aside { range, .. }
+            | Block::CodeBlock { range, .. }
+            | Block::List { range, .. }
+            | Block::DescriptionList { range, .. }
+            | Block::Table { range, .. }
+            | Block::HorizontalRule { range, .. }
+            | Block::Image { range, .. }
+            | Block::Audio { range, .. }
+            | Block::Video { range, .. }
+            | Block::Details { range, .. }
+            | Block::Footnote { range, .. }
+            | Block::Review { range, .. }
+            | Block::Include { range, .. } => range.clone(),
+        }
+    }
+}
+
 fn convert_attrs(attrs: Vec<(String, String)>) -> Vec<(SharedString, SharedString)> {
     attrs
         .into_iter()
@@ -521,3 +544,243 @@ pub fn blocks_to_markdown(blocks: &[Block]) -> String {
     let raw_blocks: Vec<tauwriter_twxml::Block> = blocks.iter().map(tauwriter_twxml::Block::from).collect();
     tauwriter_twxml::blocks_to_markdown(&raw_blocks)
 }
+
+/// Generate default TWXML tag skeleton templates for slash menu insertion.
+pub fn generate_block_skeleton(kind: &str) -> &'static str {
+    match kind {
+        "heading" | "h1" | "h2" | "h3" => "<heading>Heading Title</heading>",
+        "section" => "<section>\n<heading>Section Title</heading>\n<paragraph>Section content</paragraph>\n</section>",
+        "code" | "codeblock" => "<codeblock language=\"rust\">\nfn main() {}\n</codeblock>",
+        "aside" => "<aside type=\"note\">\n<paragraph>Note callout</paragraph>\n</aside>",
+        "details" => "<details>\n<summary>Details title</summary>\n<paragraph>Collapsible content</paragraph>\n</details>",
+        "list" => "<ul>\n<li>List item</li>\n</ul>",
+        "table" => "<table>\n<tr><th>Header 1</th><th>Header 2</th></tr>\n<tr><td>Cell 1</td><td>Cell 2</td></tr>\n</table>",
+        "hubref" => "<paragraph><hubref id=\"new_instance\" /></paragraph>",
+        _ => "<paragraph>New paragraph</paragraph>",
+    }
+}
+
+/// Extract plain text content from a Block AST node.
+pub fn extract_plain_text_from_block(block: &Block) -> String {
+    match block {
+        Block::Heading { text, .. } => text.to_string(),
+        Block::Paragraph { runs, .. }
+        | Block::BlockQuote { runs, .. }
+        | Block::Aside { runs, .. } => runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join(""),
+        Block::CodeBlock { code, .. } => code.to_string(),
+        Block::List { items, .. } => items
+            .iter()
+            .flat_map(|it| it.runs.iter().map(|r| r.text.as_str()))
+            .collect::<Vec<_>>()
+            .join(" "),
+        Block::Details { summary, .. } => summary.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Convert an existing Block AST node to a new TWXML markup tag format.
+pub fn convert_block_to_twxml(block: &Block, target_type: &str) -> String {
+    let text = extract_plain_text_from_block(block);
+    let safe_text = if text.trim().is_empty() {
+        "Block content"
+    } else {
+        text.trim()
+    };
+
+    match target_type {
+        "heading" | "h1" | "h2" | "h3" => format!("<heading>{}</heading>", safe_text),
+        "section" => format!("<section>\n<heading>{}</heading>\n</section>", safe_text),
+        "blockquote" => format!("<blockquote>{}</blockquote>", safe_text),
+        "code" => format!("<codeblock language=\"rust\">{}</codeblock>", safe_text),
+        "list" => format!("<ul>\n<li>{}</li>\n</ul>", safe_text),
+        "aside" => format!("<aside type=\"note\">\n<paragraph>{}</paragraph>\n</aside>", safe_text),
+        _ => format!("<paragraph>{}</paragraph>", safe_text),
+    }
+}
+
+/// Reorders a block from src_range to target_range in document text markup.
+pub fn reorder_blocks_in_document(
+    doc_text: &str,
+    src_range: std::ops::Range<usize>,
+    target_range: std::ops::Range<usize>,
+) -> String {
+    if src_range == target_range || src_range.start >= doc_text.len() || target_range.start >= doc_text.len() {
+        return doc_text.to_string();
+    }
+
+    let src_text = doc_text[src_range.clone()].to_string();
+    let mut new_doc = doc_text.to_string();
+
+    if src_range.start < target_range.start {
+        // Moving downwards: remove src first, then insert at target (offset adjusted)
+        new_doc.replace_range(src_range.clone(), "");
+        let insert_pos = target_range.end.saturating_sub(src_range.len());
+        let insert_pos = insert_pos.min(new_doc.len());
+        new_doc.insert_str(insert_pos, &src_text);
+    } else {
+        // Moving upwards: insert before target_range.start, then remove src (offset adjusted)
+        let insert_pos = target_range.start;
+        new_doc.insert_str(insert_pos, &src_text);
+        let remove_start = src_range.start + src_text.len();
+        let remove_end = src_range.end + src_text.len();
+        let remove_start = remove_start.min(new_doc.len());
+        let remove_end = remove_end.min(new_doc.len());
+        new_doc.replace_range(remove_start..remove_end, "");
+    }
+
+    new_doc
+}
+
+/// Converts table headers and rows into TWXML <table> markup.
+pub fn table_to_twxml(headers: &[SharedString], rows: &[Vec<Vec<TextRun>>]) -> String {
+    let mut out = String::from("<table>\n  <headers>\n");
+    for h in headers {
+        out.push_str(&format!("    <header>{}</header>\n", h));
+    }
+    out.push_str("  </headers>\n  <rows>\n");
+    for r in rows {
+        out.push_str("    <row>\n");
+        for cell in r {
+            out.push_str("      <cell>");
+            for run in cell {
+                let text = run.text.to_string();
+                if run.bold {
+                    out.push_str(&format!("<bold>{}</bold>", text));
+                } else if run.italic {
+                    out.push_str(&format!("<italic>{}</italic>", text));
+                } else if run.code {
+                    out.push_str(&format!("<code>{}</code>", text));
+                } else if run.underline {
+                    out.push_str(&format!("<u>{}</u>", text));
+                } else {
+                    out.push_str(&text);
+                }
+            }
+            out.push_str("</cell>\n");
+        }
+        out.push_str("    </row>\n");
+    }
+    out.push_str("  </rows>\n</table>");
+    out
+}
+
+/// Adds a new empty row to a table matrix.
+pub fn table_add_row(col_count: usize, rows: &mut Vec<Vec<Vec<TextRun>>>, at_idx: usize) {
+    let new_row = vec![vec![]; col_count.max(1)];
+    let insert_pos = at_idx.min(rows.len());
+    rows.insert(insert_pos, new_row);
+}
+
+/// Deletes a row from a table matrix if more than 1 row remains.
+pub fn table_delete_row(rows: &mut Vec<Vec<Vec<TextRun>>>, at_idx: usize) {
+    if rows.len() > 1 && at_idx < rows.len() {
+        rows.remove(at_idx);
+    }
+}
+
+/// Adds a new column to a table matrix.
+pub fn table_add_column(
+    headers: &mut Vec<SharedString>,
+    rows: &mut Vec<Vec<Vec<TextRun>>>,
+    at_idx: usize,
+) {
+    let insert_pos = at_idx.min(headers.len());
+    headers.insert(insert_pos, "Header".into());
+    for row in rows.iter_mut() {
+        let row_pos = at_idx.min(row.len());
+        row.insert(row_pos, vec![]);
+    }
+}
+
+/// Deletes a column from a table matrix if more than 1 column remains.
+pub fn table_delete_column(
+    headers: &mut Vec<SharedString>,
+    rows: &mut Vec<Vec<Vec<TextRun>>>,
+    at_idx: usize,
+) {
+    if headers.len() > 1 && at_idx < headers.len() {
+        headers.remove(at_idx);
+        for row in rows.iter_mut() {
+            if at_idx < row.len() {
+                row.remove(at_idx);
+            }
+        }
+    }
+}
+
+/// Normalizes multiline block text into a single continuous string for single-line block card editing.
+/// Collapses formatting newlines and multiline indentation while preserving internal word spaces.
+pub fn normalize_block_text_for_editing(text: &str) -> String {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    lines.join(" ")
+}
+
+/// Wraps plain text selection in TWXML inline formatting markup (bold, italic, code, underline, hubref).
+pub fn wrap_text_in_inline_format(text: &str, format_kind: &str, target_id: Option<&str>) -> String {
+    let trimmed = text.trim();
+    let safe_text = if trimmed.is_empty() { "text" } else { trimmed };
+    match format_kind {
+        "bold" | "b" => format!("<bold>{}</bold>", safe_text),
+        "italic" | "i" => format!("<italic>{}</italic>", safe_text),
+        "underline" | "u" => format!("<u>{}</u>", safe_text),
+        "code" => format!("<code>{}</code>", safe_text),
+        "hubref" => {
+            let id = target_id.unwrap_or("target_id");
+            format!("<hubref id=\"{}\">{}</hubref>", id, safe_text)
+        }
+        _ => safe_text.to_string(),
+    }
+}
+
+/// Result of detecting a markdown typing shortcut trigger at line start.
+#[derive(Debug, PartialEq, Eq)]
+pub enum MarkdownTriggerResult {
+    Heading(String),
+    Section(String),
+    BlockQuote(String),
+    UnorderedList(String),
+    OrderedList(String),
+    CodeBlock(String),
+    NoMatch,
+}
+
+/// Detects if a block text input starts with a markdown trigger prefix (e.g. `# `, `## `, `> `, `- `, `1. `, ```).
+pub fn detect_markdown_prefix_trigger(input_text: &str) -> MarkdownTriggerResult {
+    let trimmed = input_text.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("# ") {
+        MarkdownTriggerResult::Heading(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("## ") {
+        MarkdownTriggerResult::Section(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("### ") {
+        MarkdownTriggerResult::Section(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("> ") {
+        MarkdownTriggerResult::BlockQuote(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
+    {
+        MarkdownTriggerResult::UnorderedList(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("1. ") {
+        MarkdownTriggerResult::OrderedList(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("```") {
+        MarkdownTriggerResult::CodeBlock(rest.trim_end().to_string())
+    } else {
+        MarkdownTriggerResult::NoMatch
+    }
+}
+
+/// Detects if the current input caret word starts with `@` or `#` for HubRef LSP completion trigger.
+pub fn detect_hubref_completion_trigger(input_text: &str, caret_offset: usize) -> Option<&str> {
+    let safe_offset = caret_offset.min(input_text.len());
+    let prefix = &input_text[..safe_offset];
+    let last_word = prefix.split_whitespace().last()?;
+    if last_word.starts_with('@') || last_word.starts_with('#') {
+        Some(&last_word[1..])
+    } else {
+        None
+    }
+}
+

@@ -1,3 +1,6 @@
+pub(crate) mod block_editor;
+#[cfg(test)]
+mod block_editor_tests;
 mod collapsible;
 mod expansion_state;
 pub(crate) mod jump_links;
@@ -5,16 +8,16 @@ pub(crate) mod jump_links;
 mod jump_links_tests;
 mod renderers;
 
-use crate::parser::Block;
 use crate::ui::{DocumentHome, DocumentMode, ParseState, Workspace};
 use expansion_state::ExpandedBlocks;
 use gpui::{
-    div, prelude::*, px, uniform_list, Context, Entity, InteractiveElement, ParentElement, Render,
-    Styled, Window,
+    div, prelude::*, px, uniform_list, AnyElement, Context, Entity, InteractiveElement,
+    ParentElement, Render, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::{alert::Alert, Icon, IconName};
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 /// Parse error warning colors (soft red palette).
 static PARSE_ERROR_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.85, 0.95, 1.0));
@@ -25,6 +28,8 @@ pub(crate) struct DocumentView {
     document_home: Entity<DocumentHome>,
     input_state: Entity<gpui_component::input::InputState>,
     pub(crate) expanded_blocks: Entity<ExpandedBlocks>,
+    pub(crate) focused_block_idx: Option<usize>,
+    pub(crate) block_input_states: HashMap<usize, Entity<gpui_component::input::InputState>>,
 }
 
 impl DocumentView {
@@ -41,6 +46,8 @@ impl DocumentView {
             document_home,
             input_state,
             expanded_blocks: cx.new(|_cx| ExpandedBlocks::default()),
+            focused_block_idx: None,
+            block_input_states: HashMap::new(),
         }
     }
 
@@ -125,71 +132,75 @@ impl Render for DocumentView {
             w.diagnostics.clone()
         };
 
-        // LSP Diagnostics list
-        let diagnostics_content = if diagnostics.is_empty() {
-            gpui::div()
-                .text_color(theme_val.success)
-                .text_size(gpui::px(12.))
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(Icon::new(IconName::CircleCheck).size(gpui::px(14.)))
-                .child("No diagnostic issues found.")
+        // LSP Diagnostics list builder
+        let make_diagnostics_content = |scroll_id: &'static str| -> AnyElement {
+            if diagnostics.is_empty() {
+                gpui::div()
+                    .text_color(theme_val.success)
+                    .text_size(gpui::px(12.))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(Icon::new(IconName::CircleCheck).size(gpui::px(14.)))
+                    .child("No diagnostic issues found.")
+                    .into_any_element()
+            } else {
+                let input_state_clone = input_state.clone();
+                let theme_val_clone = theme_val.clone();
+                let theme_foreground_clone = theme_foreground;
+                uniform_list(
+                    scroll_id,
+                    diagnostics.len(),
+                    cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        let workspace = this.workspace.read(cx);
+                        let diagnostics = &workspace.diagnostics;
+                        range
+                            .map(|idx| {
+                                let diag = &diagnostics[idx];
+                                let is_error = diag.severity == 1;
+                                let severity_icon = if is_error { "🔴" } else { "🟡" };
+                                let color = if is_error {
+                                    theme_val_clone.danger
+                                } else {
+                                    theme_val_clone.warning
+                                };
+                                let line_val = diag.line + 1;
+                                let message = diag.message.clone();
+                                let input_state = input_state_clone.clone();
+                                let diag_line = diag.line;
+                                gpui::div()
+                                    .id(("diag", idx))
+                                    .flex()
+                                    .gap_2()
+                                    .py_1()
+                                    .px_2()
+                                    .rounded(gpui::px(4.))
+                                    .text_size(gpui::px(11.))
+                                    .text_color(theme_foreground_clone)
+                                    .hover(|s| s.bg(theme_val_clone.accent.opacity(0.5)))
+                                    .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                                        let pos = gpui_component::input::Position::new(
+                                            diag_line as u32,
+                                            0,
+                                        );
+                                        input_state.update(cx, |state, cx| {
+                                            state.set_cursor_position(pos, window, cx);
+                                        });
+                                    })
+                                    .child(gpui::div().text_color(color).child(severity_icon))
+                                    .child(
+                                        gpui::div()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .child(format!("Line {}:", line_val)),
+                                    )
+                                    .child(gpui::div().child(message))
+                            })
+                            .collect::<Vec<_>>()
+                    }),
+                )
+                .flex_1()
                 .into_any_element()
-        } else {
-            let input_state_clone = input_state.clone();
-            let theme_val_clone = theme_val.clone();
-            let theme_foreground_clone = theme_foreground;
-            uniform_list(
-                "diagnostics_scroll",
-                diagnostics.len(),
-                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                    let workspace = this.workspace.read(cx);
-                    let diagnostics = &workspace.diagnostics;
-                    range
-                        .map(|idx| {
-                            let diag = &diagnostics[idx];
-                            let is_error = diag.severity == 1;
-                            let severity_icon = if is_error { "🔴" } else { "🟡" };
-                            let color = if is_error {
-                                theme_val_clone.danger
-                            } else {
-                                theme_val_clone.warning
-                            };
-                            let line_val = diag.line + 1;
-                            let message = diag.message.clone();
-                            let input_state = input_state_clone.clone();
-                            let diag_line = diag.line;
-                            gpui::div()
-                                .id(("diag", idx))
-                                .flex()
-                                .gap_2()
-                                .py_1()
-                                .px_2()
-                                .rounded(gpui::px(4.))
-                                .text_size(gpui::px(11.))
-                                .text_color(theme_foreground_clone)
-                                .hover(|s| s.bg(theme_val_clone.accent.opacity(0.5)))
-                                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                                    let pos =
-                                        gpui_component::input::Position::new(diag_line as u32, 0);
-                                    input_state.update(cx, |state, cx| {
-                                        state.set_cursor_position(pos, window, cx);
-                                    });
-                                })
-                                .child(gpui::div().text_color(color).child(severity_icon))
-                                .child(
-                                    gpui::div()
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .child(format!("Line {}:", line_val)),
-                                )
-                                .child(gpui::div().child(message))
-                        })
-                        .collect::<Vec<_>>()
-                }),
-            )
-            .flex_1()
-            .into_any_element()
+            }
         };
 
         let active_file = active_doc_path
@@ -210,42 +221,36 @@ impl Render for DocumentView {
         drop(doc_home_borrow);
 
         let footnote_map = crate::ui::document_view::renderers::build_footnote_map(&blocks_clone);
-        let parse_state = &parse_state_clone;
+        let _parse_state = &parse_state_clone;
         let blocks = &blocks_clone;
-        let title = &title_clone;
-        let author = &author_clone;
 
-        let preview_header = if title.is_empty() && author.is_empty() {
-            "RENDERED PREVIEW".to_string()
-        } else {
-            format!("PREVIEW: {} by {}", title, author)
-        };
-
-        // Frontmatter
-        let mut frontmatter = String::new();
-        if !metadata_clone.is_empty() {
-            frontmatter.push_str("---\n");
-            for (key, val) in &metadata_clone {
-                frontmatter.push_str(&format!("{}: {}\n", key, val));
+        // Frontmatter builder
+        let make_frontmatter_el = || -> Option<gpui::Div> {
+            let mut frontmatter = String::new();
+            if !metadata_clone.is_empty() {
+                frontmatter.push_str("---\n");
+                for (key, val) in &metadata_clone {
+                    frontmatter.push_str(&format!("{}: {}\n", key, val));
+                }
+                frontmatter.push_str("---");
             }
-            frontmatter.push_str("---");
-        }
-        let frontmatter_el = if !frontmatter.is_empty() {
-            Some(
-                gpui::div()
-                    .mb_4()
-                    .p_3()
-                    .bg(sidebar_bg)
-                    .border(gpui::px(1.))
-                    .border_color(border_color)
-                    .rounded(gpui::px(4.))
-                    .font_family("Courier New")
-                    .text_xs()
-                    .text_color(theme_foreground)
-                    .child(frontmatter),
-            )
-        } else {
-            None
+            if !frontmatter.is_empty() {
+                Some(
+                    gpui::div()
+                        .mb_4()
+                        .p_3()
+                        .bg(sidebar_bg)
+                        .border(gpui::px(1.))
+                        .border_color(border_color)
+                        .rounded(gpui::px(4.))
+                        .font_family("Courier New")
+                        .text_xs()
+                        .text_color(theme_foreground)
+                        .child(frontmatter),
+                )
+            } else {
+                None
+            }
         };
 
         // 1. Raw Editor Panel
@@ -279,7 +284,7 @@ impl Render for DocumentView {
                                         .size_full()
                                         .flex()
                                         .flex_col()
-                                        .children(frontmatter_el)
+                                        .children(make_frontmatter_el())
                                         .child(
                                             gpui_component::input::Input::new(&input_state)
                                                 .flex_1()
@@ -318,166 +323,28 @@ impl Render for DocumentView {
                                     .flex_1()
                                     .overflow_hidden()
                                     .p_2()
-                                    .child(diagnostics_content),
+                                    .child(make_diagnostics_content("diagnostics_scroll_raw")),
                             ),
                     ),
             );
 
-        // 2. WYSIWYG Preview Panel
-        let mut preview_content = div()
-            .id("preview_content")
-            .w_full()
-            .flex()
-            .flex_col()
-            .bg(theme_val.background)
-            .text_color(theme_val.foreground)
-            .p_8();
-
-        if let ParseState::OutOfSync { .. } = parse_state {
-            preview_content = preview_content.child(
-                Alert::warning(
-                    "parse-error",
-                    "Parse Error: Preview out of sync (showing last valid state)",
-                )
-                .banner(),
-            );
-        }
-
-        // Render main blocks, separating footnotes
-        let mut main_blocks = Vec::new();
-        let mut footnote_blocks = Vec::new();
-        for block in blocks {
-            if let Block::Footnote { .. } = block {
-                footnote_blocks.push(block.clone());
-            } else {
-                main_blocks.push(block.clone());
-            }
-        }
-
-        let mut block_idx = 0;
-        let mut main_iter = main_blocks.into_iter().peekable();
-        while let Some(block) = main_iter.next() {
-            block_idx += 1;
-            if let Block::Paragraph { .. } = block {
-                if let Some(Block::Aside { .. }) = main_iter.peek() {
-                    let aside_block = main_iter.next().unwrap();
-                    let aside_idx = block_idx + 1;
-                    block_idx += 1;
-                    preview_content = preview_content.child(
-                        div()
-                            .mb_4()
-                            .flex()
-                            .gap_4()
-                            .w_full()
-                            .child(div().w(gpui::relative(0.75)).child(renderers::render_block(
-                                &self.expanded_blocks,
-                                blocks,
-                                &hubgs_clone,
-                                &footnote_map,
-                                input_state.clone(),
-                                &block,
-                                block_idx,
-                                cx,
-                            )))
-                            .child(div().w(gpui::relative(0.25)).child(renderers::render_block(
-                                &self.expanded_blocks,
-                                blocks,
-                                &hubgs_clone,
-                                &footnote_map,
-                                input_state.clone(),
-                                &aside_block,
-                                aside_idx,
-                                cx,
-                            ))),
-                    );
-                    continue;
-                }
-            }
-            // Check for Block::Include rendering in WYSIWYG
-            if let Block::Include {
-                resolved_blocks: Some(ref inner_blocks),
-                ..
-            } = block
-            {
-                for inner_block in inner_blocks {
-                    block_idx += 1;
-                    preview_content = preview_content.child(renderers::render_block(
-                        &self.expanded_blocks,
-                        blocks,
-                        &hubgs_clone,
-                        &footnote_map,
-                        input_state.clone(),
-                        inner_block,
-                        block_idx,
-                        cx,
-                    ));
-                }
-            } else {
-                preview_content = preview_content.child(renderers::render_block(
-                    &self.expanded_blocks,
-                    blocks,
-                    &hubgs_clone,
-                    &footnote_map,
-                    input_state.clone(),
-                    &block,
-                    block_idx,
-                    cx,
-                ));
-            }
-        }
-
-        if !footnote_blocks.is_empty() {
-            preview_content = preview_content
-                .child(div().my_6().h(px(1.)).bg(theme_val.border.opacity(0.5)))
-                .child(
-                    div()
-                        .mb_4()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_size(px(14.))
-                        .text_color(theme_muted_foreground)
-                        .child("Footnotes"),
-                );
-            for footnote in footnote_blocks {
-                block_idx += 1;
-                preview_content = preview_content.child(renderers::render_block(
-                    &self.expanded_blocks,
-                    blocks,
-                    &hubgs_clone,
-                    &footnote_map,
-                    input_state.clone(),
-                    &footnote,
-                    block_idx,
-                    cx,
-                ));
-            }
-        }
-
-        let preview_area = gpui::div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
-            .child(
-                gpui::div()
-                    .flex_none()
-                    .p_2()
-                    .bg(sidebar_bg)
-                    .border_b(gpui::px(1.))
-                    .border_color(border_color)
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(theme_muted_foreground)
-                    .child(preview_header),
-            )
-            .child(
-                gpui::div()
-                    .id("preview_container")
-                    .flex_1()
-                    .h(gpui::px(0.))
-                    .w_full()
-                    .overflow_y_scrollbar()
-                    .child(preview_content),
-            );
+        // 2. Block Editor View (using Raw Editor layout container & frontmatter)
+        let block_editor_area = block_editor::render_block_editor(
+            &self.workspace,
+            &self.document_home,
+            input_state.clone(),
+            &self.expanded_blocks,
+            blocks,
+            &active_file,
+            self.focused_block_idx,
+            &self.block_input_states,
+            &hubgs_clone,
+            &footnote_map,
+            make_frontmatter_el(),
+            make_diagnostics_content("diagnostics_scroll_block"),
+            &diagnostics,
+            cx,
+        );
 
         // 3. Markdown read-only panel
         let markdown_text = crate::parser::blocks_to_markdown(blocks);
@@ -517,11 +384,58 @@ impl Render for DocumentView {
                 .child(preview_content)
         };
 
+        // 4. FlowText Editor stub panel (Experimental / Coming Soon)
+        let flow_text_stub = {
+            let stub_content = gpui::div()
+                .flex_1()
+                .h(gpui::px(0.))
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_4()
+                .p_8()
+                .bg(theme_val.background)
+                .text_color(theme_val.foreground)
+                .child(
+                    gpui::div()
+                        .text_lg()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child("FlowText Editor (Experimental / Coming Soon)"),
+                )
+                .child(
+                    gpui::div()
+                        .text_sm()
+                        .text_color(theme_muted_foreground)
+                        .child("Character-level rich text editing powered by `gpui-flowtext` is under development. Shares the underlying rope buffer."),
+                );
+
+            gpui::div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .child(
+                    gpui::div()
+                        .flex_none()
+                        .p_2()
+                        .bg(sidebar_bg)
+                        .border_b(gpui::px(1.))
+                        .border_color(border_color)
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(theme_muted_foreground)
+                        .child(format!("FLOWTEXT EDITOR STUB: {}", active_file)),
+                )
+                .child(stub_content)
+        };
+
         // Match based on active doc mode
         let content_pane = match mode {
             DocumentMode::RawEditor => editor_panel.into_any_element(),
-            DocumentMode::WysiwygPreview => preview_area.into_any_element(),
+            DocumentMode::BlockEditor => block_editor_area,
             DocumentMode::MarkdownView => markdown_preview.into_any_element(),
+            DocumentMode::FlowTextEditor => flow_text_stub.into_any_element(),
         };
 
         gpui::div()

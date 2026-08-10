@@ -23,14 +23,14 @@ The core idea: prose lives in a custom XML document format (TWXML), while struct
 +---------------------+         +--------------------------------+
 |       Editor        |         |   Graph Visualization          |
 +---------------------+         +--------------------------------+
-|   - WYSIWYG View    |         |   - Global Graph View          |
+|   - Block Editor    |         |   - Global Graph View          |
 |   - Markdown View   |         |   - Outline Scoped View        |
 |   - Raw TWXML View  |         |   - Node-Scoped View           |
-|   - Document Tree   |         +--------------------------------+
+|   - FlowText (Stub) |         +--------------------------------+
 +---------------------+         
 ```
 
-The default UI layout is a split view consisting of two side-by-side panes. The left pane is for Document Views (with one tab per open document, where each tab has a dropdown menu to select the mode: Raw Editor, WYSIWYG Preview, or Markdown View). The right pane is for Graph Views (with tabs for Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation).
+The default UI layout is a split view consisting of two side-by-side panes. The left pane is for Document Views (with one tab per open document, where each tab has a dropdown menu to select the active mode: Raw Editor, Block Editor, Markdown View, or FlowText Editor stub). The right pane is for Graph Views (with tabs for Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation).
 
 ---
 
@@ -105,13 +105,149 @@ Key points:
 - Multiple hubs can be referenced within a single paragraph or even a single phrase
 
 ### Editor Modes
-The left pane contains open document tabs. Each tab represents an open document and has a dropdown menu to select the active mode. The Raw Editor, WYSIWYG Preview, and Markdown View share the same document buffer (the user is always editing the raw syntax, but rendered/styled differently):
+The left pane contains open document tabs. Each tab represents an open document and has a dropdown menu to select the active mode (`DocumentMode`). All four modes share one underlying rope buffer (`InputState` / Rope) and one `DocumentHome` (parsed `Vec<Block>` + metadata + parse state). Selection offsets and a single undo/redo history live on the rope:
 
-| Mode | Description |
-|------|-------------|
-| **Raw Editor** | Shows the underlying XML with all `<hubref>` tags visible; precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is. |
-| **WYSIWYG Preview** | Primary reading/preview mode (continuous scroll). Renders `<include src="..." />` by inlining the referenced document contents as a flat document. |
-| **Markdown View** | Read-only view (eventually to become an editor) that renders TWXML as Markdown for users who prefer plain-text workflows. Renders includes using `![[document-name]]` syntax. |
+| Mode | Enum Variant | Description |
+|------|--------------|-------------|
+| **Raw Editor** | `DocumentMode::RawEditor` | Shows raw TWXML code with syntax highlighting using `gpui_component::input::Input`. Precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is. |
+| **Block Editor** | `DocumentMode::BlockEditor` | Primary editing and reading mode (continuous scroll). Renders TWXML as Notion/Craft-style editable block cards with left-gutter controls, slash menus, inline `Input` edit surfaces, and LSP-driven inline formatting. Renders `<include src="..." />` by inlining child document contents into a unified block structure. |
+| **Markdown View** | `DocumentMode::MarkdownView` | Read-only view rendering TWXML AST as Markdown for users who prefer plain-text workflows. Renders includes using `![[document-name]]` syntax. |
+| **FlowText Editor** | `DocumentMode::FlowTextEditor` | Stub mode reserved for future integration of external rich-text engine (`gpui-flowtext`). Displays an experimental / coming-soon placeholder while sharing the same underlying rope buffer and selection/undo history. |
+
+---
+
+### TauWriter Block Editor Architecture & Design Specifications
+
+#### 1. Mode Rename & Placement
+- Renamed `DocumentMode::WysiwygPreview` → `DocumentMode::BlockEditor`.
+- Supported document modes: `RawEditor`, `BlockEditor`, `MarkdownView`, `FlowTextEditor` (stub).
+- All modes share one underlying rope buffer (`InputState` / Rope) and one `DocumentHome` (`Vec<Block>` + metadata + parse state).
+- Caret and selection offsets are maintained as rope byte offsets, ensuring selection and undo/redo history remain identical when switching modes.
+
+#### 2. High-Level Component Architecture
+
+```text
+Workspace
+└── DocumentView (mode switch)
+    ├── RawEditor          → gpui_component::input::Input (code mode, Tree-sitter)
+    ├── BlockEditor        → BlockEditorView (new)
+    ├── MarkdownView       → existing markdown renderer
+    └── FlowTextEditor     → stub ("Coming soon" placeholder sharing rope buffer)
+```
+
+`BlockEditorView` owns:
+- Reference to shared `Entity<InputState>` (rope) and `Entity<DocumentHome>`.
+- Local UI state: active block in edit mode (`editing_block: Option<BlockId>`), expanded/collapsed details, scroll offset, hover state for hubrefs, right-click context menu state.
+- Virtualized list of block cards (lazy rendering for novel-length documents).
+
+**Data Flow (Rope-Centric & Bidirectional):**
+1. **Rope Changes → Parsing**: Edits to rope trigger a debounced re-parse (Tree-sitter + `tauwriter-twxml`), updating `DocumentHome.blocks`.
+2. **Block-Level Edits → Rope Rewrites**: Structural block edits (insert, delete, reorder, change block type) or inline edits inside an active block compute the precise byte range in the rope and rewrite it. The rope's history records the edit, and a re-parse updates the AST.
+3. **Selection Offsets**: Selection is always expressed as rope byte offsets. Switching between Raw, Block, and Markdown views restores the caret to the exact logical offset.
+
+#### 3. Block Editor UI Model (Notion / Craft Style)
+The Block Editor displays a continuous vertical scroll of **block cards**.
+
+Each **block card** consists of:
+- **Left Gutter** (narrow, visible on hover or focus):
+  - Drag handle (reorder blocks)
+  - `+` insert button (opens block-type slash menu)
+  - Edit icon / pencil (enters inline edit mode for that block)
+  - Optional collapse chevron for `<details>`, `<section>` elements, etc.
+- **Main Content Area**:
+  - **Read-Only Projection**: Styled preview of the `Block` (using theme colors and typography matching a comfortable reading measure).
+  - **Edit Mode**: Clicking edit or pencil replaces the read-only projection with a focused multi-line `Input` (or embedded editor) displaying the inner TWXML/text of that block. On blur or Enter (with modifiers), changes commit back to the block's rope range.
+- **Context Menu**: Right-clicking anywhere on a block card or hubref opens a contextual menu (formatting, block type conversion, hubref actions).
+
+**Block Insertion:**
+- Triggered by clicking `+` in the gutter, typing `/` at the beginning of an empty paragraph or after a block, or pressing the slash menu keyboard shortcut.
+- Slash menu options: Paragraph, Heading 1–6, Bullet List, Numbered List, Checklist, Blockquote, Aside, Code Block, Table, Horizontal Rule, Details, Image (stub), etc.
+- Selecting an option inserts the corresponding TWXML tag skeleton into the rope at the current offset and places the caret inside it.
+
+**Block Type Conversion:**
+- "Turn into..." command available while editing a block or via right-click context menu.
+
+**List Management:**
+- Rendered as proper nested cards or indented list items.
+- Pressing `Enter` at the end of a list item creates a new `<li>`; pressing `Backspace` on an empty item lifts out of the list hierarchy.
+
+#### 4. Inline Formatting & Triggers (LSP-Driven)
+All markdown-style inline expansions are performed by the **LSP** so behavior remains uniform across Raw, Block, and Markdown modes.
+
+| Trigger | Expansion Behavior |
+|---------|-------------------|
+| `#` + space / autocomplete | Wraps/inserts `<heading level="N">…</heading>` |
+| `**` or `__` | Wraps selection or inserts `<bold>…</bold>` |
+| `*` or `_` | Wraps selection or inserts `<italic>…</italic>` |
+| `- ` / `1. ` / `[ ]` / `[x]` | Starts / continues list or checklist item |
+| `` ` `` | Wraps selection or inserts `<code>…</code>` |
+| `~~` | Wraps selection or inserts `<strikethrough>` |
+
+**LSP Autocomplete Expansion Mechanics:**
+- Typing a trigger character opens completion items (`heading`, `bold`, `italic`, etc.).
+- Selecting a completion inserts opening + closing TWXML tags with the cursor positioned between them (or wraps current selection).
+- If text is selected when typing a trigger, completion offers both "wrap selection" and "replace selection" actions.
+- Typing a space after a bare trigger character dismisses the completion popover.
+
+**Client-Side Integration (Block Editor):**
+- Keyboard shortcuts (`Ctrl/Cmd+B`, `Ctrl/Cmd+I`, etc.) invoke the corresponding LSP command or rewrite the current selection's rope range with TWXML tags.
+- Right-click context menu provides explicit inline formatting operations.
+- Embedded `Input` surfaces benefit from LSP completions during block edit mode because they operate directly on the shared buffer language.
+
+#### 5. Rendering Strategy (Lazy & Virtualized)
+- Built using `gpui_component` virtual list / `uniform_list` (or custom virtual scroller on identical primitives) to materialize only visible + overscan blocks.
+- Visible blocks transform into specialized GPUI element trees:
+  - **Headings**: Large, bold, hierarchy-scaled typography.
+  - **Paragraphs**: Styled inline text runs (bold, italic, underline, code, clickable hubref chips).
+  - **Lists**: Nested items with structural markers / interactive checkboxes.
+  - **Code Blocks**: Monospace font with language indicator tag.
+  - **Hubrefs**: Interactive chips invoking `on_hubref_clicked` for graph pane navigation.
+  - **Includes**: Flattened document body or collapsible "included document" card.
+- Theme tokens and typography source directly from `gpui_component::Theme`.
+- Continuous vertical scroll for v1 (page-based layout is a future layout switch reusing block cards).
+
+#### 6. State & Synchronization
+```rust
+// Conceptual view struct
+struct BlockEditorView {
+    workspace: Entity<Workspace>,
+    document_home: Entity<DocumentHome>,
+    input_state: Entity<InputState>,          // shared rope buffer
+    expanded_blocks: Entity<ExpandedBlocks>,
+    editing_block: Option<BlockId>,          // active block in edit mode
+    // scroll offset, hover states, context menu state
+}
+```
+- `BlockId` tracks byte range boundaries or stable AST identifiers.
+- On rope edits, `BlockEditorView` observes `DocumentHome` and invalidates only affected virtual list items.
+- An offset-to-block index maps caret positions so cursor state transfers seamlessly across mode toggles.
+
+#### 7. Hubref & LSP Integration
+- **Click**: Triggers `workspace.selected_hub_id` and focuses/centers the right-pane Graph View.
+- **Hover**: Displays LSP hover tooltip with summary information about the referenced Hub instance.
+- **Right-Click Context Menu**: Exposes hubref commands ("Go to definition", "Rename", "Edit display text", "Change hub id" stubs).
+- **Diagnostics**: Rendered as underlines / gutter icons on affected block cards; clicking a diagnostic moves the rope caret and opens the block card in edit mode if required.
+
+#### 8. Component Breakdown (`gpui-component` Primitives)
+- **Layout**: `v_flex` + virtual list / `ScrollableElement`.
+- **Block Cards**: Styled `div` containers with hover/focus state handling.
+- **Gutter Controls**: `Button` (ghost / icon variants).
+- **Slash / Insert Menu**: `DropdownButton` or `Popover` containing item list.
+- **Context Menu**: Native `gpui-component` menu primitives.
+- **Inline Editor**: Multi-line `Input` (soft-wrap enabled, line numbers disabled) bound to the block's text range.
+- **Diagnostics List**: Shared `uniform_list` bottom panel in `DocumentView`.
+
+#### 9. Phased Implementation Roadmap
+- **Phase 0 – Plumbing & Infrastructure**: Rename `WysiwygPreview` → `BlockEditor`, update dropdown UI, confirm selection offsets and undo/redo history share the rope.
+- **Phase 1 – Read-Only Block Editor**: Implement virtualized list of block cards rendering all `Block` variants (paragraphs, headings, lists, tables, details, hubrefs, includes). Wire hubref clicks to graph selection.
+- **Phase 2 – Block-Level Editing**: Add gutter `+` button, `/` slash menu, edit pencil, focused inner `Input` surface, rope rewrite on commit, and block type conversion.
+- **Phase 3 – Inline Formatting & LSP Triggers**: Wire keyboard shortcuts, right-click formatting menus, selection wrapping, and LSP trigger autocompletion.
+- **Phase 4 – Performance Polish & FlowText Stub**: Virtualized scroll performance optimization for novel-length documents, hubref context menu stubs, and `FlowTextEditor` stub mode implementation.
+
+#### 10. Technical Trade-Offs & Non-Goals for v1
+- **Rope-Centric Block Model over Character WYSIWYG**: Reuses parsed `Block`/`TextRun` AST and `gpui_component::input::Input` without writing a complex custom rich-text engine for v1. Character-level inline canvas editing is deferred to the `FlowTextEditor` stub.
+- **Rope Range Mapping**: Requires robust byte-range tracking during block editing and re-parsing.
+- **Non-Goals**: Paginated print layout, real-time multi-user collaborative cursors, full image/table WYSIWYG editors (stubs used for v1).
 
 ### Graph Views
 The right pane is a tabbed area offering visual representations of document structure and structured knowledge:
@@ -460,7 +596,7 @@ Powered by a custom LSP (Language Server Protocol) implementation:
 4. **Autocomplete:** When typing Hub refs (e.g., in raw view or role assignments), the LSP provides predictive suggestions based on existing Hubs and valid types.
 
 ### Bidirectional Linking
-- **Document → Graph:** Click a `<hubref>` link in the WYSIWYG preview → the right Graph pane automatically switches to the HubGs Instances Relation tab, highlights the matching node, and centers/zooms the canvas on it.
+- **Document → Graph:** Click a `<hubref>` link in the Block Editor → the right Graph pane automatically switches to the HubGs Instances Relation tab, highlights the matching node, and centers/zooms the canvas on it.
 - **Graph → Document:** Click a node in the HubGs Instances Relation graph → the document editor will respond:
   - If the document tab containing the reference is not open or stitched into an open document, open the document as a new document tab.
   - Highlight all occurrences of that Hub ID in the gutter, and scroll and move the cursor to the nearest instance relative to the cursor's position (kind of like pressing Ctrl+F in a browser). Note: Gutter highlighting and scroll-to-nearest is planned but will be implemented later.
@@ -708,7 +844,7 @@ INSTANCES [
 ```
 
 In this setup:
-- Clicking "Aragorn" in the WYSIWYG editor jumps to the `aragorn:Character` Hub detail panel in graph view
+- Clicking "Aragorn" in the Block Editor jumps to the `aragorn:Character` Hub detail panel in graph view
 - Clicking the Aragorn Hub shows all document locations where it's referenced (computed by LSP)
 - The Outline View for Chapter 1 would show: Aragorn, Gandalf, Rivendell (and their interconnecting roles)
 
@@ -720,7 +856,7 @@ In this setup:
 
 | # | Question | Context |
 |---|----------|---------|
-| Q1 | **Document fragmentation details**[cite: 1] | Solved via `<include src="..." />`. Flat compilation behaves per editor mode: WYSIWYG mode renders a flat document inlining children; Raw mode renders the raw `<include />` tag; Markdown mode uses `![[document-name]]` syntax. |
+| Q1 | **Document fragmentation details**[cite: 1] | Solved via `<include src="..." />`. Flat compilation behaves per editor mode: Block Editor mode renders a flat document inlining children; Raw mode renders the raw `<include />` tag; Markdown mode uses `![[document-name]]` syntax. |
 | Q2 | **Collaboration architecture** | Future goal: Zed-inspired multiplayer editing and Discord-like server organization. Should the current architecture doc lay groundwork for this now (CRDTs, operational transforms, server-authoritative state), or keep it entirely aspirational? If groundwork is needed, what minimal abstractions should be in place today? |
 | Q3 | **Tauri vs. GPUI** | Both are viable desktop targets. Tauri enables web tech (e.g., Svelte) for the frontend with a Rust backend; GPUI is fully native Rust rendering. Does either choice have implications for how editor views or graph visualization should be architected? Is this decision deferred until prototype phase? |
 

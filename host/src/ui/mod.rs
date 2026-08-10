@@ -45,8 +45,9 @@ pub(crate) use titlebar::{SettingsView, TitleBar};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DocumentMode {
     RawEditor,
-    WysiwygPreview,
+    BlockEditor,
     MarkdownView,
+    FlowTextEditor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

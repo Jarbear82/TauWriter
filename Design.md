@@ -3,11 +3,11 @@
   Strategy: Layered
   Strategy Selection Criteria: The application operates as a linear transformation pipeline split across three logical boundaries:
   1. Source/Parsing Layer: Merges in-app Tree-sitter parsing (using  outlines.scm  for document trees) and JSON-RPC LSP diagnostics/references, falling back to local parsing if the LSP is offline.
-  2. Buffer/State Layer: Maintains open document buffers and mode select configurations (WYSIWYG, Raw, Markdown) sharing the same underlying text buffer.
+  2. Buffer/State Layer: Maintains open document buffers and mode select configurations (RawEditor, BlockEditor, MarkdownView, FlowTextEditor stub) sharing the same underlying text buffer.
   3. Presentation Layer: Coordinates the split side-by-side GPUI workspace layout (Left Document Tabbed View, Right Graph Tabbed View) and canvas renders.
   ### 1. Encapsulation (Level 3)
   • Structs:
-      •  DocumentTabState : Manages a single open document's active mode selection ( Raw ,  Wysiwyg ,  Markdown ), scroll offsets, and local Tree-sitter AST nodes.
+      •  DocumentTabState : Manages a single open document's active mode selection ( RawEditor ,  BlockEditor ,  MarkdownView ,  FlowTextEditor ), scroll offsets, and local Tree-sitter AST nodes.
       •  WorkspaceState : Tracks all open document tabs, the active selected document index, file explorer node state, and LSP connection status.
       •  GraphVisualization : Encapsulates 2D canvas coordinates, zoom metrics, drag gestures, and active node highlights.
       •  DocumentGraph : Stores document outline nodes parsed locally from Tree-sitter queries using the  outlines.scm  grammar definition.
@@ -24,13 +24,13 @@
       •  DocumentTabState  Has-A  InputState  (re-used for the Raw Editor and sharing buffer state across modes).
   • Is-A:
       •  gpui::Render  implemented on view components.
-      • Custom  DocumentRenderer  trait to unify block rendering structures (WYSIWYG layout vs Markdown generator outputs).
+      • Custom  DocumentRenderer  trait to unify block rendering structures (BlockEditor layout vs Markdown generator outputs).
 
 
   ### 3. Component Architecture (Level 5)
 
   • Pattern: Central Mediator ( MainView ) coordination.
-  • Justification: Panes must communicate cross-pane updates (e.g. clicking a WYSIWYG  <hubref>  updates right-pane tab focus and canvas highlight; clicking a graph node opens a new tab and sets editor cursor position). A central
+  • Justification: Panes must communicate cross-pane updates (e.g. clicking a Block Editor  <hubref>  updates right-pane tab focus and canvas highlight; clicking a graph node opens a new tab and sets editor cursor position). A central
   mediator coordinates these without creating cyclic references between  DocumentPane  and  GraphPane .
   • Trade-offs: Centralizes routing logic inside  MainView , but guarantees independent, testable components.
 
@@ -48,7 +48,11 @@
     │   ├── sidebar.rs (File tree tree-view via virtualized lists)
     │   ├── titlebar.rs (CSD title bar & settings panel)
     │   ├── document_view/
-    │   │   ├── mod.rs (WYSIWYG/Raw/Markdown mode rendering)
+    │   │   ├── mod.rs (DocumentView mode switcher & split layout)
+    │   │   ├── block_editor/ (BlockEditorView, virtual list block cards, gutter, slash menu)
+    │   │   ├── raw_editor.rs (gpui_component::input::Input code mode)
+    │   │   ├── markdown_view.rs (TWXML -> Markdown reader)
+    │   │   ├── flow_text_editor.rs (FlowTextEditor coming-soon stub)
     │   │   ├── renderers.rs (TWXML block elements render engine)
     │   │   └── tab_bar.rs (Document tab control bar)
     │   └── graph_pane/
@@ -68,7 +72,7 @@
           •  open_documents: Vec<DocumentTabState> 
           •  active_document_idx: Option<usize> 
           •  active_graph_tab: GraphTab  ( DocumentGraph ,  DefinitionsSchema ,  InstancesRelation )
-      2. Implement  DocumentTabState  containing the path, raw text buffer, active display mode ( Raw ,  Wysiwyg ,  Markdown ), and Tree-sitter query AST caches.
+      2. Implement  DocumentTabState  containing the path, raw text buffer, active display mode ( RawEditor ,  BlockEditor ,  MarkdownView ,  FlowTextEditor  stub), and Tree-sitter query AST caches.
       3. Render the left half containing  DocumentView  and the right half containing  GraphPaneView  using  gpui_component::resizable::h_resizable("workspace-split") .
       4. Build the Document Tab Bar ( DocumentTabBar ) to render one tab per open document, with close buttons and click listeners to switch  active_document_idx .
       5. Add a mode selection dropdown element next to the active document tab to toggle its mode.
@@ -76,13 +80,18 @@
 
   ### Step 2: Mode Renderers & Include Stitching ( <include /> )
 
-  • Objective: Render document content differently depending on the active mode and compile included files recursively.
-  • Implementation:
-      1. Raw Mode: Render the raw XML text editor with syntax highlighting using  gpui_component::input::Input . Render the  <include src="..." />  tags literally.
-      2. WYSIWYG Mode: Implement recursive stitching in the TWXML parser. When encountering  <include src="filename.twxml" /> , parse that file and insert its body children into the parent block hierarchy. Render the resulting
-      flattened document as styled preview blocks.
-      3. Markdown Mode: Implement a read-only Markdown converter that formats the TWXML AST as styled Markdown text. Render included files using the  ![[document-name]]  syntax.
-      4. Ensure all three modes reference the same underlying text buffer (editing in Raw mode is immediately reflected when switching to WYSIWYG or Markdown).
+  • Objective: Render document content differently depending on the active mode ( RawEditor ,  BlockEditor ,  MarkdownView ,  FlowTextEditor  stub) and compile included files recursively while sharing a single rope buffer ( InputState ) and single document AST ( DocumentHome ).
+  • Implementation & Phased Block Editor Pipeline:
+      1. Raw Mode ( RawEditor ): Render the raw XML text editor with syntax highlighting using  gpui_component::input::Input . Render the  <include src="..." />  tags literally.
+      2. Block Editor Mode ( BlockEditor , formerly WYSIWYG):
+          • Phase 0 (Plumbing): Rename  DocumentMode::WysiwygPreview  →  DocumentMode::BlockEditor , update dropdown selector, verify selection offsets and undo history are rope-centric.
+          • Phase 1 (Read-only Cards): Implement virtualized list of block cards ( gpui_component  virtual list /  uniform_list ) rendering all  Block  AST variants (paragraphs, headings, lists, tables, details, hubrefs, flattened  <include src="..." />  children).
+          • Phase 2 (Block-Level Editing): Gutter  +  insert button &  /  slash menu for TWXML tag skeletons; edit pencil toggling block card into focused multi-line  Input ; rewrite rope range on commit and re-parse; block type conversion ("Turn into...").
+          • Phase 3 (Inline Formatting & LSP Triggers) [COMPLETED]: LSP-driven expansion for markdown triggers (#, **, *, -, 1., [ ], `, ~~); trigger autocompletion popovers with wrap/replace actions; keyboard shortcuts (Ctrl/Cmd+B, Ctrl/Cmd+I, Ctrl/Cmd+K); context menu formatting; derived TWXML heading tree depth rules.
+          • Phase 4 (Polish & FlowText Stub): Virtual scroll performance optimization for novel-length documents; right-click hubref context menu stubs; diagnostics jump-to-caret.
+      3. Markdown Mode ( MarkdownView ): Implement a read-only Markdown converter that formats the TWXML AST as styled Markdown text. Render included files using the  ![[document-name]]  syntax.
+      4. FlowText Mode ( FlowTextEditor  Stub): Experimental coming-soon placeholder reserved for future integration of external  gpui-flowtext  rich-text engine, while sharing the same rope buffer and selection/undo history.
+      5. Ensure all four modes reference the same underlying text buffer ( InputState ) so editing in any mode is immediately reflected when toggling.
 
 
   ### Step 3: In-Application Tree-Sitter Parser & Outlines
@@ -100,7 +109,7 @@
   • Objective: Connect prose references to graph nodes and vice versa.
   • Implementation:
       1. Document → Graph Navigation:
-          • Bind a click listener to  <hubref>  elements in the WYSIWYG block renderer.
+          • Bind a click listener to  <hubref>  elements in the Block Editor card renderer.
           • When clicked, notify the main view to:
               1. Switch the right pane to the  InstancesRelation  tab.
               2. Focus/select the target Hub node on the canvas.
@@ -126,7 +135,7 @@
 
   We have updated TauWriterDesign.md to:
 
-  1. Define the side-by-side pane split view layout (Left pane: Document tabs with Raw/WYSIWYG/Markdown dropdown mode selector; Right pane: Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation tabs).
-  2. Explicitly define how includes behave in WYSIWYG (flattened), Raw (tag-only), and Markdown ( ![[document-name]]  format).
-  3. Set up the logic for bidirectional linking (Click  <hubref>  in WYSIWYG -> highlight/zoom right Instance node; Click right Instance node -> open document tab, scroll and move cursor to instance).
-  4. Update unresolved design questions to define document fragmentation rules.
+  1. Define the side-by-side pane split view layout (Left pane: Document tabs with RawEditor/BlockEditor/MarkdownView/FlowTextEditor dropdown mode selector; Right pane: Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation tabs).
+  2. Explicitly define how includes behave in BlockEditor (flattened), RawEditor (tag-only), and MarkdownView ( ![[document-name]]  format).
+  3. Set up the logic for bidirectional linking (Click  <hubref>  in Block Editor -> highlight/zoom right Instance node; Click right Instance node -> open document tab, scroll and move cursor to instance).
+  4. Update unresolved design questions and complete design specification for the TauWriter Block Editor (Notion/Craft UI model, rope-centric data flow, LSP triggers, and 4-phase implementation plan).

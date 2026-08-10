@@ -18,8 +18,9 @@ pub(crate) fn render_mode_selector(
 ) -> impl gpui::IntoElement {
     let mode_label = match current_mode {
         DocumentMode::RawEditor => "Raw Editor",
-        DocumentMode::WysiwygPreview => "WYSIWYG Preview",
+        DocumentMode::BlockEditor => "Block Editor",
         DocumentMode::MarkdownView => "Markdown View",
+        DocumentMode::FlowTextEditor => "FlowText Editor (Stub)",
     };
 
     DropdownButton::new(format!("mode-selector-{doc_idx}"))
@@ -27,19 +28,20 @@ pub(crate) fn render_mode_selector(
         .dropdown_menu(move |menu, _, _| {
             // Clone the view handle here — cheap Arc increment.
             let view_for_raw = view.clone();
-            let view_for_wysiwyg = view.clone();
+            let view_for_block = view.clone();
             let view_for_md = view.clone();
+            let view_for_flow = view.clone();
             menu.item(PopupMenuItem::new("Raw Editor").on_click({
                 move |_, _, cx| {
                     switch_view_mode(doc_idx, DocumentMode::RawEditor, view_for_raw.clone(), cx);
                 }
             }))
-            .item(PopupMenuItem::new("WYSIWYG Preview").on_click({
+            .item(PopupMenuItem::new("Block Editor").on_click({
                 move |_, _, cx| {
                     switch_view_mode(
                         doc_idx,
-                        DocumentMode::WysiwygPreview,
-                        view_for_wysiwyg.clone(),
+                        DocumentMode::BlockEditor,
+                        view_for_block.clone(),
                         cx,
                     );
                 }
@@ -47,6 +49,16 @@ pub(crate) fn render_mode_selector(
             .item(PopupMenuItem::new("Markdown View").on_click({
                 move |_, _, cx| {
                     switch_view_mode(doc_idx, DocumentMode::MarkdownView, view_for_md.clone(), cx);
+                }
+            }))
+            .item(PopupMenuItem::new("FlowText Editor (Stub)").on_click({
+                move |_, _, cx| {
+                    switch_view_mode(
+                        doc_idx,
+                        DocumentMode::FlowTextEditor,
+                        view_for_flow.clone(),
+                        cx,
+                    );
                 }
             }))
         })

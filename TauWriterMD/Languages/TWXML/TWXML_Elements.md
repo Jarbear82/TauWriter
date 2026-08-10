@@ -120,7 +120,7 @@ A self-closing structural compilation directive that stitches a separate file fr
 Connects written text directly to its HubGS schema properties.
 * **Wrapping Variant**: Wraps arbitrary textual prose. Subject to tracking updates via the `<review>` engine.
   * *Example*: `<hubref id="aragorn" field="first_name">The Ranger</hubref>`
-* **Self-Closing Variant**: Instructs the WYSIWYG and compilation engines to fetch and drop active values straight from the graph execution pass.
+* **Self-Closing Variant**: Instructs the Block Editor and compilation engines to fetch and drop active values straight from the graph execution pass.
   * *Example*: `<hubref id="aragorn" field="full_name" />`
 
 ### Link
