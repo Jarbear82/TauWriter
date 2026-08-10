@@ -1,12 +1,13 @@
 //! Title bar and settings panel rendering.
 //!
 //! Extracted from `ui/mod.rs` to reduce file length and isolate window chrome logic.
-//! [user-review: split required] See task ticket for splitting rationale.
 
 use gpui::prelude::*;
 use gpui::{div, Context, Entity, IntoElement, Render};
-use gpui_component::{Icon, IconName};
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::list::ListItem;
 use gpui_component::scroll::ScrollableElement;
+use gpui_component::{Icon, IconName, Selectable};
 
 // ─── SettingsPanel (theme picker) ───────────────────────────────────────────
 
@@ -18,9 +19,6 @@ impl RenderOnce for SettingsPanel {
         let theme_val = gpui_component::Theme::global(cx);
         let sidebar_bg = theme_val.sidebar;
         let theme_muted_foreground = theme_val.muted_foreground;
-        let theme_primary = theme_val.primary;
-        let theme_accent = theme_val.accent;
-        let theme_foreground = theme_val.foreground;
 
         let theme_name = theme_val.theme_name();
         let themes_list = gpui_component::ThemeRegistry::global(cx).sorted_themes();
@@ -29,11 +27,6 @@ impl RenderOnce for SettingsPanel {
         for (idx, theme_config) in themes_list.into_iter().enumerate() {
             let name = theme_config.name.clone();
             let is_current = theme_name == &name;
-            let item_color = if is_current {
-                theme_primary
-            } else {
-                theme_foreground
-            };
 
             let mode_icon = gpui_component::Icon::new(if theme_config.mode.is_dark() {
                 IconName::Moon
@@ -41,17 +34,9 @@ impl RenderOnce for SettingsPanel {
                 IconName::Sun
             });
 
-            let item = gpui::div()
-                .id(("theme", idx))
-                .flex()
-                .items_center()
-                .justify_between()
-                .h(gpui::px(32.))
-                .px_3()
-                .text_size(gpui::px(12.))
-                .text_color(item_color)
-                .hover(|s| s.bg(theme_accent))
-                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+            let item = ListItem::new(("theme", idx))
+                .selected(is_current)
+                .on_click(move |_, _, cx| {
                     let theme_registry = gpui_component::ThemeRegistry::global(cx);
                     if let Some(config) = theme_registry.themes().get(&name).cloned() {
                         let mode = config.mode;
@@ -174,14 +159,13 @@ impl RenderOnce for TitleBar {
         let sidebar_bg = theme.sidebar;
         let border_color = theme.border;
         let theme_muted_foreground = theme.muted_foreground;
-        let active_accent = theme.primary;
-        let theme_button = theme.button;
-        let theme_button_foreground = theme.button_foreground;
-        let theme_primary_foreground = theme.primary_foreground;
+        let theme_accent = theme.accent;
 
         let settings_open = self.settings_open;
         let title = self.title.clone();
         let view = self.view.clone();
+
+        let view_settings = view;
 
         gpui::div()
             .flex()
@@ -208,7 +192,7 @@ impl RenderOnce for TitleBar {
                             .w(gpui::px(10.))
                             .h(gpui::px(10.))
                             .rounded_full()
-                            .bg(gpui::rgb(0x00cc66)),
+                            .bg(theme.primary),
                     )
                     .child(
                         gpui::div()
@@ -231,31 +215,16 @@ impl RenderOnce for TitleBar {
                     .gap_2()
                     .pr_4()
                     .child(
-                        // Settings Button
-                        gpui::div()
-                            .id("settings_btn")
-                            .px_2()
-                            .py_1()
-                            .rounded(gpui::px(4.))
-                            .bg(if settings_open {
-                                active_accent
-                            } else {
-                                theme_button
-                            })
-                            .text_color(if settings_open {
-                                theme_primary_foreground
-                            } else {
-                                theme_button_foreground
-                            })
-                            .text_size(gpui::px(11.))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .hover(|s| s.bg(theme.accent))
-                            .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                                view.update(cx, |this, cx| {
+                        Button::new("settings_btn")
+                            .label("Settings")
+                            .icon(IconName::Settings)
+                            .selected(settings_open)
+                            .ghost()
+                            .on_click(move |_, window, cx| {
+                                view_settings.update(cx, |this, cx| {
                                     this.toggle_settings(&crate::ui::ToggleSettings, window, cx);
                                 });
-                            })
-                            .child("Settings"),
+                            }),
                     )
                     .child(
                         // Minimize Button
@@ -263,8 +232,8 @@ impl RenderOnce for TitleBar {
                             .w(gpui::px(12.))
                             .h(gpui::px(12.))
                             .rounded_full()
-                            .bg(gpui::rgb(0xffbd2e))
-                            .hover(|s| s.bg(gpui::rgb(0xe0a92a)))
+                            .bg(theme_muted_foreground.opacity(0.3))
+                            .hover(move |s| s.bg(theme_accent))
                             .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
                                 window.minimize_window();
                             }),
@@ -275,8 +244,8 @@ impl RenderOnce for TitleBar {
                             .w(gpui::px(12.))
                             .h(gpui::px(12.))
                             .rounded_full()
-                            .bg(gpui::rgb(0x27c93f))
-                            .hover(|s| s.bg(gpui::rgb(0x20a834)))
+                            .bg(theme_muted_foreground.opacity(0.3))
+                            .hover(move |s| s.bg(theme_accent))
                             .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
                                 window.zoom_window();
                             }),
@@ -287,8 +256,8 @@ impl RenderOnce for TitleBar {
                             .w(gpui::px(12.))
                             .h(gpui::px(12.))
                             .rounded_full()
-                            .bg(gpui::rgb(0xff5f56))
-                            .hover(|s| s.bg(gpui::rgb(0xe04f46)))
+                            .bg(theme_muted_foreground.opacity(0.3))
+                            .hover(|s| s.bg(gpui::rgb(0xff5f56)))
                             .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
                                 window.remove_window();
                             }),
@@ -296,3 +265,4 @@ impl RenderOnce for TitleBar {
             )
     }
 }
+

@@ -1,5 +1,6 @@
 use gpui::prelude::*;
 use gpui::{div, AnyElement, Context, Entity};
+use gpui_component::{collapsible::Collapsible, Icon, IconName};
 
 use super::expansion_state::ExpandedBlocks;
 
@@ -54,15 +55,13 @@ impl CollapsibleBlock {
         let border_color = self.border_color;
         let bg_color = self.bg_color;
         let toggle_key = toggle_offset;
-        let blocks_key = expanded_blocks.clone();
+        let blocks_key = expanded_blocks;
 
-        let mut container = div()
-            .id("collapsible")
-            .w_full()
-            .mb_4()
-            .border_l_4()
-            .border_color(border_color)
-            .bg(bg_color);
+        let chevron = if is_expanded {
+            IconName::ChevronDown
+        } else {
+            IconName::ChevronRight
+        };
 
         // Header row — always visible, serves as the collapse/expand toggle handle.
         let header = div()
@@ -77,10 +76,8 @@ impl CollapsibleBlock {
             .cursor_pointer()
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                 blocks_key.update(cx, |eb, _cx| eb.toggle(toggle_key));
-                // No explicit notify needed — EventEmitter<()> on ExpandedBlocks triggers
-                // all subscriber re-renders implicitly via .update().
             })
-            .child(if is_expanded { "▼" } else { "▶" })
+            .child(Icon::new(chevron).size(gpui::px(14.)))
             .child(
                 div()
                     .italic()
@@ -89,15 +86,31 @@ impl CollapsibleBlock {
                     .child(header_label),
             );
 
-        container = container.child(header);
-
-        if is_expanded {
+        let body_content = if is_expanded {
             if let Some(children_fn) = self.children_fn.take() {
                 let body_children = children_fn();
-                container = container.child(div().p_4().flex().flex_wrap().children(body_children));
+                Some(div().p_4().flex().flex_wrap().children(body_children))
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+        let mut collapsible = Collapsible::new().open(is_expanded).child(header);
+        if let Some(body) = body_content {
+            collapsible = collapsible.content(body);
         }
 
-        container.into_any_element()
+        div()
+            .id("collapsible")
+            .w_full()
+            .mb_4()
+            .border_l_4()
+            .border_color(border_color)
+            .bg(bg_color)
+            .child(collapsible)
+            .into_any_element()
     }
 }
+

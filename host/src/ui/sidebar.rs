@@ -1,18 +1,17 @@
-//! Sidebar rendering — file explorer and tab bar.
+//! Sidebar rendering — file explorer with virtualized list and collapse state.
 //!
 //! Extracted from `ui/mod.rs` to reduce file length and isolate navigation UI logic.
-//! [user-review: split required] See task ticket for splitting rationale.
 
 use gpui::prelude::*;
 use gpui::{div, uniform_list, Context, Entity, EventEmitter};
 use gpui_component::{
-    tab::{Tab, TabBar},
+    list::ListItem,
     Icon, IconName,
 };
+use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::tree_view::flatten_file_tree;
-
+use super::tree_view::flatten_file_tree_with_collapse;
 use super::Workspace;
 
 pub(crate) enum SidebarEvent {
@@ -21,12 +20,16 @@ pub(crate) enum SidebarEvent {
 
 pub(crate) struct SidebarView {
     workspace: Entity<Workspace>,
+    collapsed_paths: HashSet<PathBuf>,
 }
 
 impl SidebarView {
     pub(crate) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        Self { workspace }
+        Self {
+            workspace,
+            collapsed_paths: HashSet::new(),
+        }
     }
 }
 
@@ -44,8 +47,7 @@ impl Render for SidebarView {
             workspace.file_tree.clone()
         };
 
-        // Flatten the tree for virtualization checks
-        let flat_nodes = flatten_file_tree(&file_tree);
+        let flat_nodes = flatten_file_tree_with_collapse(&file_tree, &self.collapsed_paths);
 
         let file_list_content = if flat_nodes.is_empty() {
             gpui::div()
@@ -62,49 +64,64 @@ impl Render for SidebarView {
                     let workspace = this.workspace.read(cx);
                     let file_tree = &workspace.file_tree;
                     let selected_path = &workspace.selected_path;
-
-                    let flat = flatten_file_tree(file_tree);
-
-                    let theme = gpui_component::Theme::global(cx);
-                    let theme_primary = theme.primary;
-                    let theme_foreground = theme.foreground;
-                    let theme_muted_foreground = theme.muted_foreground;
-                    let theme_accent = theme.accent;
+                    let flat = flatten_file_tree_with_collapse(file_tree, &this.collapsed_paths);
 
                     range
                         .map(|idx| {
                             let node = &flat[idx];
-                            let padding_left = gpui::px((node.depth * 12 + 12) as f32);
+                            let padding_left = gpui::px((node.depth * 12 + 8) as f32);
                             let is_selected = selected_path.as_ref().map_or(false, |p| {
                                 p.canonicalize().ok() == node.path.canonicalize().ok()
                             });
-                            let color = if is_selected {
-                                theme_primary
-                            } else if !node.is_dir {
-                                theme_foreground
+                            let is_collapsed = this.collapsed_paths.contains(&node.path);
+
+                            let (chevron, icon) = if node.is_dir {
+                                let chev = if is_collapsed {
+                                    IconName::ChevronRight
+                                } else {
+                                    IconName::ChevronDown
+                                };
+                                (Some(chev), IconName::Folder)
                             } else {
-                                theme_muted_foreground
+                                (None, IconName::File)
                             };
 
-                            let icon = if node.is_dir {
-                                Some(IconName::Folder)
-                            } else {
-                                Some(IconName::File)
-                            };
                             let path = node.path.clone();
+                            let is_dir = node.is_dir;
 
-                            let mut item = gpui::div()
-                                .id(("file", idx))
+                            let mut row_content = div()
                                 .flex()
                                 .items_center()
-                                .h(gpui::px(26.))
+                                .gap_1p5()
                                 .pl(padding_left)
-                                .text_size(gpui::px(12.))
-                                .text_color(color)
-                                .hover(|s| s.bg(theme_accent));
+                                .text_size(gpui::px(12.));
 
-                            if !node.is_dir {
-                                item = item.on_mouse_down(
+                            if let Some(chev) = chevron {
+                                row_content = row_content.child(Icon::new(chev).size(gpui::px(12.)));
+                            } else {
+                                row_content = row_content.child(div().w(gpui::px(12.)));
+                            }
+
+                            row_content = row_content
+                                .child(Icon::new(icon).size(gpui::px(14.)))
+                                .child(node.name.clone());
+
+                            let mut list_item = ListItem::new(("file", idx))
+                                .selected(is_selected)
+                                .child(row_content);
+
+                            if is_dir {
+                                list_item = list_item.on_mouse_down(
+                                    gpui::MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        if !this.collapsed_paths.insert(path.clone()) {
+                                            this.collapsed_paths.remove(&path);
+                                        }
+                                        cx.notify();
+                                    }),
+                                );
+                            } else {
+                                list_item = list_item.on_mouse_down(
                                     gpui::MouseButton::Left,
                                     cx.listener(move |_, _, _, cx| {
                                         cx.emit(SidebarEvent::FileSelected(path.clone()));
@@ -112,14 +129,7 @@ impl Render for SidebarView {
                                 );
                             }
 
-                            item.child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(Icon::new(icon.unwrap()).size(gpui::px(14.)))
-                                    .child(node.name.clone()),
-                            )
+                            list_item
                         })
                         .collect::<Vec<_>>()
                 }),
@@ -155,5 +165,6 @@ impl Render for SidebarView {
             )
     }
 }
+
 
 

@@ -326,7 +326,7 @@ impl Render for DocumentView {
         // 2. WYSIWYG Preview Panel
         let mut preview_content = div()
             .id("preview_content")
-            .size_full()
+            .w_full()
             .flex()
             .flex_col()
             .bg(theme_val.background)
@@ -456,8 +456,10 @@ impl Render for DocumentView {
             .size_full()
             .flex()
             .flex_col()
+            .overflow_hidden()
             .child(
                 gpui::div()
+                    .flex_none()
                     .p_2()
                     .bg(sidebar_bg)
                     .border_b(gpui::px(1.))
@@ -468,12 +470,13 @@ impl Render for DocumentView {
                     .child(preview_header),
             )
             .child(
-                preview_content
+                gpui::div()
                     .id("preview_container")
                     .flex_1()
                     .h(gpui::px(0.))
                     .w_full()
-                    .overflow_y_scrollbar(),
+                    .overflow_y_scrollbar()
+                    .child(preview_content),
             );
 
         // 3. Markdown read-only panel
@@ -498,8 +501,10 @@ impl Render for DocumentView {
                 .size_full()
                 .flex()
                 .flex_col()
+                .overflow_hidden()
                 .child(
                     gpui::div()
+                        .flex_none()
                         .p_2()
                         .bg(sidebar_bg)
                         .border_b(gpui::px(1.))
@@ -521,6 +526,9 @@ impl Render for DocumentView {
 
         gpui::div()
             .size_full()
+            .flex()
+            .flex_col()
+            .overflow_hidden()
             .child(content_pane)
             .into_any_element()
     }

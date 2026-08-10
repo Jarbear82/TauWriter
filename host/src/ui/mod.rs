@@ -875,6 +875,8 @@ impl gpui::Render for MainView {
                                 div()
                                     .flex_1()
                                     .h(gpui::px(0.))
+                                    .w_full()
+                                    .overflow_hidden()
                                     .child(self.document_view.clone()),
                             ),
                     ),

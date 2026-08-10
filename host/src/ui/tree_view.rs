@@ -64,12 +64,26 @@ pub(crate) fn build_file_tree(dir: &Path) -> Vec<FileNode> {
 
 /// Flatten a hierarchical FileNode tree into a flat list for virtualized rendering.
 pub(crate) fn flatten_file_tree(nodes: &[FileNode]) -> Vec<FlatFileNode> {
+    let empty_set = std::collections::HashSet::new();
+    flatten_file_tree_with_collapse(nodes, &empty_set)
+}
+
+/// Flatten a hierarchical FileNode tree respecting a set of collapsed directory paths.
+pub(crate) fn flatten_file_tree_with_collapse(
+    nodes: &[FileNode],
+    collapsed_paths: &std::collections::HashSet<PathBuf>,
+) -> Vec<FlatFileNode> {
     let mut flat = Vec::new();
-    _flatten_recursive(nodes, 0, &mut flat);
+    _flatten_recursive_with_collapse(nodes, 0, collapsed_paths, &mut flat);
     flat
 }
 
-fn _flatten_recursive(nodes: &[FileNode], depth: usize, flat: &mut Vec<FlatFileNode>) {
+fn _flatten_recursive_with_collapse(
+    nodes: &[FileNode],
+    depth: usize,
+    collapsed_paths: &std::collections::HashSet<PathBuf>,
+    flat: &mut Vec<FlatFileNode>,
+) {
     for node in nodes {
         flat.push(FlatFileNode {
             path: node.path.clone(),
@@ -77,8 +91,9 @@ fn _flatten_recursive(nodes: &[FileNode], depth: usize, flat: &mut Vec<FlatFileN
             is_dir: node.is_dir,
             depth,
         });
-        if !node.children.is_empty() {
-            _flatten_recursive(&node.children, depth + 1, flat);
+        if node.is_dir && !node.children.is_empty() && !collapsed_paths.contains(&node.path) {
+            _flatten_recursive_with_collapse(&node.children, depth + 1, collapsed_paths, flat);
         }
     }
 }
+
