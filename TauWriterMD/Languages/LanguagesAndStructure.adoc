@@ -1,11 +1,12 @@
-## Languages
+== Languages
 - twxml
 - hubgs
 
-## Directory Structure (not set in stone)
-```
+== Directory Structure (not set in stone)
+[source,text]
+----
 KnowledgeBaseDirectoryName
 |-DocumentDirectory        // Contains all twxml files
 |-GraphDirectory           // Contains all hubgs files
-```
-### Modules
+----
+=== Modules

@@ -4,7 +4,7 @@ Because the specification is extensive, the commands, actions, and operations (r
 
 Here is a comprehensive list of the core LSP operations (up through the 3.17 specification):
 
-### **1. General & Lifecycle Messages**
+=== **1. General & Lifecycle Messages**
 
 These handle the connection and basic capabilities between the client and server.
 
@@ -23,7 +23,7 @@ These handle the connection and basic capabilities between the client and server
 - **`$/cancelRequest` (Notification):** Cancels an ongoing request.
     
 
-### **2. Window Messages**
+=== **2. Window Messages**
 
 These allow the server to interact with the user interface of the editor.
 
@@ -42,7 +42,7 @@ These allow the server to interact with the user interface of the editor.
 - **`telemetry/event` (Notification):** Sends telemetry data from the server to the client.
     
 
-### **3. Workspace Features**
+=== **3. Workspace Features**
 
 These manage the broader project context rather than a single file.
 
@@ -71,7 +71,7 @@ These manage the broader project context rather than a single file.
 - **`workspace/diagnostic/refresh` (Request):** Asks the client to refresh pull-based diagnostics.
     
 
-### **4. Text Document Synchronization**
+=== **4. Text Document Synchronization**
 
 These keep the server's internal representation of the code in sync with the user's editor.
 
@@ -88,7 +88,7 @@ These keep the server's internal representation of the code in sync with the use
 - **`textDocument/didClose` (Notification):** The document was closed.
     
 
-### **5. Language Features**
+=== **5. Language Features**
 
 These are the core "smart" features triggered by user actions like typing, hovering, or clicking.
 
@@ -172,7 +172,7 @@ These are the core "smart" features triggered by user actions like typing, hover
 - **`textDocument/linkedEditingRange` (Request):** Support linked editing (e.g., changing an opening HTML tag auto-changes the closing tag).
     
 
-### **6. Diagnostics**
+=== **6. Diagnostics**
 
 - **`textDocument/publishDiagnostics` (Notification):** Server pushes errors, warnings, and hints to the client (Push model).
     

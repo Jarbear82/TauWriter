@@ -275,7 +275,8 @@ impl Render for GuiPerformanceBenchmarkApp {
 
 fn main() {
     println!("Launching Graphene-RS GUI Performance Benchmark App...");
-    Application::new().run(|cx: &mut gpui::App| {
+    let platform = gpui_platform::current_platform(false);
+    Application::with_platform(platform).run(|cx: &mut gpui::App| {
         gpui_component::init(cx);
         cx.open_window(
             WindowOptions {

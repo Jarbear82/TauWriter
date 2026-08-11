@@ -1,20 +1,25 @@
-# TauWriter
+= TauWriter
+:toc: left
+:icons: font
+:source-highlighter: highlightjs
 
 TauWriter is an industrial-grade, graph-augmented monorepo application and language server designed for worldbuilders, novelists, and RPG Dungeon Masters. It bridges the gap between linear narrative prose and structured knowledge management.
 
-## 🧠 Philosophy: Knowledge as a Codebase
+== 🧠 Philosophy: Knowledge as a Codebase
 
-TauWriter treats notes, lore, characters, locations, and all worldbuilding artifacts **as strongly-typed code**. Every piece of information is structured and statically analyzable. Just as an IDE understands your source code—its types, references, and dependencies—TauWriter understands your knowledge base with the same rigor.
+TauWriter treats notes, lore, characters, locations, and all worldbuilding artifacts *as strongly-typed code*. Every piece of information is structured and statically analyzable. Just as an IDE understands your source code—its types, references, and dependencies—TauWriter understands your knowledge base with the same rigor.
 
 This means:
-- **Structured data** replaces freeform notes: every entity has a defined type, validated fields, and explicit relationships.
-- **Cross-references are first-class**: links between prose and structured data (and between entities themselves) are resolved at parse time, not search time.
-- **Refactoring is safe**: rename a character, merge locations, or restructure a magic system with full traceability across all documents that reference it.
-- **No external scripting runtime needed**: the entire analysis pipeline is pure Rust—fast, memory-safe, and deterministic.
 
-## 🏗 Dependency & Layering Architecture
+* *Structured data* replaces freeform notes: every entity has a defined type, validated fields, and explicit relationships.
+* *Cross-references are first-class*: links between prose and structured data (and between entities themselves) are resolved at parse time, not search time.
+* *Refactoring is safe*: rename a character, merge locations, or restructure a magic system with full traceability across all documents that reference it.
+* *No external scripting runtime needed*: the entire analysis pipeline is pure Rust—fast, memory-safe, and deterministic.
 
-```text
+== 🏗 Dependency & Layering Architecture
+
+[source,text]
+----
 Foundations (tauwriter-text, tauwriter-paths, tauwriter-util)
         ↑
 Graphene (graphene_core → layout / style / algorithms / gpui)
@@ -26,17 +31,19 @@ Analysis (tauwriter-analysis)
 Protocol (tauwriter-lsp, tauwriter-cli)
         ↑
 Application (tauwriter-project, tauwriter-workspace, tauwriter-document, tauwriter-graph, tauwriter-ui, tauwriter_host)
-```
+----
 
 Rules:
-- `tauwriter-analysis` contains pure Salsa database queries, diagnostic production, and semantic analysis with zero UI dependencies.
-- `graphene_*` crates handle domain-agnostic graph visualization, force-directed layout, and GPUI rendering.
-- `tauwriter-lsp` and `tauwriter-cli` adapt the pure analysis core to LSP JSON-RPC and CLI subcommands.
-- `tauwriter_host` is the primary standalone GPUI application.
 
-## 📁 Monorepo Structure
+* `tauwriter-analysis` contains pure Salsa database queries, diagnostic production, and semantic analysis with zero UI dependencies.
+* `graphene_*` crates handle domain-agnostic graph visualization, force-directed layout, and GPUI rendering.
+* `tauwriter-lsp` and `tauwriter-cli` adapt the pure analysis core to LSP JSON-RPC and CLI subcommands.
+* `tauwriter_host` is the primary standalone GPUI application.
 
-```text
+== 📁 Monorepo Structure
+
+[source,text]
+----
 tauwriter/
 ├── Cargo.toml                          # Virtual workspace manifest
 ├── rust-toolchain.toml                 # Pinned stable toolchain
@@ -66,48 +73,60 @@ tauwriter/
 ├── extension/                          # Zed extension (grammars + LSP launcher)
 ├── examples/                           # Sample .hubgs and .twxml knowledge bases
 └── TauWriterMD/                        # Design specs & documentation
-```
+----
 
-## 🛠 Key Technologies
+== 🛠 Key Technologies
 
-- **Rust (Stable):** High-performance core implementation.
-- **GPUI:** High-performance hardware-accelerated UI framework.
-- **Salsa:** Incremental computation engine for instant analysis updates.
-- **Tree-sitter:** Incremental parsing for syntax highlighting and AST queries.
-- **Language Server Protocol (LSP):** Standardized communication for Zed and editor extensions.
+* *Rust (Stable):* High-performance core implementation.
+* *GPUI:* High-performance hardware-accelerated UI framework.
+* *Salsa:* Incremental computation engine for instant analysis updates.
+* *Tree-sitter:* Incremental parsing for syntax highlighting and AST queries.
+* *Language Server Protocol (LSP):* Standardized communication for Zed and editor extensions.
 
-## 📖 Building & Running
+== 📖 Building & Running
 
-### Build everything
-```bash
+=== Build everything
+
+[source,bash]
+----
 cargo build --workspace
-```
+----
 
-### Run workspace tests
-```bash
+=== Run workspace tests
+
+[source,bash]
+----
 cargo test --workspace
-```
+----
 
-### Run CLI validator
-```bash
+=== Run CLI validator
+
+[source,bash]
+----
 cargo run -p tauwriter-cli -- validate examples/brave_little_tailor.hubgs
-```
+----
 
-### Run GPUI host application
-```bash
+=== Run GPUI host application
+
+[source,bash]
+----
 cargo run -p tauwriter_host
-```
+----
 
-### Run interactive graph visualizer demo (Graphene)
-```bash
+=== Run interactive graph visualizer demo (Graphene)
+
+[source,bash]
+----
 cargo run --bin interactive_demo -p graphene_examples
-```
+----
 
-### Run LSP server
-```bash
+=== Run LSP server
+
+[source,bash]
+----
 cargo run -p tauwriter-lsp
-```
+----
 
-## 📈 Status
+== 📈 Status
 
-See [Status.md](Status.md) for detailed progress on the fully integrated monorepo architecture.
+See link:Status.adoc[Status.adoc] for detailed progress on the fully integrated monorepo architecture.

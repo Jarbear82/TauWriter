@@ -1,10 +1,11 @@
-# HubGS: Hub Graph Script
+= HubGS: Hub Graph Script
 A structured, type-safe DSL for defining and instantiating knowledge graphs. HubGS powers the "Knowledge as a Codebase" methodology in TauWriter—treating worldbuilding data as strongly-typed code with compile-time validation.
 
-## File Structure
+== File Structure
 All definitions must be contained within a `DEFINITIONS` block, and instances within an `INSTANCES` block. Imports are handled in an `IMPORTS` block.
 
-```hubgs
+[source,hubgs]
+----
 IMPORTS [ ... ]
 DEFINITIONS [
     FIELDS [ ... ],
@@ -13,16 +14,16 @@ DEFINITIONS [
     HUBS [ ... ],
 ]
 INSTANCES [ ... ]
-```
+----
 
-## Implicit Module Namespaces
+== Implicit Module Namespaces
 HubGS does not use explicit `MODULE` string declarations. Instead, the **filename and filepath act as the implicit module namespace**. 
 
 When a file imports definitions from another schema, the LSP automatically namespaces those definitions behind the filename to prevent collisions.
 - **Example:** If `campaign.hubgs` imports a `weight` field from `./core.hubgs`, it resolves as `core::weight`. 
 - **Conflict Resolution:** If multiple files share the exact same implicit module namespace (e.g., both are named `core.hubgs` in different directories), they contribute to a unified namespace, and the LSP resolves collisions strictly on identical definitions.
 
-## Block Dependencies
+== Block Dependencies
 
 HubGS enforces conditional block requirements to ensure type safety:
 
@@ -31,7 +32,7 @@ HubGS enforces conditional block requirements to ensure type safety:
   - An `IMPORTS` statement that imports all referenced Hub types from other `.hubgs` files.
 - This means you cannot instantiate a Hub without first declaring its type somewhere resolvable in the file's scope.
 
-## Resolution Rules
+== Resolution Rules
 
 Every instance must successfully resolve against a known definition, enforcing **strict referential integrity**:
 
@@ -42,7 +43,7 @@ Every instance must successfully resolve against a known definition, enforcing *
 
 If any of these resolutions fail, the parser emits a diagnostic error and the instance is marked invalid in the LSP.
 
-## Tree-sitter Grammar Enforcement
+== Tree-sitter Grammar Enforcement
 
 The HubGS tree-sitter grammar **strictly enforces** block structure during the parsing phase:
 - Top-level blocks (`IMPORTS`, `DEFINITIONS`, `INSTANCES`) must appear at the file root. No arbitrary code or declarations outside these containers are permitted.
@@ -51,12 +52,13 @@ The HubGS tree-sitter grammar **strictly enforces** block structure during the p
 
 ---
 
-## Types
+== Types
 
-### Enums
+=== Enums
 An enumeration type with a limited set of specific values. 
 Example:
-```hubgs
+[source,hubgs]
+----
 ENUMS [
     Aspect {
         Mind,
@@ -64,12 +66,13 @@ ENUMS [
         Spirit
     }
 ]
-```
+----
 
-### Fields
+=== Fields
 Global scope defined. Named and typed properties to be used in hubs and structs.
 Example:
-```hubgs
+[source,hubgs]
+----
 FIELDS [
     name: Text,
     age: Number,
@@ -77,19 +80,20 @@ FIELDS [
     tags: Array<Text>,
     meta: Map<Text, Text>
 ]
-```
+----
 
-#### Primitive Types
+==== Primitive Types
 *   **Number**: 64-bit float, supporting decimal, hex, binary, and octal.
 *   **Text**: UTF-8 strings, supports triple-quotes and template interpolation.
 *   **Boolean**: `true` or `false`.
 
-#### Collections
+==== Collections
 
-##### Struct
+===== Struct
 Structs group existing global fields together. They are accessed using dot notation.
 Example:
-```hubgs
+[source,hubgs]
+----
 STRUCTS [
     Dimensions {
         width,
@@ -97,18 +101,18 @@ STRUCTS [
         depth
     }
 ]
-```
+----
 
-##### Array
+===== Array
 Ordered list of a single type. Syntax: `Array<Type>`. Comma separated list wrapped in `[]` square brackets.
 
-##### Map
+===== Map
 Key-value pairs. Syntax: `Map<KeyType, ValueType>`.
 
-##### Set
+===== Set
 Unique collection of types. Syntax: `Set<Type1, Type2, ...>`.
 
-### Roles
+=== Roles
 Hub-specific relationships. Roles define how Hubs connect to each other.
 Syntax:
 `role_name <direction> (<multiplicity>) ALLOWS [<HubType>, ... ]`
@@ -116,10 +120,11 @@ Syntax:
 *   **Direction**: `->` (outbound), `<-` (inbound), `<->` (bidirectional), `-` (unspecified).
 *   **Multiplicity**: `(1)`, `(*)`, `(0..*)`, `(1..5)`, etc.
 
-### Hubs
+=== Hubs
 Hubs are the primary entities. They reference global fields and define local roles.
 Example:
-```hubgs
+[source,hubgs]
+----
 HUBS [
     Person {
         name,
@@ -127,16 +132,17 @@ HUBS [
         home -> (1) ALLOWS [Location]
     }
 ]
-```
+----
 Note: Hub fields **must** be defined globally in a `FIELDS` block before being used in a Hub.
 
-#### Visual Decoration Attributes (`@display`, `@background`)
+==== Visual Decoration Attributes (`@display`, `@background`)
 Visual configuration is declared directly on fields inside a Hub definition using the trailing attributes `@display` and `@background`:
 
 *   **`@display`**: Marks a field to be used as the primary display label/name for the Hub type.
 *   **`@background`**: Marks a field to be used as the source for the node's background styling (e.g., color hex or image path).
 
-```hubgs
+[source,hubgs]
+----
 HUBS [
     Character {
         name @display,
@@ -145,12 +151,13 @@ HUBS [
         resides_in -> (0..1) ALLOWS [Location]
     }
 ]
-```
+----
 
-#### Constraints Block (`@constraints`)
+==== Constraints Block (`@constraints`)
 Validation constraints are defined using a separate `@constraints` block inside a Hub definition. The block contains a comma-separated list of expressions:
 
-```hubgs
+[source,hubgs]
+----
 HUBS [
     Character {
         name,
@@ -159,16 +166,17 @@ HUBS [
         ]
     }
 ]
-```
+----
 
 
-### Type Inheritance (`EXTENDS`)
+=== Type Inheritance (`EXTENDS`)
 
 HubGS supports composite inheritance for Hub types using the `EXTENDS` keyword. This allows a child Hub type to inherit fields and roles from one or more parent Hub types.
 
-### Syntax
+=== Syntax
 
-```hubgs
+[source,hubgs]
+----
 HUBS [
     ParentTypeA { ... },
     ParentTypeB { ... },
@@ -177,20 +185,20 @@ HUBS [
     }
 ]
 
-```
+----
 
 ---
 
-### Semantic & Compilation Rules
+=== Semantic & Compilation Rules
 
-#### 1. Composition via Set-Union
+==== 1. Composition via Set-Union
 
 Because all properties must be defined in the global `FIELDS` block before being referenced in a Hub, there is no structural risk of field layout collision.
 
 * If `ParentTypeA` and `ParentTypeB` both use the global field `description`, `ChildType` inherits it exactly once.
 * No diamond-problem resolution strategies are required at the compiler level.
 
-#### 2. Role Inheritance
+==== 2. Role Inheritance
 
 The child Hub automatically participates in all relationship roles defined on its parents.
 
@@ -198,7 +206,7 @@ The child Hub automatically participates in all relationship roles defined on it
 
 
 
-#### 3. Decorator Precedence (`@default` and `@computed`)
+==== 3. Decorator Precedence (`@default` and `@computed`)
 
 When a child type overrides a field property inherited from a parent, configuration rules apply:
 
@@ -207,9 +215,10 @@ When a child type overrides a field property inherited from a parent, configurat
 
 ---
 
-### Complete Blueprint Example
+=== Complete Blueprint Example
 
-```hubgs
+[source,hubgs]
+----
 // implicit module namespace: entities.hubgs
 DEFINITIONS [
     FIELDS [
@@ -256,4 +265,4 @@ INSTANCES [
     }
 ]
 
-```
+----

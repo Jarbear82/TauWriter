@@ -1,15 +1,16 @@
-# TauWriter
+= TauWriter
 
-## Description
+== Description
 An IDE-style, graph-augmented word processor inspired by Obsidian and modern developer IDEs. Designed for **novel writers, worldbuilders, and D&D Dungeon Masters** who need to maintain structured knowledge alongside linear narrative text. Built with an eye toward future collaboration features (inspired by Zed's multiplayer model and Discord-like server organization).
 
 The core idea: prose lives in a custom XML document format (TWXML), while structured data (characters, places, magic systems, mechanics, etc.) lives in a graph of typed nodes called **Hubs**. The two layers connect through references, with an LSP-powered editor providing real-time cross-referencing, autocomplete, and semantic underlining.
 
 ---
 
-## Architecture Overview
+== Architecture Overview
 
-```
+[source,text]
+----
 +---------------------+          +----------------------+
 |   Document Layer    |          |    Graph Layer       |
 |   (TWXML files)     | <------> |   (HubGS Script)     |
@@ -28,20 +29,23 @@ The core idea: prose lives in a custom XML document format (TWXML), while struct
 |   - Raw TWXML View  |         |   - Node-Scoped View           |
 |   - FlowText (Stub) |         +--------------------------------+
 +---------------------+         
-```
+----
 
 The default UI layout is a split view consisting of two side-by-side panes. The left pane is for Document Views (with one tab per open document, where each tab has a dropdown menu to select the active mode: Raw Editor, Block Editor, Markdown View, or FlowText Editor stub). The right pane is for Graph Views (with tabs for Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation).
 
 ---
 
-## Knowledge Base Structure
+== Knowledge Base Structure
 
 A **Knowledge Base** is the top-level container — analogous to an Obsidian vault. It is a directory containing:
 
-| Component | Format | Description |
-|-----------|--------|-------------|
-| Documents | `*.twxml` | One or more TWXML files, each representing a distinct document (novel chapter, wiki page, scratch notes, campaign log, etc.) |
-| Graph Data | `*.hubgs` | One or more HubGS files defining schemas and instances. Multiple files are merged at runtime into a single unified graph. |
+[cols="1,1,1", options="header"]
+|===
+| Component | Format | Description
+| Documents | `*.twxml` | One or more TWXML files, each representing a distinct document (novel chapter, wiki page, scratch notes, campaign log, etc.)
+| Graph Data | `*.hubgs` | One or more HubGS files defining schemas and instances. Multiple files are merged at runtime into a single unified graph.
+|===
+
 
 **Key design decisions:**
 - A single Knowledge Base can contain multiple documents backed by the same graph. This allows one world bible to feed both a novel draft and a companion wiki simultaneously.
@@ -50,38 +54,42 @@ A **Knowledge Base** is the top-level container — analogous to an Obsidian vau
 
 ---
 
-## Document Layer
+== Document Layer
 
-### Format: TauWriter XML (TWXML)
+=== Format: TauWriter XML (TWXML)
 The document uses a custom XML vocabulary called **TauWriter XML** as its raw format. Graph references are embedded using `<hubref>` tags for extensibility and standards compliance.
 
-#### Why TWXML over HTML or Markdown?
+==== Why TWXML over HTML or Markdown?
 - **No ambiguous syntax** — Markdown lacks consistent spec support across parsers; standard HTML is not designed for document fragmentation
 - **Rich structure** — Native nesting, attributes, and extensibility like HTML, but with a controlled vocabulary purpose-built for writing workflows
 - **Fragmentation resilience** — Documents can optionally be split into directories of multiple TWXML files that are stitched together at runtime. If a bug corrupts one fragment, the rest of the document survives. Standard HTML does not cleanly support this pattern.
 - **Easy to render and parse** — XML parsers are universally available; can be rendered as Markdown in alternate view if desired
 - **Human-readable and editable** — Like HTML, TWXML is plain text that writers and power users can read, version-control, and manually edit
 
-#### TWXML Vocabulary
+==== TWXML Vocabulary
 TWXML uses an **enforced tree hierarchy**: heading levels are derived from nesting depth under the structural body.
 
 Much of the vocabulary mirrors common structural elements used in writing:
 
-| Element | Purpose | Attributes |
-|---------|---------|------------|
-| `<document>` | Root element wrapping a complete document or fragment | `id`, `class` |
-| `<meta />` | Document-level metadata (author, tags, status); placed directly inside `<document>` before `<body>` | `name`, `content` |
-| `<body>` | The content container wrapping all visible prose elements | `id`, `class` |
-| `<include />`| Runtime document fragmentation/stitching engine | `src` |
-| `<section>` | Semantic divider for parts, chapters, scenes, etc. | `alias`, `id`, `class` |
-| `<heading>` | Section heading; level is determined by nesting depth | `id`, `class`, `align` |
-| `<paragraph>` | Fundamental prose unit | `id`, `class`, `align` |
-| `<hubref>` | Inline container for graph references; supports wrapping and self-closing dynamic formats | `id`, `field` |
+[cols="1,1,1", options="header"]
+|===
+| Element | Purpose | Attributes
+| `<document>` | Root element wrapping a complete document or fragment | `id`, `class`
+| `<meta />` | Document-level metadata (author, tags, status); placed directly inside `<document>` before `<body>` | `name`, `content`
+| `<body>` | The content container wrapping all visible prose elements | `id`, `class`
+| `<include />` | Runtime document fragmentation/stitching engine | `src`
+| `<section>` | Semantic divider for parts, chapters, scenes, etc. | `alias`, `id`, `class`
+| `<heading>` | Section heading; level is determined by nesting depth | `id`, `class`, `align`
+| `<paragraph>` | Fundamental prose unit | `id`, `class`, `align`
+| `<hubref>` | Inline container for graph references; supports wrapping and self-closing dynamic formats | `id`, `field`
+|===
+
 
 The vocabulary is intentionally minimal to keep files readable.
 
-### Document Structure Example
-```xml
+=== Document Structure Example
+[source,xml]
+----
 <document>
   <meta name="author" content="J.R.R. Tolkien" />
   <body>
@@ -94,7 +102,7 @@ The vocabulary is intentionally minimal to keep files readable.
     </section>
   </body>
 </document>
-```
+----
 
 Key points:
 - Heading levels are determined by nesting depth — no explicit `<h1>`–`<h6>` needed
@@ -104,36 +112,40 @@ Key points:
 - Formatting (bold, italic) wraps the reference tag — not the other way around
 - Multiple hubs can be referenced within a single paragraph or even a single phrase
 
-### Editor Modes
+=== Editor Modes
 The left pane contains open document tabs. Each tab represents an open document and has a dropdown menu to select the active mode (`DocumentMode`). All four modes share one underlying rope buffer (`InputState` / Rope) and one `DocumentHome` (parsed `Vec<Block>` + metadata + parse state). Selection offsets and a single undo/redo history live on the rope:
 
-| Mode | Enum Variant | Description |
-|------|--------------|-------------|
-| **Raw Editor** | `DocumentMode::RawEditor` | Shows raw TWXML code with syntax highlighting using `gpui_component::input::Input`. Precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is. |
-| **Block Editor** | `DocumentMode::BlockEditor` | Primary editing and reading mode (continuous scroll). Renders TWXML as Notion/Craft-style editable block cards with left-gutter controls, slash menus, inline `Input` edit surfaces, and LSP-driven inline formatting. Renders `<include src="..." />` by inlining child document contents into a unified block structure. |
-| **Markdown View** | `DocumentMode::MarkdownView` | Read-only view rendering TWXML AST as Markdown for users who prefer plain-text workflows. Renders includes using `![[document-name]]` syntax. |
-| **FlowText Editor** | `DocumentMode::FlowTextEditor` | Stub mode reserved for future integration of external rich-text engine (`gpui-flowtext`). Displays an experimental / coming-soon placeholder while sharing the same underlying rope buffer and selection/undo history. |
+[cols="1,1,1", options="header"]
+|===
+| Mode | Enum Variant | Description
+| **Raw Editor** | `DocumentMode::RawEditor` | Shows raw TWXML code with syntax highlighting using `gpui_component::input::Input`. Precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is.
+| **Block Editor** | `DocumentMode::BlockEditor` | Primary editing and reading mode (continuous scroll). Renders TWXML as Notion/Craft-style editable block cards with left-gutter controls, slash menus, inline `Input` edit surfaces, and LSP-driven inline formatting. Renders `<include src="..." />` by inlining child document contents into a unified block structure.
+| **Markdown View** | `DocumentMode::MarkdownView` | Read-only view rendering TWXML AST as Markdown for users who prefer plain-text workflows. Renders includes using `![[document-name]]` syntax.
+| **FlowText Editor** | `DocumentMode::FlowTextEditor` | Stub mode reserved for future integration of external rich-text engine (`gpui-flowtext`). Displays an experimental / coming-soon placeholder while sharing the same underlying rope buffer and selection/undo history.
+|===
+
 
 ---
 
-### TauWriter Block Editor Architecture & Design Specifications
+=== TauWriter Block Editor Architecture & Design Specifications
 
-#### 1. Mode Rename & Placement
+==== 1. Mode Rename & Placement
 - Renamed `DocumentMode::WysiwygPreview` → `DocumentMode::BlockEditor`.
 - Supported document modes: `RawEditor`, `BlockEditor`, `MarkdownView`, `FlowTextEditor` (stub).
 - All modes share one underlying rope buffer (`InputState` / Rope) and one `DocumentHome` (`Vec<Block>` + metadata + parse state).
 - Caret and selection offsets are maintained as rope byte offsets, ensuring selection and undo/redo history remain identical when switching modes.
 
-#### 2. High-Level Component Architecture
+==== 2. High-Level Component Architecture
 
-```text
+[source,text]
+----
 Workspace
 └── DocumentView (mode switch)
     ├── RawEditor          → gpui_component::input::Input (code mode, Tree-sitter)
     ├── BlockEditor        → BlockEditorView (new)
     ├── MarkdownView       → existing markdown renderer
     └── FlowTextEditor     → stub ("Coming soon" placeholder sharing rope buffer)
-```
+----
 
 `BlockEditorView` owns:
 - Reference to shared `Entity<InputState>` (rope) and `Entity<DocumentHome>`.
@@ -145,7 +157,7 @@ Workspace
 2. **Block-Level Edits → Rope Rewrites**: Structural block edits (insert, delete, reorder, change block type) or inline edits inside an active block compute the precise byte range in the rope and rewrite it. The rope's history records the edit, and a re-parse updates the AST.
 3. **Selection Offsets**: Selection is always expressed as rope byte offsets. Switching between Raw, Block, and Markdown views restores the caret to the exact logical offset.
 
-#### 3. Block Editor UI Model (Notion / Craft Style)
+==== 3. Block Editor UI Model (Notion / Craft Style)
 The Block Editor displays a continuous vertical scroll of **block cards**.
 
 Each **block card** consists of:
@@ -171,17 +183,20 @@ Each **block card** consists of:
 - Rendered as proper nested cards or indented list items.
 - Pressing `Enter` at the end of a list item creates a new `<li>`; pressing `Backspace` on an empty item lifts out of the list hierarchy.
 
-#### 4. Inline Formatting & Triggers (LSP-Driven)
+==== 4. Inline Formatting & Triggers (LSP-Driven)
 All markdown-style inline expansions are performed by the **LSP** so behavior remains uniform across Raw, Block, and Markdown modes.
 
-| Trigger | Expansion Behavior |
-|---------|-------------------|
-| `#` + space / autocomplete | Wraps/inserts `<heading level="N">…</heading>` |
-| `**` or `__` | Wraps selection or inserts `<bold>…</bold>` |
-| `*` or `_` | Wraps selection or inserts `<italic>…</italic>` |
-| `- ` / `1. ` / `[ ]` / `[x]` | Starts / continues list or checklist item |
-| `` ` `` | Wraps selection or inserts `<code>…</code>` |
-| `~~` | Wraps selection or inserts `<strikethrough>` |
+[cols="1,1", options="header"]
+|===
+| Trigger | Expansion Behavior
+| `#` + space / autocomplete | Wraps/inserts `<heading level="N">…</heading>`
+| `**` or `__` | Wraps selection or inserts `<bold>…</bold>`
+| `*` or `_` | Wraps selection or inserts `<italic>…</italic>`
+| `- ` / `1. ` / `[ ]` / `[x]` | Starts / continues list or checklist item
+| `` ` `` | Wraps selection or inserts `<code>…</code>`
+| `~~` | Wraps selection or inserts `<strikethrough>`
+|===
+
 
 **LSP Autocomplete Expansion Mechanics:**
 - Typing a trigger character opens completion items (`heading`, `bold`, `italic`, etc.).
@@ -194,7 +209,7 @@ All markdown-style inline expansions are performed by the **LSP** so behavior re
 - Right-click context menu provides explicit inline formatting operations.
 - Embedded `Input` surfaces benefit from LSP completions during block edit mode because they operate directly on the shared buffer language.
 
-#### 5. Rendering Strategy (Lazy & Virtualized)
+==== 5. Rendering Strategy (Lazy & Virtualized)
 - Built using `gpui_component` virtual list / `uniform_list` (or custom virtual scroller on identical primitives) to materialize only visible + overscan blocks.
 - Visible blocks transform into specialized GPUI element trees:
   - **Headings**: Large, bold, hierarchy-scaled typography.
@@ -206,8 +221,9 @@ All markdown-style inline expansions are performed by the **LSP** so behavior re
 - Theme tokens and typography source directly from `gpui_component::Theme`.
 - Continuous vertical scroll for v1 (page-based layout is a future layout switch reusing block cards).
 
-#### 6. State & Synchronization
-```rust
+==== 6. State & Synchronization
+[source,rust]
+----
 // Conceptual view struct
 struct BlockEditorView {
     workspace: Entity<Workspace>,
@@ -217,18 +233,18 @@ struct BlockEditorView {
     editing_block: Option<BlockId>,          // active block in edit mode
     // scroll offset, hover states, context menu state
 }
-```
+----
 - `BlockId` tracks byte range boundaries or stable AST identifiers.
 - On rope edits, `BlockEditorView` observes `DocumentHome` and invalidates only affected virtual list items.
 - An offset-to-block index maps caret positions so cursor state transfers seamlessly across mode toggles.
 
-#### 7. Hubref & LSP Integration
+==== 7. Hubref & LSP Integration
 - **Click**: Triggers `workspace.selected_hub_id` and focuses/centers the right-pane Graph View.
 - **Hover**: Displays LSP hover tooltip with summary information about the referenced Hub instance.
 - **Right-Click Context Menu**: Exposes hubref commands ("Go to definition", "Rename", "Edit display text", "Change hub id" stubs).
 - **Diagnostics**: Rendered as underlines / gutter icons on affected block cards; clicking a diagnostic moves the rope caret and opens the block card in edit mode if required.
 
-#### 8. Component Breakdown (`gpui-component` Primitives)
+==== 8. Component Breakdown (`gpui-component` Primitives)
 - **Layout**: `v_flex` + virtual list / `ScrollableElement`.
 - **Block Cards**: Styled `div` containers with hover/focus state handling.
 - **Gutter Controls**: `Button` (ghost / icon variants).
@@ -237,42 +253,46 @@ struct BlockEditorView {
 - **Inline Editor**: Multi-line `Input` (soft-wrap enabled, line numbers disabled) bound to the block's text range.
 - **Diagnostics List**: Shared `uniform_list` bottom panel in `DocumentView`.
 
-#### 9. Phased Implementation Roadmap
+==== 9. Phased Implementation Roadmap
 - **Phase 0 – Plumbing & Infrastructure**: Rename `WysiwygPreview` → `BlockEditor`, update dropdown UI, confirm selection offsets and undo/redo history share the rope.
 - **Phase 1 – Read-Only Block Editor**: Implement virtualized list of block cards rendering all `Block` variants (paragraphs, headings, lists, tables, details, hubrefs, includes). Wire hubref clicks to graph selection.
 - **Phase 2 – Block-Level Editing**: Add gutter `+` button, `/` slash menu, edit pencil, focused inner `Input` surface, rope rewrite on commit, and block type conversion.
 - **Phase 3 – Inline Formatting & LSP Triggers**: Wire keyboard shortcuts, right-click formatting menus, selection wrapping, and LSP trigger autocompletion.
 - **Phase 4 – Performance Polish & FlowText Stub**: Virtualized scroll performance optimization for novel-length documents, hubref context menu stubs, and `FlowTextEditor` stub mode implementation.
 
-#### 10. Technical Trade-Offs & Non-Goals for v1
+==== 10. Technical Trade-Offs & Non-Goals for v1
 - **Rope-Centric Block Model over Character WYSIWYG**: Reuses parsed `Block`/`TextRun` AST and `gpui_component::input::Input` without writing a complex custom rich-text engine for v1. Character-level inline canvas editing is deferred to the `FlowTextEditor` stub.
 - **Rope Range Mapping**: Requires robust byte-range tracking during block editing and re-parsing.
 - **Non-Goals**: Paginated print layout, real-time multi-user collaborative cursors, full image/table WYSIWYG editors (stubs used for v1).
 
-### Graph Views
+=== Graph Views
 The right pane is a tabbed area offering visual representations of document structure and structured knowledge:
 
-| Tab | Description |
-|-----|-------------|
-| **Twxml Document Graph** | Graph visualization of the document's hierarchical structure (chapters, sections, etc.). The outline structure is derived using the `outlines.scm` file from the extension. Note that the file explorer sidebar is distinct from this tree graph. |
-| **HubGs Definitions Schema** | Show Hub types and their roles as a relation graph. |
-| **HubGs Instances Relation** | Show concrete instances and their role links. |
+[cols="1,1", options="header"]
+|===
+| Tab | Description
+| **Twxml Document Graph** | Graph visualization of the document's hierarchical structure (chapters, sections, etc.). The outline structure is derived using the `outlines.scm` file from the extension. Note that the file explorer sidebar is distinct from this tree graph.
+| **HubGs Definitions Schema** | Show Hub types and their roles as a relation graph.
+| **HubGs Instances Relation** | Show concrete instances and their role links.
+|===
+
 
 ---
 
-## Graph Layer: HubGS
+== Graph Layer: HubGS
 
-### Overview
+=== Overview
 HubGS (Hub Graph Script) is a custom DSL designed for defining typed, structured knowledge graphs optimized for **visualization**. It unifies nodes and hyperedges into a single vertex type called **Hubs**. Think of it as UML class diagrams meets data instances — with validation, computed fields, role-based relationships, and built-in visualization metadata.
 
 - **File extension:** `.hubgs`
 - **Tooling:** Custom parser + LSP for real-time validation, autocomplete, and cross-referencing with documents
 - **Primary audience:** Worldbuilders who need to model characters, locations, magic systems, campaign mechanics, etc. However, HubGS is general-purpose — it can model any domain where structured knowledge benefits from visualization
 
-### HubGS File Structure
+=== HubGS File Structure
 A HubGS file has three optional top-level sections:
 
-```hubgs
+[source,hubgs]
+----
 IMPORTS [ ... ]         // Optional — import schemas from other .hubgs files
 
 DEFINITIONS [           // Schema-level type definitions
@@ -282,32 +302,37 @@ DEFINITIONS [           // Schema-level type definitions
 ]
 
 INSTANCES [...]         // Concrete Hub objects with assigned values
-```
+----
 
-| Section | Purpose |
-|---------|---------|
-| **IMPORTS** | Import schema definitions (Hubs, Fields, Enums) from other `.hubgs` files. Allows splitting large schemas across multiple files. |
-| **FIELDS** | Typed scalar property definitions available to Hubs |
-| **ENUMS** | Enumerated types used as field value constraints |
-| **HUBS** | Hub type definitions that declare which fields they use and what roles they participate in |
-| **INSTANCES** | Concrete Hub objects with assigned values |
+[cols="1,1", options="header"]
+|===
+| Section | Purpose
+| **IMPORTS** | Import schema definitions (Hubs, Fields, Enums) from other `.hubgs` files. Allows splitting large schemas across multiple files.
+| **FIELDS** | Typed scalar property definitions available to Hubs
+| **ENUMS** | Enumerated types used as field value constraints
+| **HUBS** | Hub type definitions that declare which fields they use and what roles they participate in
+| **INSTANCES** | Concrete Hub objects with assigned values
+|===
 
-### IMPORTS
+
+=== IMPORTS
 Multiple `.hubgs` files are merged at runtime into a single unified graph. Each file can import schema definitions from others using:
 
-```hubgs
+[source,hubgs]
+----
 IMPORTS [
     [Character, Location] FROM "./fantasy-core.hubgs",
     [MagicSystem]         FROM "../shared-mechanics.hubgs"
 ]
-```
+----
 
 A HubGS file must define or import all schemas before using them in its own DEFINITIONS or INSTANCES sections. Path resolution is relative to the importing file's location within the Knowledge Base directory.
 
-### FIELDS
+=== FIELDS
 Fields are typed property declarations. They define what scalar data a Hub can hold.
 
-```hubgs
+[source,hubgs]
+----
 FIELDS [
     name: Text,
     description: Text,
@@ -316,31 +341,35 @@ FIELDS [
     realm_association: Realm,   // Enum type reference
     ids: Array<Number>          // Array of Numbers 
 ]
-```
+----
 
-#### Field Types
-| Type | Example | Description |
-|------|---------|-------------|
-| `Text` | `Aragorn` | Free-form text |
-| `Number` | `42`, `3.14` | Integer or floating-point |
-| `Boolean` | `true`, `false` | True/false values |
-| `Date` | `2024-01-15` | Timestamp/date values |
-| `EnumName` | `PHYSICAL` | Any user-defined Enum (e.g., `Realm`) |
-| `Array<T>` | `[1, 2, 3]` | Ordered collection of type T |
-| `Set<T, U, ...>` | `{1, "hello"}` | Unordered collection mixing specified types |
-| `Map<K, V>` | `{ key: value }` | Key-value pair collection of types K and V |
+==== Field Types
+[cols="1,1,1", options="header"]
+|===
+| Type | Example | Description
+| `Text` | `Aragorn` | Free-form text
+| `Number` | `42`, `3.14` | Integer or floating-point
+| `Boolean` | `true`, `false` | True/false values
+| `Date` | `2024-01-15` | Timestamp/date values
+| `EnumName` | `PHYSICAL` | Any user-defined Enum (e.g., `Realm`)
+| `Array<T>` | `[1, 2, 3]` | Ordered collection of type T
+| `Set<T, U, ...>` | `{1, "hello"}` | Unordered collection mixing specified types
+| `Map<K, V>` | `{ key: value }` | Key-value pair collection of types K and V
+|===
 
-#### Computed Fields
+
+==== Computed Fields
 Fields can be marked as computed using the `@computed()` decorator. These cannot be overridden at the instance level unless wrapped with a `@default()` decorator that provides a fallback value.
 
-```hubgs
+[source,hubgs]
+----
 // In a Hub TYPE definition:
 Person {
     first_name,
     last_name = @default("Anderson"),                     // Can be overridden in INSTANCES
     full_name = @computed(first_name + " " + last_name)  // Cannot be directly overridden
 }
-```
+----
 
 Computed fields support:
 - String concatenation and simple formulas (current implementation)
@@ -348,10 +377,11 @@ Computed fields support:
 - Cross-Hub access via roles (e.g., `this.resides_in.name`)
 - **User-defined computed fields** — authors can define their own computed properties beyond system defaults. Full scripting support for power users is planned as a future extension.
 
-### ENUMS
+=== ENUMS
 Enums are field-type constraints only. They cannot appear in role allows lists.
 
-```hubgs
+[source,hubgs]
+----
 ENUMS [
     Realm {
         COGNITIVE,
@@ -359,14 +389,15 @@ ENUMS [
         SPIRITUAL
     }
 ]
-```
+----
 
-### HUBS (Type Definitions)
+=== HUBS (Type Definitions)
 Hub types define the shape of data. Each Hub type declares:
 - **Which fields** it uses for scalar properties
 - **Which roles** it participates in for relationships with other Hubs
 
-```hubgs
+[source,hubgs]
+----
 HUBS [
     Person {
         // Fields
@@ -385,13 +416,14 @@ HUBS [
         inhabitants <- (0..*) ALLOWS [Person]      // Arrow points inward: Persons "own" this link
     }
 ]
-```
+----
 
-### Roles
+=== Roles
 Roles define relationships between Hubs. They are the edge-equivalent in the Hub model.
 
-#### Role Syntax
-```<role_name> <direction> (<multiplicity>) ALLOWS [<HubType>, ...]```
+==== Role Syntax
+[source,<role_name> <direction> (<multiplicity>) ALLOWS [<HubType>, ...]```]
+----
 
 | Component | Description |
 |-----------|-------------|
@@ -428,9 +460,10 @@ Multiplicity constrains the cardinality of a role:
 #### Role Allows List
 The allows list specifies which Hub types can be values of this role. Multiple types are permitted:
 
-```hubgs
+----
 related_to -> (0..*) ALLOWS [Character, Location, Item]   // Any of these three types
-```
+[source,text]
+----
 
 ### INSTANCES (Concrete Hubs)
 The INSTANCES section creates actual Hub objects with data. Instances should be ordered so dependencies appear before dependents.
@@ -438,19 +471,20 @@ The INSTANCES section creates actual Hub objects with data. Instances should be 
 #### Hub Reference
 Each Hub instance has a **reference** (ref) — a unique identifier used to locate the Hub in the graph and link it from documents.
 
-```hubgs
+----
 // Syntax: <ref>:<HubType> {
 //     <field> = <value>,
 //     <role> = [<hub_ref1>, <hub_ref2>, ...]
 // }
-```
+[source,text]
+----
 
 - **User-defined refs:** Human-readable identifiers like `aero`, `aragorn`, `mordor`
 - **Auto-generated refs:** UUID-style identifiers when the system generates them automatically
 - **Uniqueness:** Refs must be globally unique across all instances in a Knowledge Base. Two Hubs can have the same display name but MUST have different refs
 
 #### Instance Example
-```hubgs
+----
 INSTANCES [
     aragorn:Person {
         first_name = "Aragorn",
@@ -466,26 +500,29 @@ INSTANCES [
         // inhabitants is a target role (<-) populated by persons' resides_in
     }
 ]
-```
+[source,text]
+----
 
 ### Hub Metadata (Visualization)
 Hub visual properties (display labels and background styling) are resolved dynamically from fields annotated with the `@display` and `@background` attributes in the Hub definition.
 
 For example, given the Hub definition:
-```hubgs
+----
 Character {
     name @display,
     theme_color @background
 }
-```
+[source,text]
+----
 
 The matching instance assignments provide the visual metadata values:
-```hubgs
+----
 aragorn:Character {
     name = "Aragorn",
     theme_color = "#FFD700"
 }
-```
+[source,text]
+----
 Here, the LSP automatically determines that the display label is `"Aragorn"` and the background color is `"#FFD700"`.
 
 
@@ -499,13 +536,14 @@ TauWriter has transitioned from a purely static parser to an **active evaluation
 
 The `@computed()` decorator marks a field as dynamically derived. During instance creation, the LSP evaluates the expression and assigns the result:
 
-```hubgs
+----
 Person {
     first_name,
     last_name,
     full_name = @computed(first_name + " " + last_name)
 }
-```
+[source,text]
+----
 
 When `aragorn:Person` is instantiated with `first_name = "Aragorn"` and `last_name = "Elessar"`, the engine computes `full_name` as `"Aragorn Elessar"`. This value **cannot be directly overridden** in the instance block.
 
@@ -513,13 +551,14 @@ When `aragorn:Person` is instantiated with `first_name = "Aragorn"` and `last_na
 
 The `@default()` decorator provides a fallback value that can be overridden at instantiation:
 
-```hubgs
+----
 Person {
     name,
     age = @default(18),
     realm_association = @default(PHYSICAL)
 }
-```
+[source,text]
+----
 
 If an instance does not provide `age`, the engine uses `18`. If the instance explicitly sets `age = 33`, that value takes precedence.
 
@@ -551,14 +590,15 @@ The `tauwriter-fmt` module is TauWriter's integrated code formatter. It standard
 
 Formatting hooks into the standard [`textDocument/formatting`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_formatting) LSP request:
 
-```
+----
 Editor triggers Format Document (Ctrl+Shift+F / Cmd+Shift+F)
     → LSP client sends textDocument/formatting
     → tauwriter-fmt receives the AST and range parameters
     → tauwriter-fmt re-formats the document according to rules
     → Formatted text is returned as TextEdit operations
     → Editor applies the changes atomically
-```
+[source,text]
+----
 
 ### Formatting Rules by Language
 
@@ -619,7 +659,7 @@ Filtering tools (by cardinality, direction, Hub type) are available in all views
 
 ## Complete HubGS Example
 
-```hubgs
+----
 // Notes As Code V8
 
 IMPORTS [
@@ -738,7 +778,8 @@ INSTANCES [
         worlds = [tera, atia, geo]
     }
 ];
-```
+[source,text]
+----
 
 ---
 
@@ -747,7 +788,7 @@ INSTANCES [
 ### Knowledge Base Layout
 A single directory acts as a Knowledge Base (similar to an Obsidian vault):
 
-```
+----
 my-world-kb/
 ├── novel-chapter-1.twxml
 ├── novel-chapter-2.twxml
@@ -755,7 +796,8 @@ my-world-kb/
 ├── scratch-notes.twxml
 ├── fantasy-core.hubgs
 └── campaign-specific.hubgs
-```
+[source,text]
+----
 
 Each `.twxml` file is a complete document. Each `.hubgs` file contributes schema definitions and instances to the unified graph. Multiple documents share the same graph, allowing a single world bible to feed a novel draft, a wiki, scratch notes, and more simultaneously.
 
@@ -783,7 +825,7 @@ Consider a compressed archive format (analogous to `.docx`) that bundles the dir
 ## Example: Integrated Document + Graph
 
 ### HubGS (graph side)
-```hubgs
+----
 IMPORTS [
 ]
 
@@ -825,10 +867,11 @@ INSTANCES [
         description = "Last Alliance stronghold, home to Elrond."
     }
 ];
-```
+[source,text]
+----
 
 ### TWXML Document (prose side)
-```xml
+----
 <document>
   <meta name="author" content="J.R.R. Tolkien" />
   <section alias="A Shadow of the Past">
@@ -841,7 +884,8 @@ INSTANCES [
     </paragraph>
   </section>
 </document>
-```
+[source,text]
+----
 
 In this setup:
 - Clicking "Aragorn" in the Block Editor jumps to the `aragorn:Character` Hub detail panel in graph view

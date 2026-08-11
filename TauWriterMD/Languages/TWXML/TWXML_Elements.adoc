@@ -1,91 +1,95 @@
-# TWXML Elements
+= TWXML Elements
 
-## Document Hierarchy
+== Document Hierarchy
 TWXML uses an **enforced tree hierarchy** where structural meaning is derived from nesting depth rather than explicit level attributes. This eliminates "structural drift" — the problem of accidental heading-level mismatches common in Markdown and HTML.
 
-### File Structure
+=== File Structure
 Every `*.twxml` file follows this top-level structure:
-```xml
+[source,xml]
+----
 <document>
   <meta />
   <body>
     <section></section>
   </body>
 </document>
-```
+----
 
-### Heading Levels by Nesting Depth
-| Nesting Level | Equivalent | Typical Use |
-|---------------|------------|-------------|
-| `<document>` → `<body>` → `<heading>` | H1 | Document title (must be unique per document) |
-| `<document>` → `<body>` → `<section>` → `<heading>` | H2 | Chapter or major section title |
-| `<section>` → `<section>` → `<heading>` | H3+ | Sub-section titles, deeper nesting as needed |
+=== Heading Levels by Nesting Depth
+[cols="1,1,1", options="header"]
+|===
+| Nesting Level | Equivalent | Typical Use
+| `<document>` → `<body>` → `<heading>` | H1 | Document title (must be unique per document)
+| `<document>` → `<body>` → `<section>` → `<heading>` | H2 | Chapter or major section title
+| `<section>` → `<section>` → `<heading>` | H3+ | Sub-section titles, deeper nesting as needed
+|===
+
 
 This means you never need to specify heading levels manually. The tree structure itself defines the outline.
 
-### Document Structure
-For `<document>`, `<meta>`, and `<body>` — see [TWXML.md](TWXML.md#the-root-skeleton).  
+=== Document Structure
+For `<document>`, `<meta>`, and `<body>` — see link:TWXML.md#the-root-skeleton[TWXML.md].  
 `TWXML_Elements.md` covers the remaining elements below.
 
-### Section
+=== Section
 A semantic divider element used to distinguish different sections and sub-sections within a document.
 Useful for: Parts, Chapters, Scenes, etc.  
 Tags: `<section></section>`  
 Tag Attributes:  
 - alias: (ex: `<section alias="Scene 1">[CONTENT]</section>`)
 
-### Heading
+=== Heading
 A tag used to distinguish the heading of a section. Heading level is automatically determined by its nested level in the document tree.  
 Tags: `<heading></heading>`  
 
 ---
 
-## Block Elements
-### Paragraph
+== Block Elements
+=== Paragraph
 The fundamental prose unit. Wraps standard blocks of narrative text.  
 Tags: `<paragraph></paragraph>`  
 
-### Aside
+=== Aside
 Used for sidebars, callout boxes, or flavor text. Distinguishes non-linear content from the main prose.  
 Maps to HTML `<aside>` or Markdown Admonitions/Blockquotes.  
 Tags: `<aside></aside>`  
 
-### Blockquote
+=== Blockquote
 Used to indicate that the enclosed text is an extended quotation from another source.  
 Tags: `<blockquote></blockquote>`  
 
-### Code Block
+=== Code Block
 Represents preformatted text or source code blocks. Replaces Markdown's fenced code blocks (```).  
 Tags: `<codeblock></codeblock>`  
 Tag Attributes:  
 - language: Specifies the programming or scripting language for syntax highlighting (ex: `<codeblock language="javascript">`)
 
-### Horizontal Rule
+=== Horizontal Rule
 Represents a thematic break between paragraph-level elements. Equivalent to Markdown's `---`.  
 Tags: `<hr/>`  
 
-### Line Break
+=== Line Break
 Forces a hard line break within a block element without creating a new paragraph.  
 Tags: `<br/>`
 
 ---
 
-## Lists
+== Lists
 Containers for bulleted or numbered lists.  
 Tags: `<ul></ul>` (Unordered), `<ol></ol>` (Ordered)  
 
-### Ordered List
+=== Ordered List
 * **Attributes**: 
   * `type`: Selects marker taxonomy (`1 | a | A | i | I`).
   * `start`: An integer value establishing the numerical root of the list.
 
-### List Item
+=== List Item
 Represents an individual item within a `<ul>` or `<ol>`.  
 Tags: `<li></li>`  
 Tag Attributes:  
 - checked: Adding this boolean attribute converts the list item into a task list item (ex: `<li checked="true">Buy potions</li>` or `<li checked="false">Slay dragon</li>`)
 
-### Definition Lists
+=== Definition Lists
 Used to define terms. Equivalent to Markdown's definition list syntax.  
 Tags:   
 - `<dl></dl>`: The definition list container.
@@ -94,67 +98,67 @@ Tags:
 
 ---
 
-## Disclosure Elements
+== Disclosure Elements
 Used to manage information density by hiding content behind a clickable summary. Native 1:1 mapping to HTML.
 
-### Details
+=== Details
 A container element for content that can be toggled open or closed.
 Tags: `<details></details>`
 Tag Attributes:
 - open: Boolean attribute indicating if the content is visible by default.
 
-### Summary
+=== Summary
 Provides a visible label for a `<details>` element.
 Tags: `<summary></summary>`
 
 ---
 
-## Inline Elements
+== Inline Elements
 
-### Include
+=== Include
 A self-closing structural compilation directive that stitches a separate file fragment inline into the current document branch at runtime.
 * **Tags**: `<include />`
 * **Attributes**: `src` (Relative path to targeted file)
 
-### HubRef
+=== HubRef
 Connects written text directly to its HubGS schema properties.
 * **Wrapping Variant**: Wraps arbitrary textual prose. Subject to tracking updates via the `<review>` engine.
   * *Example*: `<hubref id="aragorn" field="first_name">The Ranger</hubref>`
 * **Self-Closing Variant**: Instructs the Block Editor and compilation engines to fetch and drop active values straight from the graph execution pass.
   * *Example*: `<hubref id="aragorn" field="full_name" />`
 
-### Link
+=== Link
 Creates a standard hyperlink to an external URL or an internal heading/file anchor.
 Tags: `<link></link>`
 Tag Attributes:
 - href: The URL or anchor destination (ex: `<link href="https://example.com">Website</link>`)
 
-### Image
+=== Image
 Embeds a visual asset into the document.
 Tags: `<image />`
 Tag Attributes:
 - src: The file path or URL to the image.
 - alt: Alternative text for accessibility and context.
 
-### Audio
+=== Audio
 Embeds an auditory asset into the document.
 Tags: `<audio />`
 Tag Attributes:
 - src: The file path or URL to the audio.
 - alt: Alternative text for accessibility and context.
 
-### Video
+=== Video
 Embeds a video asset into the document.
 Tags: `<video />`
 Tag Attributes:
 - src: The file path or URL to the video.
 - alt: Alternative text for accessibility and context.
 
-### Inline Code
+=== Inline Code
 Displays its contents styled in a monospace font to indicate a short fragment of computer code.
 Tags: `<code></code>`
 
-### Footnote Reference
+=== Footnote Reference
 Places a superscript footnote marker in the text.
 Tags: `<fr/>`
 Tag Attributes:
@@ -162,7 +166,7 @@ Tag Attributes:
 
 ---
 
-## Text Styling
+== Text Styling
 Semantic tags for standard inline text formatting. These are applied via structural nesting around text or other inline elements.
 
 - **Bold:** `<bold></bold>`
@@ -174,7 +178,7 @@ Semantic tags for standard inline text formatting. These are applied via structu
 
 ---
 
-## Tables
+== Tables
 Elements used to create and structure tabular data, directly mapping to Markdown's pipe-and-dash tables.
 
 - `<table></table>`: The main container for the table.
@@ -182,13 +186,13 @@ Elements used to create and structure tabular data, directly mapping to Markdown
 - `<th></th>`: A table header cell (typically used in the first row).
 - `<td></td>`: A standard table data cell.
 
-### Table Cell Data / Header
+=== Table Cell Data / Header
 * **Attributes**: `colspan` and `rowspan` parameters are universally unlocked on `<td>` and `<th>` tags to map structured tables flawlessly.
 
 ---
 
-## Footnote Definitions
-### Footnote
+== Footnote Definitions
+=== Footnote
 Defines the content of a footnote referenced earlier in the text. Usually placed at the bottom of a `<body>` or `<section>`.
 Tags: `<footnote></footnote>`
 Tag Attributes:
@@ -196,7 +200,7 @@ Tag Attributes:
 
 ---
 
-## Review
+== Review
 A container element used to flag content that can no longer be automatically synchronized with its HubGS graph source — for example, when a user changes the value of a field for a hub, all wrapping hub references to that value wrap text that may no longer be valid. So wrapping hubrefs are flagged for review. The user reviews the discrepancy and resolves it via code actions:
 - **Sync and Resolve**: replaces `<review>` with an updated `<hubref>` wrapping the new canonical text.
 - **Mark as Resolved**: keeps the current text and removes the `review` flag.
@@ -204,9 +208,10 @@ Tags: `<review></review>`
 
 ---
 
-## Usage Example
+== Usage Example
 
-```xml
+[source,xml]
+----
 <document>
     <meta name="author" content="J.R.R. Tolkien" />
   <body>
@@ -229,4 +234,4 @@ Tags: `<review></review>`
     </section>
   </body>
 </document>
-```
+----

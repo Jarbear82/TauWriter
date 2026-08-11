@@ -1,0 +1,84 @@
+= TauWriter Project Status
+:toc: left
+:icons: font
+
+== Monorepo Architecture Migration Status (Completed)
+
+* [x] *Phase 0 — Preparation*: Pinned toolchain in `rust-toolchain.toml`, created `pre-monorepo` tag, set up virtual workspace structure.
+* [x] *Phase 1 — Workspace hygiene & graphene absorption*: Absorbed all `graphene_*` crates into `crates/graphene_*`, updated all dependencies to local workspace paths, eliminated external git patches.
+* [x] *Phase 2 — Pure analysis core extraction*: Extracted `tauwriter-analysis` crate owning Salsa DB (`RootDatabase`), semantic queries, validation, evaluation, and diagnostic production.
+* [x] *Phase 3 — Host in-process analysis*: `tauwriter_host` and `tauwriter-cli` consume `tauwriter-analysis` in-process.
+* [x] *Phase 4 — Layered crate architecture*: Split monorepo into clear layers (`text`, `paths`, `util` → `graphene_*` → `hubgs`, `twxml`, `languages` → `analysis` → `lsp`, `cli` → `project`, `workspace`, `document`, `graph`, `ui`, `host`).
+* [x] *Phase 5 — Languages & Tree-sitter cleanup*: Centralized language loading and Tree-sitter registry in `tauwriter-languages`.
+* [x] *Phase 6 — CLI & Quality of Life*: Implemented `tauwriter-cli` with `tauwriter validate [path]` command. All 24 workspace crates compiling clean with 100% passing tests (`cargo test --workspace`).
+
+---
+
+== Goals
+
+Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, enabling seamless cross-referencing between prose (TWXML) and structured knowledge (HubGS).
+
+---
+
+== Documentation
+
+=== Design Documents
+
+[cols="1,1,2", options="header"]
+|===
+| Resource | Status | Notes
+| `TauWriterMD/TauWriterDesign.adoc` | ✅ Up to Date | Core design spec for the TauWriter ecosystem.
+|===
+
+=== Things To Update
+
+* [x] `README.adoc` — example TWXML uses root `<meta/>` and has no deprecated `<metadata>` wrapper.
+* [x] `README.adoc` — example HubGS reflects `EXTENDS` syntax and new type system features.
+* [ ] Status sections for *Extension > Snippets* — to be defined once snippets are implemented.
+
+---
+
+== LSP: TauWriter Language Server
+
+=== Engine
+
+[cols="1,1,2", options="header"]
+|===
+| Feature | Status | Description
+| *Project Initialization* | ✅ | Rust workspace, Salsa DB, Zed extension skeleton.
+| *Workspace Indexing* | ✅ | Background crawling and ingestion of all workspace files (`walkdir`).
+| *Semantic Resolution* | ✅ | Cross-language symbol resolution (HubGS ↔ TWXML).
+| *Diagnostics* | ✅ | Real-time error reporting, structural validation, tag checking.
+| *Refactoring Support* | ✅ | Global renames and structural changes (References/Rename).
+| *Dynamic Evaluation* | ✅ | Decorator parsing (`@computed`, `@default`), AST-based expression evaluator (arithmetic, string concatenation, unary ops, parentheses), cross-Hub field access via roles, `@default` override enforcement.
+| *Concurrency & Performance* | ✅ | Lock-free concurrent read queries via database cloning; standard Mutex writes.
+| *Incremental Parsing* | ✅ | Cached tree-sitter parse trees; `InputEdit` coordinate translation; tree-sitter incremental parse on typing.
+|===
+
+=== DB (Salsa)
+
+[cols="1,1,2", options="header"]
+|===
+| Module | Status | Notes
+| *Parser Finalization* | ✅ | Generated C parsers and linked to Rust LSP via `build.rs`.
+| *Autocomplete* | ✅ | Context-aware suggestions for Hub IDs, fields, and roles.
+| *Hover Support* | ✅ | Formatted documentation display with Hub details.
+| *Type-checking* | ✅ | Validation of Hub roles, multiplicities, and field types.
+| *Semantic Tokens* | ✅ | Advanced context-aware syntax highlighting for all symbols.
+| *Import Scoping* | ✅ | Respects `IMPORTS` statements for scoped symbol resolution.
+| *Folding Ranges* | ✅ | Support for collapsing blocks, sections, and definitions.
+| *Workspace Symbol* | ✅ | Searching for Hubs and Types across the entire project.
+| *Testing Suite* | ✅ | Broad integration test coverage for LSP handlers, Salsa queries, and validation pipeline.
+| *CI/CD* | ✅ | Automated GitHub Actions for multi-platform binary distribution.
+|===
+
+=== Formatter (`lsp/src/formatter/`)
+
+[cols="1,1,2", options="header"]
+|===
+| Feature | Status | Notes
+| *TWXML Formatting* | ✅ | 26 block tags known; 2-space indentation; block-level children indent at `+1`; self-closing tags respect indentation; inline content stays compact.
+| *HubGS Formatting* | ✅ | Full support via `formatter/hubgs.rs`, including chained method calls and arrow functions.
+| *`textDocument/formatting` handler* | ✅ | JSON-RPC tested and wired up.
+| *TWXML `<meta />` formatting* | ✅ | `<meta>` handled as `SelfClosingBlock` in `tag_behavior()`.
+|===
