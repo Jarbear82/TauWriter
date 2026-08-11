@@ -22,6 +22,8 @@ ropey = "1.6"
 walkdir = "2.4" # For indexing unopened files
 tauwriter-hubgs = { path = "../crates/hubgs" }
 tauwriter-twxml = { path = "../crates/twxml" }
+tauwriter-analysis = { path = "../crates/analysis" }
+tauwriter-text = { path = "../crates/text" }
 
 [build-dependencies]
 cc = "1.0"

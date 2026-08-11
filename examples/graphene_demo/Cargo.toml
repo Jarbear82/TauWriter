@@ -1,0 +1,16 @@
+[package]
+name = "graphene_examples"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+graphene_core = { path = "../../crates/graphene_core" }
+graphene_fixtures = { path = "../../crates/graphene_fixtures" }
+graphene_style = { path = "../../crates/graphene_style" }
+graphene_algorithms = { path = "../../crates/graphene_algorithms" }
+graphene_analysis = { path = "../../crates/graphene_analysis" }
+graphene_layout = { path = "../../crates/graphene_layout" }
+graphene_gpui = { path = "../../crates/graphene_gpui" }
+gpui = { git = "https://github.com/zed-industries/zed.git" }
+gpui_platform = { git = "https://github.com/zed-industries/zed.git", features = ["wayland", "x11"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }

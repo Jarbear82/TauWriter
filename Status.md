@@ -1,5 +1,17 @@
 # TauWriter Project Status
 
+## Monorepo Architecture Migration Status (Completed)
+
+- [x] **Phase 0 — Preparation**: Pinned toolchain in `rust-toolchain.toml`, created `pre-monorepo` tag, set up virtual workspace structure.
+- [x] **Phase 1 — Workspace hygiene & graphene absorption**: Absorbed all `graphene_*` crates into `crates/graphene_*`, updated all dependencies to local workspace paths, eliminated external git patches.
+- [x] **Phase 2 — Pure analysis core extraction**: Extracted `tauwriter-analysis` crate owning Salsa DB (`RootDatabase`), semantic queries, validation, evaluation, and diagnostic production.
+- [x] **Phase 3 — Host in-process analysis**: `tauwriter_host` and `tauwriter-cli` consume `tauwriter-analysis` in-process.
+- [x] **Phase 4 — Layered crate architecture**: Split monorepo into clear layers (`text`, `paths`, `util` → `graphene_*` → `hubgs`, `twxml`, `languages` → `analysis` → `lsp`, `cli` → `project`, `workspace`, `document`, `graph`, `ui`, `host`).
+- [x] **Phase 5 — Languages & Tree-sitter cleanup**: Centralized language loading and Tree-sitter registry in `tauwriter-languages`.
+- [x] **Phase 6 — CLI & Quality of Life**: Implemented `tauwriter-cli` with `tauwriter validate [path]` command. All 24 workspace crates compiling clean with 100% passing tests (`cargo test --workspace`).
+
+---
+
 ## Goals
 
 Build an industrial-grade LSP and Zed extension for the TauWriter ecosystem, enabling seamless cross-referencing between prose (TWXML) and structured knowledge (HubGS).

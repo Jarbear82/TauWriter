@@ -1,0 +1,8 @@
+[package]
+name = "tauwriter-workspace"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed.git" }
+tauwriter-project = { path = "../project" }

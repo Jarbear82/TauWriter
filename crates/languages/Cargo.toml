@@ -1,0 +1,13 @@
+[package]
+name = "tauwriter-languages"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tree-sitter = "0.26"
+tauwriter-hubgs = { path = "../hubgs" }
+tauwriter-twxml = { path = "../twxml" }
+tauwriter-analysis = { path = "../analysis" }
+
+[build-dependencies]
+cc = "1.0"

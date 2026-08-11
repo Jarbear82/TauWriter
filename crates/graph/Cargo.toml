@@ -1,0 +1,13 @@
+[package]
+name = "tauwriter-graph"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed.git" }
+graphene_core = { path = "../graphene_core" }
+graphene_layout = { path = "../graphene_layout" }
+graphene_style = { path = "../graphene_style" }
+graphene_gpui = { path = "../graphene_gpui" }
+tauwriter-analysis = { path = "../analysis" }
+tauwriter-hubgs = { path = "../hubgs" }

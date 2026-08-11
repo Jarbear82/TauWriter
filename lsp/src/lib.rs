@@ -1,11 +1,12 @@
-pub mod db;
+pub use tauwriter_analysis::db;
+pub use tauwriter_analysis::parser;
+pub use tauwriter_analysis::{RootDatabase, SalsaThreadHandle};
 pub mod formatter;
 pub mod handlers;
-pub mod parser;
 
 use dashmap::DashMap;
 use ropey::Rope;
-use salsa::prelude::*;
+use salsa::Setter;
 use std::sync::Arc;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -23,70 +24,11 @@ const LEGEND_MODIFIER: &[SemanticTokenModifier] = &[
     SemanticTokenModifier::DEFINITION,
 ];
 
-#[salsa::db]
-#[derive(Default, Clone)]
-pub struct RootDatabase {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for RootDatabase {}
-
-#[salsa::db]
-impl db::Db for RootDatabase {
-    fn find_file(&self, _path: &str) -> Option<db::SourceFile> {
-        None
-    }
-}
-
 pub struct Backend {
     pub client: Client,
     pub db: SalsaThreadHandle,
     pub workspace_input: db::Workspace,
     pub open_files: Arc<DashMap<Url, Rope>>,
-}
-
-/// Thread-safe handle for the salsa database.
-///
-/// All `SalsaThreadHandle` instances share a single underlying `Mutex<RootDatabase>`,
-/// so concurrent requests are serialized by that mutex. This is correct but limits
-/// throughput — slow operations (directory walks, bulk file scans) hold the lock
-/// and block all other LSP handlers.
-///
-/// For true parallelism you'd need either:
-///  - splitting the index across multiple databases (one per file set),
-///  - or moving to a multi-database architecture.
-/// Note: `salsa::parallel` was removed in salsa 0.25, so this limitation is by design.
-/// `.clone_db()` still shares the same underlying mutex — it doesn't create parallelism,
-/// just a separate entry point to the same lock.
-pub struct SalsaThreadHandle(Arc<std::sync::Mutex<RootDatabase>>);
-
-impl SalsaThreadHandle {
-    /// Create a new SalsaThreadHandle from a database.
-    pub fn new(db: RootDatabase) -> Self {
-        SalsaThreadHandle(Arc::new(std::sync::Mutex::new(db)))
-    }
-
-    /// Enter a salsa-attached context for the duration of the closure.
-    /// The database is accessible as `&mut RootDatabase` inside the closure.
-    /// All salsa tracked calls must occur within this scope while the lock is held.
-    pub fn with_db<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut RootDatabase) -> R,
-    {
-        let mut guard = self.0.lock().unwrap();
-        f(&mut *guard)
-    }
-
-    pub fn clone_db(&self) -> SalsaThreadHandle {
-        SalsaThreadHandle(self.0.clone())
-    }
-}
-
-impl Clone for SalsaThreadHandle {
-    fn clone(&self) -> Self {
-        self.clone_db()
-    }
 }
 
 pub fn utf16_idx_to_byte_idx(s: &str, utf16_idx: usize) -> usize {
@@ -210,14 +152,13 @@ impl Backend {
     /// WARNING: The returned RootDatabase is NOT attached to a task context.
     /// Do not call salsa tracked queries on it — use `db_handle()` instead.
     pub fn peek_db(&self) -> RootDatabase {
-        self.db.0.lock().unwrap().clone()
+        self.db.peek_db()
     }
 
     /// Legacy helper for handlers that need both db and workspace.
     /// For salsa query access, prefer `db_handle()` with `.with_db()`.
     pub fn read_db(&self) -> (RootDatabase, db::Workspace) {
-        let guard = self.db.0.lock().unwrap();
-        (guard.clone(), self.workspace_input)
+        self.db.read_db(self.workspace_input)
     }
 
     async fn index_directory(

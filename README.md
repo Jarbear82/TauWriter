@@ -1,10 +1,10 @@
 # TauWriter
 
-TauWriter is an industrial-grade, graph-augmented word processor designed for worldbuilders, novelists, and RPG Dungeon Masters. It bridges the gap between linear narrative prose and structured knowledge management.
+TauWriter is an industrial-grade, graph-augmented monorepo application and language server designed for worldbuilders, novelists, and RPG Dungeon Masters. It bridges the gap between linear narrative prose and structured knowledge management.
 
 ## 🧠 Philosophy: Knowledge as a Codebase
 
-TauWriter treats notes, lore, characters, locations, and all worldbuilding artifacts **as strongly-typed code**. Every piece of information is structured and statically analyzable. Just as an IDE understands your source code-its types, references, and dependencies-the TauWriter LSP understands your knowledge base with the same rigor.
+TauWriter treats notes, lore, characters, locations, and all worldbuilding artifacts **as strongly-typed code**. Every piece of information is structured and statically analyzable. Just as an IDE understands your source code—its types, references, and dependencies—TauWriter understands your knowledge base with the same rigor.
 
 This means:
 - **Structured data** replaces freeform notes: every entity has a defined type, validated fields, and explicit relationships.
@@ -12,147 +12,102 @@ This means:
 - **Refactoring is safe**: rename a character, merge locations, or restructure a magic system with full traceability across all documents that reference it.
 - **No external scripting runtime needed**: the entire analysis pipeline is pure Rust—fast, memory-safe, and deterministic.
 
-## 🏗 Architecture
-
-The entire backend and Language Server are implemented in **Rust**. There is no JavaScript engine, no Node.js runtime, and no external scripting dependency.
-
-This design ensures:
-- **High performance**: Incremental computation via Salsa keeps LSP responses fast even on large knowledge bases.
-- **Cache locality**: The data model is designed for efficient CPU cache utilization, minimizing memory indirection during graph traversal.
-- **Memory safety**: Rust's ownership system guarantees no dangling references or data races in the parsing and evaluation pipeline.
-
-```mermaid
-classDiagram
-    direction LR
-
-    class Document_Layer {
-       - TWXML files
-       - Linear prose
-       - Chapters, scenes
-       - Formatting
-    }
-
-    class Graph_Layer {
-        HubGS Script
-    }
-
-    class Pure_Rust_LSP {
-        Analysis Engine
-        Tag autocomplete
-        Structural validation
-        Formatting pipeline
-    }
-
-    Document_Layer <--> Graph_Layer : refs
-    Graph_Layer <--> Pure_Rust_LSP
-    Document_Layer <--> Pure_Rust_LSP
-```
-
-## 🚀 Overview
-
-The core of TauWriter is a dual-layered approach to writing:
-- **Prose Layer (TWXML):** A custom XML-based language for narrative text that supports semantic tagging of entities.
-- **Knowledge Layer (HubGS):** A powerful DSL (Domain Specific Language) for defining and instantiating structured knowledge graphs (Characters, Locations, Lore, etc.).
-
-These layers are linked via a custom **Language Server Protocol (LSP)** that provides real-time cross-referencing, autocomplete, and diagnostics within the editor.
-
-## 🏗 Project Structure
+## 🏗 Dependency & Layering Architecture
 
 ```text
-.
-├── extension/          # Zed Editor Extension
-│   ├── languages/      # Tree-sitter grammars for HubGS and TWXML
-│   └── src/            # Rust bridge for Zed
-├── lsp/                # Core LSP Implementation (Rust)
-│   ├── src/            # Salsa DB, Parser, and LSP handlers
-│   └── tests/          # Integration and validation tests
-├── TauWriterMD/        # Design documentation and specifications
-├── examples/           # Sample .twxml and .hubgs files
-└── Status.md           # Implementation progress and roadmap
+Foundations (tauwriter-text, tauwriter-paths, tauwriter-util)
+        ↑
+Graphene (graphene_core → layout / style / algorithms / gpui)
+        ↑
+Languages (tauwriter-hubgs, tauwriter-twxml, tauwriter-languages)
+        ↑
+Analysis (tauwriter-analysis)
+        ↑
+Protocol (tauwriter-lsp, tauwriter-cli)
+        ↑
+Application (tauwriter-project, tauwriter-workspace, tauwriter-document, tauwriter-graph, tauwriter-ui, tauwriter_host)
+```
+
+Rules:
+- `tauwriter-analysis` contains pure Salsa database queries, diagnostic production, and semantic analysis with zero UI dependencies.
+- `graphene_*` crates handle domain-agnostic graph visualization, force-directed layout, and GPUI rendering.
+- `tauwriter-lsp` and `tauwriter-cli` adapt the pure analysis core to LSP JSON-RPC and CLI subcommands.
+- `tauwriter_host` is the primary standalone GPUI application.
+
+## 📁 Monorepo Structure
+
+```text
+tauwriter/
+├── Cargo.toml                          # Virtual workspace manifest
+├── rust-toolchain.toml                 # Pinned stable toolchain
+├── crates/
+│   ├── text/                           # Rope helpers, positions, ranges
+│   ├── paths/                          # Path utilities and canonical identity
+│   ├── util/                           # Logging and shared helpers
+│   ├── graphene_core/                  # Graph data model
+│   ├── graphene_layout/                # Force-directed graph layout algorithms
+│   ├── graphene_style/                 # Graph colors, hashing, themes
+│   ├── graphene_gpui/                  # GPUI graph rendering bindings
+│   ├── graphene_algorithms/            # Graph algorithms
+│   ├── graphene_fixtures/              # Test graph datasets
+│   ├── graphene_analysis/              # Graph centrality, spectrum, metrics
+│   ├── hubgs/                          # HubGS lexer/parser/AST
+│   ├── twxml/                          # TWXML parser + block model
+│   ├── languages/                      # Language registry & Tree-sitter loaders
+│   ├── analysis/                       # Pure Salsa database & semantic analysis core
+│   ├── cli/                            # `tauwriter validate`, `format`, export CLI
+│   ├── project/                        # Knowledge-base workspace root & file indexing
+│   ├── workspace/                      # Window state & pane management
+│   ├── document/                       # Per-document buffer & block editor surface
+│   ├── graph/                          # TauWriter graph projection & navigation
+│   └── ui/                             # Reusable TauWriter GPUI components
+├── host/                               # Primary GPUI host application binary
+├── lsp/                                # Industrial-grade LSP JSON-RPC server binary
+├── extension/                          # Zed extension (grammars + LSP launcher)
+├── examples/                           # Sample .hubgs and .twxml knowledge bases
+└── TauWriterMD/                        # Design specs & documentation
 ```
 
 ## 🛠 Key Technologies
 
-- **Rust:** High-performance core implementation.
-- **Salsa:** Incremental computation engine for extremely fast LSP updates.
-- **Tree-sitter:** Incremental parsing for robust syntax highlighting and AST extraction.
-- **Language Server Protocol (LSP):** Standardized communication between the editor and the analysis engine.
-- **Zed Extension API:** Native integration with the Zed editor.
+- **Rust (Stable):** High-performance core implementation.
+- **GPUI:** High-performance hardware-accelerated UI framework.
+- **Salsa:** Incremental computation engine for instant analysis updates.
+- **Tree-sitter:** Incremental parsing for syntax highlighting and AST queries.
+- **Language Server Protocol (LSP):** Standardized communication for Zed and editor extensions.
 
-## 📖 Languages
+## 📖 Building & Running
 
-### TWXML (TauWriter XML)
-A semantic markup language for prose. It uses nesting depth to determine structure (headings) and `<hubref>` tags to link to the knowledge graph.
-
-```xml
-<document>
-  <body>
-    <section>
-      <heading>The Journey Begins</heading>
-      <paragraph>
-        <hubref id="aragorn">Aragorn</hubref> looked toward <hubref id="mordor">Mordor</hubref>.
-      </paragraph>
-    </section>
-  </body>
-</document>
-```
-
-### HubGS (Hub Graph Script)
-A DSL for defining fields, typed nodes ("Hubs") and their relationships ("Roles").
-
-```hubgs
-DEFINITIONS [ 
-  FIELDS [
-    name: Text,
-    description: Text,
-    is_hero: Boolean
-  ],
-  HUBS [
-    Location {
-      name @display
-    },
-    Character {
-      name @display,
-      resides_in -> (1) ALLOWS [Location]
-    },
-    Hero EXTENDS [Character] {
-      is_hero @default(true)
-    }
-  ]
-]
-
-INSTANCES [
-    rivendell:Location {
-        name = "Rivendell"
-    },
-    aragorn:Hero {
-        name = "Aragorn",
-        resides_in = [rivendell]
-    }
-]
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-- [Rust](https://www.rust-lang.org/) (latest stable)
-- [Zed Editor](https://zed.dev/) (for using the extension)
-
-### Building
-Run the build script to compile the LSP and prepare the extension:
+### Build everything
 ```bash
-./build.sh
+cargo build --workspace
 ```
 
-### Development
-- The LSP source is in `lsp/`.
-- The Zed extension source is in `extension/`.
-- Integration tests can be run via `cargo test -p tauwriter-lsp`.
+### Run workspace tests
+```bash
+cargo test --workspace
+```
 
-## 📈 Current Status
+### Run CLI validator
+```bash
+cargo run -p tauwriter-cli -- validate examples/brave_little_tailor.hubgs
+```
 
-See [Status.md](Status.md) for a detailed breakdown of implemented LSP features and the production roadmap.
+### Run GPUI host application
+```bash
+cargo run -p tauwriter_host
+```
 
-## 📜 Documentation
+### Run interactive graph visualizer demo (Graphene)
+```bash
+cargo run --bin interactive_demo -p graphene_examples
+```
 
-Detailed design documents and language specifications can be found in the [TauWriterMD/](TauWriterMD/) directory.
+### Run LSP server
+```bash
+cargo run -p tauwriter-lsp
+```
+
+## 📈 Status
+
+See [Status.md](Status.md) for detailed progress on the fully integrated monorepo architecture.

@@ -1,12 +1,72 @@
 [workspace]
+resolver = "2"
 members = [
-    "lsp",
-    "extension",
-    "host",
+    "crates/text",
+    "crates/paths",
+    "crates/util",
+    "crates/graphene_core",
+    "crates/graphene_layout",
+    "crates/graphene_style",
+    "crates/graphene_gpui",
+    "crates/graphene_algorithms",
+    "crates/graphene_fixtures",
+    "crates/graphene_analysis",
     "crates/hubgs",
     "crates/twxml",
+    "crates/languages",
+    "crates/analysis",
+    "crates/cli",
+    "crates/project",
+    "crates/workspace",
+    "crates/document",
+    "crates/graph",
+    "crates/ui",
+    "host",
+    "lsp",
+    "extension",
+    "examples/graphene_demo",
 ]
-resolver = "2"
+default-members = ["host"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Jarbear82"]
+repository = "https://github.com/Jarbear82/TauWriter"
+
+[workspace.dependencies]
+ropey = "1.6"
+salsa = "0.27"
+tree-sitter = "0.26"
+tower-lsp = "0.20"
+lsp-types = "0.94"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+dashmap = "5"
+walkdir = "2"
+
+tauwriter-text = { path = "crates/text" }
+tauwriter-paths = { path = "crates/paths" }
+tauwriter-util = { path = "crates/util" }
+tauwriter-hubgs = { path = "crates/hubgs" }
+tauwriter-twxml = { path = "crates/twxml" }
+tauwriter-languages = { path = "crates/languages" }
+tauwriter-analysis = { path = "crates/analysis" }
+tauwriter-project = { path = "crates/project" }
+tauwriter-workspace = { path = "crates/workspace" }
+tauwriter-document = { path = "crates/document" }
+tauwriter-graph = { path = "crates/graph" }
+tauwriter-ui = { path = "crates/ui" }
+graphene_core = { path = "crates/graphene_core" }
+graphene_layout = { path = "crates/graphene_layout" }
+graphene_style = { path = "crates/graphene_style" }
+graphene_gpui = { path = "crates/graphene_gpui" }
+graphene_algorithms = { path = "crates/graphene_algorithms" }
+graphene_fixtures = { path = "crates/graphene_fixtures" }
+graphene_analysis = { path = "crates/graphene_analysis" }
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "allow" }
@@ -17,10 +77,3 @@ todo = "deny"
 
 [patch.crates-io]
 gpui = { git = "https://github.com/zed-industries/zed.git" }
-
-[patch."https://github.com/Jarbear82/graphene-rs"]
-graphene_core = { path = "../graphene-rs/crates/graphene_core" }
-graphene_layout = { path = "../graphene-rs/crates/graphene_layout" }
-graphene_gpui = { path = "../graphene-rs/crates/graphene_gpui" }
-graphene_style = { path = "../graphene-rs/crates/graphene_style" }
-

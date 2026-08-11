@@ -1,0 +1,644 @@
+use super::GraphFixture;
+use graphene_core::{
+    EdgeData, EdgeDirection, NodeData, PropValue, Properties, Size2, Vec2,
+};
+
+pub fn add_cytoscape_demos<S: Copy + Default>(fixtures: &mut Vec<GraphFixture<S>>) {
+    // 1. COMPOUND NODES DEMO
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Compound Nodes",
+            "Nested parent/child node hierarchy (Cytoscape Compound Demo).",
+        );
+        let b = f
+            .state
+            .add_node(Vec2::new(250.0, 85.0), Size2::new(180.0, 100.0));
+        let a = f
+            .state
+            .add_node(Vec2::new(215.0, 85.0), Size2::new(40.0, 40.0));
+        let c = f
+            .state
+            .add_node(Vec2::new(300.0, 85.0), Size2::new(40.0, 40.0));
+
+        let d = f
+            .state
+            .add_node(Vec2::new(215.0, 175.0), Size2::new(40.0, 40.0));
+
+        let e = f
+            .state
+            .add_node(Vec2::new(300.0, 175.0), Size2::new(80.0, 80.0));
+        let fl = f
+            .state
+            .add_node(Vec2::new(300.0, 175.0), Size2::new(40.0, 40.0));
+
+        f.node_labels.insert(b, "Parent B".to_string());
+        f.node_labels.insert(a, "Node A".to_string());
+        f.node_labels.insert(c, "Node C".to_string());
+        f.node_labels.insert(d, "Node D".to_string());
+        f.node_labels.insert(e, "Parent E".to_string());
+        f.node_labels.insert(fl, "Node F".to_string());
+
+        f.state.reparent_node(a, Some(b));
+        f.state.reparent_node(c, Some(b));
+        f.state.reparent_node(fl, Some(e));
+
+        f.compound_groups.insert(b, vec![a, c]);
+        f.compound_groups.insert(e, vec![fl]);
+
+        f.state.add_edge(a, d, EdgeData::default());
+        f.state.add_edge(e, b, EdgeData::default());
+
+        fixtures.push(f);
+    }
+
+    // 2. ARCHITECTURE DEMO
+    {
+        let mut f = GraphFixture::new(
+            "Demo: System Architecture",
+            "Multi-level modular system architecture diagram with compound components.",
+        );
+        let cy = f
+            .state
+            .add_node(Vec2::new(0.0, 0.0), Size2::new(450.0, 350.0));
+        let api = f
+            .state
+            .add_node(Vec2::new(-80.0, 0.0), Size2::new(200.0, 200.0));
+        let ext = f
+            .state
+            .add_node(Vec2::new(180.0, 0.0), Size2::new(160.0, 300.0));
+        let app = f
+            .state
+            .add_node(Vec2::new(0.0, 280.0), Size2::new(80.0, 50.0));
+
+        f.node_labels.insert(cy, "Graphene Engine".to_string());
+        f.node_labels.insert(api, "Core API".to_string());
+        f.node_labels.insert(ext, "Extensions".to_string());
+        f.node_labels.insert(app, "Client App".to_string());
+
+        f.state.reparent_node(api, Some(cy));
+        f.state.reparent_node(ext, Some(cy));
+
+        // API Children
+        let core = f
+            .state
+            .add_node(Vec2::new(-120.0, -40.0), Size2::new(60.0, 40.0));
+        let eles = f
+            .state
+            .add_node(Vec2::new(-40.0, -40.0), Size2::new(60.0, 40.0));
+        let style = f
+            .state
+            .add_node(Vec2::new(-120.0, 40.0), Size2::new(60.0, 40.0));
+        let selector = f
+            .state
+            .add_node(Vec2::new(-40.0, 40.0), Size2::new(60.0, 40.0));
+
+        f.node_labels.insert(core, "Core".to_string());
+        f.node_labels.insert(eles, "Collection".to_string());
+        f.node_labels.insert(style, "Style".to_string());
+        f.node_labels.insert(selector, "Selector".to_string());
+
+        for &child in &[core, eles, style, selector] {
+            f.state.reparent_node(child, Some(api));
+        }
+
+        // Ext Children
+        let layout = f
+            .state
+            .add_node(Vec2::new(180.0, -60.0), Size2::new(70.0, 35.0));
+        let renderer = f
+            .state
+            .add_node(Vec2::new(180.0, 20.0), Size2::new(70.0, 35.0));
+        let algo = f
+            .state
+            .add_node(Vec2::new(180.0, 100.0), Size2::new(70.0, 35.0));
+
+        f.node_labels.insert(layout, "Layout".to_string());
+        f.node_labels.insert(renderer, "Renderer".to_string());
+        f.node_labels.insert(algo, "Algorithms".to_string());
+
+        for &child in &[layout, renderer, algo] {
+            f.state.reparent_node(child, Some(ext));
+        }
+
+        // Connections
+        f.state.add_edge(core, eles, EdgeData::default());
+        f.state.add_edge(core, style, EdgeData::default());
+        f.state.add_edge(style, selector, EdgeData::default());
+        f.state.add_edge(core, selector, EdgeData::default());
+        f.state.add_edge(app, api, EdgeData::default());
+        f.state.add_edge(app, ext, EdgeData::default());
+        f.state.add_edge(layout, api, EdgeData::default());
+        f.state.add_edge(renderer, api, EdgeData::default());
+
+        fixtures.push(f);
+    }
+
+    // 3. ANIMATED BFS DEMO
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Animated BFS Traversal",
+            "5-node weighted graph for Breadth-First Search step-by-step traversal.",
+        );
+        let a = f
+            .state
+            .add_node(Vec2::new(0.0, -100.0), Size2::new(40.0, 40.0));
+        let b = f
+            .state
+            .add_node(Vec2::new(100.0, -40.0), Size2::new(40.0, 40.0));
+        let c = f
+            .state
+            .add_node(Vec2::new(80.0, 80.0), Size2::new(40.0, 40.0));
+        let d = f
+            .state
+            .add_node(Vec2::new(-80.0, 80.0), Size2::new(40.0, 40.0));
+        let e = f
+            .state
+            .add_node(Vec2::new(-100.0, -40.0), Size2::new(40.0, 40.0));
+
+        f.node_labels.insert(a, "Start (A)".to_string());
+        f.node_labels.insert(b, "B".to_string());
+        f.node_labels.insert(c, "C".to_string());
+        f.node_labels.insert(d, "D".to_string());
+        f.node_labels.insert(e, "E".to_string());
+
+        let edges = vec![
+            (a, e, 1.0),
+            (a, b, 3.0),
+            (b, e, 4.0),
+            (b, c, 5.0),
+            (c, e, 6.0),
+            (c, d, 2.0),
+            (d, e, 7.0),
+        ];
+
+        for (idx, (u, v, w)) in edges.into_iter().enumerate() {
+            f.state.add_edge(u, v, EdgeData::default());
+            f.weights.insert(idx, w);
+            f.edge_labels.insert(idx, format!("w={:.0}", w));
+        }
+
+        fixtures.push(f);
+    }
+
+    // 4. EDGE ROUTING TYPES DEMO
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Edge Routing Styles",
+            "Showcases Straight, Bezier, Taxi (Manhattan), and Unbundled Bezier curves.",
+        );
+
+        let s1 = f
+            .state
+            .add_node(Vec2::new(-150.0, -100.0), Size2::new(40.0, 30.0));
+        let t1 = f
+            .state
+            .add_node(Vec2::new(150.0, -100.0), Size2::new(40.0, 30.0));
+        f.node_labels.insert(s1, "Straight Src".to_string());
+        f.node_labels.insert(t1, "Straight Tgt".to_string());
+        let e1 = f.state.add_edge(s1, t1, EdgeData::default());
+        f.edge_labels.insert(0, "Straight".to_string());
+
+        let s2 = f
+            .state
+            .add_node(Vec2::new(-150.0, 0.0), Size2::new(40.0, 30.0));
+        let t2 = f
+            .state
+            .add_node(Vec2::new(150.0, 0.0), Size2::new(40.0, 30.0));
+        f.node_labels.insert(s2, "Taxi Src".to_string());
+        f.node_labels.insert(t2, "Taxi Tgt".to_string());
+        let e2 = f.state.add_edge(s2, t2, EdgeData::default());
+        f.edge_labels.insert(1, "Taxi Grid".to_string());
+
+        let s3 = f
+            .state
+            .add_node(Vec2::new(-150.0, 100.0), Size2::new(40.0, 30.0));
+        let t3 = f
+            .state
+            .add_node(Vec2::new(150.0, 100.0), Size2::new(40.0, 30.0));
+        f.node_labels.insert(s3, "Bezier Src".to_string());
+        f.node_labels.insert(t3, "Bezier Tgt".to_string());
+        let e3 = f.state.add_edge(s3, t3, EdgeData::default());
+        f.edge_labels.insert(2, "Curved Bezier".to_string());
+
+        let _ = (e1, e2, e3);
+        fixtures.push(f);
+    }
+
+    // 5. WINE & CHEESE PAIRING DEMO (Bipartite)
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Wine & Cheese Pairing Map",
+            "Bipartite relationship graph mapping wines to complementary cheeses.",
+        );
+        f.is_directed = false;
+
+        let wines = vec!["Chardonnay", "Pinot Noir", "Cabernet Sauvignon", "Riesling"];
+        let cheeses = vec!["Brie", "Aged Cheddar", "Gouda", "Blue Cheese", "Camembert"];
+
+        let mut wine_ids = Vec::new();
+        let mut cheese_ids = Vec::new();
+
+        for (idx, name) in wines.iter().enumerate() {
+            let pos = Vec2::new(-120.0, (idx as f32 - 1.5) * 60.0);
+            let id = f.state.add_node(pos, Size2::new(60.0, 30.0));
+            f.node_labels.insert(id, name.to_string());
+            wine_ids.push(id);
+        }
+
+        for (idx, name) in cheeses.iter().enumerate() {
+            let pos = Vec2::new(120.0, (idx as f32 - 2.0) * 50.0);
+            let id = f.state.add_node(pos, Size2::new(60.0, 30.0));
+            f.node_labels.insert(id, name.to_string());
+            cheese_ids.push(id);
+        }
+
+        let pairings = vec![
+            (0, 0),
+            (0, 4), // Chardonnay -> Brie, Camembert
+            (1, 0),
+            (1, 2), // Pinot Noir -> Brie, Gouda
+            (2, 1),
+            (2, 3), // Cabernet -> Cheddar, Blue Cheese
+            (3, 2),
+            (3, 4), // Riesling -> Gouda, Camembert
+        ];
+
+        for (w_idx, c_idx) in pairings {
+            f.state
+                .add_edge(wine_ids[w_idx], cheese_ids[c_idx], EdgeData::default());
+        }
+
+        fixtures.push(f);
+    }
+
+    // 6. TOKYO RAILWAYS TOPOLOGY DEMO
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Tokyo Railways Network",
+            "Topology loop representing Yamanote and Chuo railway lines.",
+        );
+        f.is_directed = false;
+
+        let yamanote_stations = vec![
+            ("Tokyo", Vec2::new(120.0, 0.0)),
+            ("Akihabara", Vec2::new(100.0, -80.0)),
+            ("Ueno", Vec2::new(70.0, -130.0)),
+            ("Ikebukuro", Vec2::new(-70.0, -130.0)),
+            ("Shinjuku", Vec2::new(-120.0, 0.0)),
+            ("Shibuya", Vec2::new(-100.0, 80.0)),
+            ("Shinagawa", Vec2::new(0.0, 140.0)),
+        ];
+
+        let mut station_ids = Vec::new();
+        for (name, pos) in yamanote_stations {
+            let id = f.state.add_node(pos, Size2::new(45.0, 30.0));
+            f.node_labels.insert(id, name.to_string());
+            station_ids.push(id);
+        }
+
+        // Loop ring
+        let n = station_ids.len();
+        for i in 0..n {
+            f.state.add_edge(
+                station_ids[i],
+                station_ids[(i + 1) % n],
+                EdgeData::default(),
+            );
+        }
+
+        // Chuo Line shortcut (Tokyo <-> Shinjuku)
+        f.state
+            .add_edge(station_ids[0], station_ids[4], EdgeData::default());
+
+        fixtures.push(f);
+    }
+
+    // 7. GENE NETWORK DEMO (fCoSE)
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Gene Expression Network (fCoSE)",
+            "Biological signaling pathway inside nested cellular compartments.",
+        );
+
+        let cell = f
+            .state
+            .add_node(Vec2::new(0.0, 0.0), Size2::new(300.0, 220.0));
+        let nucleus = f
+            .state
+            .add_node(Vec2::new(-40.0, 0.0), Size2::new(140.0, 120.0));
+
+        f.node_labels.insert(cell, "Cell Membrane".to_string());
+        f.node_labels.insert(nucleus, "Nucleus".to_string());
+        f.state.reparent_node(nucleus, Some(cell));
+
+        let g1 = f
+            .state
+            .add_node(Vec2::new(-70.0, -20.0), Size2::new(30.0, 25.0));
+        let g2 = f
+            .state
+            .add_node(Vec2::new(-10.0, 20.0), Size2::new(30.0, 25.0));
+        f.node_labels.insert(g1, "TP53".to_string());
+        f.node_labels.insert(g2, "BRCA1".to_string());
+
+        f.state.reparent_node(g1, Some(nucleus));
+        f.state.reparent_node(g2, Some(nucleus));
+
+        let r1 = f
+            .state
+            .add_node(Vec2::new(80.0, -50.0), Size2::new(30.0, 25.0));
+        let r2 = f
+            .state
+            .add_node(Vec2::new(80.0, 40.0), Size2::new(30.0, 25.0));
+        f.node_labels.insert(r1, "EGFR".to_string());
+        f.node_labels.insert(r2, "MAPK1".to_string());
+
+        f.state.reparent_node(r1, Some(cell));
+        f.state.reparent_node(r2, Some(cell));
+
+        f.state.add_edge(r1, r2, EdgeData::default());
+        f.state.add_edge(r2, g1, EdgeData::default());
+        f.state.add_edge(g1, g2, EdgeData::default());
+
+        fixtures.push(f);
+    }
+
+    // 8. HIGH-ELEMENT PERFORMANCE DEMO (1000 nodes, 1500 edges)
+    {
+        let mut f = GraphFixture::new(
+            "Demo: Performance Stress Test (1000 Elements)",
+            "Large-scale mesh network to benchmark physics and rendering performance.",
+        );
+        f.is_directed = false;
+
+        let count = 1000;
+        let mut nodes = Vec::with_capacity(count);
+        let side = (count as f32).sqrt().ceil() as usize;
+
+        for i in 0..count {
+            let r = i / side;
+            let c = i % side;
+            let pos = Vec2::new(
+                (c as f32 - side as f32 / 2.0) * 40.0,
+                (r as f32 - side as f32 / 2.0) * 40.0,
+            );
+            let id = f.state.add_node(pos, Size2::new(20.0, 20.0));
+            f.node_labels.insert(id, format!("N{}", i));
+            nodes.push(id);
+        }
+
+        for i in 0..count {
+            let r = i / side;
+            let c = i % side;
+            if c + 1 < side && i + 1 < count {
+                f.state
+                    .add_edge(nodes[i], nodes[i + 1], EdgeData::default());
+            }
+            if r + 1 < side && i + side < count {
+                f.state
+                    .add_edge(nodes[i], nodes[i + side], EdgeData::default());
+            }
+        }
+
+        fixtures.push(f);
+    }
+
+    // 9. HubGS RPG KNOWLEDGE GRAPH DEMO
+    {
+        let mut f = GraphFixture::new(
+            "Demo: HubGS RPG Knowledge Graph",
+            "HubGS Schema & Entity Instance Graph with @display, @background, and directed roles.",
+        );
+
+        let mut hero_props = Properties::new();
+        hero_props.insert("@display".into(), PropValue::Text("Aragorn".into()));
+        hero_props.insert("@background".into(), PropValue::Text("#8b0000".into()));
+        hero_props.insert("level".into(), PropValue::Int(50));
+        hero_props.insert("class".into(), PropValue::Text("Ranger".into()));
+        hero_props.insert("faction".into(), PropValue::Text("Fellowship".into()));
+
+        let hero = f.state.add_node_with_data(
+            Vec2::new(-120.0, -40.0),
+            Size2::new(140.0, 50.0),
+            NodeData::new(vec!["Character", "Hero"], hero_props),
+        );
+
+        let mut elf_props = Properties::new();
+        elf_props.insert("@display".into(), PropValue::Text("Legolas".into()));
+        elf_props.insert("@background".into(), PropValue::Text("#2e8b57".into()));
+        elf_props.insert("level".into(), PropValue::Int(48));
+        elf_props.insert("class".into(), PropValue::Text("Archer".into()));
+        elf_props.insert("faction".into(), PropValue::Text("Fellowship".into()));
+
+        let elf = f.state.add_node_with_data(
+            Vec2::new(-120.0, 60.0),
+            Size2::new(140.0, 50.0),
+            NodeData::new(vec!["Character", "Hero"], elf_props),
+        );
+
+        let mut gondor_props = Properties::new();
+        gondor_props.insert("@display".into(), PropValue::Text("Gondor Realm".into()));
+        gondor_props.insert("@background".into(), PropValue::Text("#4682b4".into()));
+        gondor_props.insert("type".into(), PropValue::Text("Kingdom".into()));
+
+        let gondor = f.state.add_node_with_data(
+            Vec2::new(140.0, -40.0),
+            Size2::new(140.0, 50.0),
+            NodeData::new(vec!["Location"], gondor_props),
+        );
+
+        let mut rivendell_props = Properties::new();
+        rivendell_props.insert("@display".into(), PropValue::Text("Rivendell Refuge".into()));
+        rivendell_props.insert("@background".into(), PropValue::Text("#4682b4".into()));
+        rivendell_props.insert("type".into(), PropValue::Text("Sanctuary".into()));
+
+        let rivendell = f.state.add_node_with_data(
+            Vec2::new(140.0, 60.0),
+            Size2::new(140.0, 50.0),
+            NodeData::new(vec!["Location"], rivendell_props),
+        );
+
+        f.node_labels.insert(hero, "Aragorn".into());
+        f.node_labels.insert(elf, "Legolas".into());
+        f.node_labels.insert(gondor, "Gondor Realm".into());
+        f.node_labels.insert(rivendell, "Rivendell Refuge".into());
+
+        let mut r1 = EdgeData::with_label("resides_in", EdgeDirection::Directed);
+        r1.multiplicity = Some("(1)".into());
+        f.state.add_edge_with_data(hero, gondor, r1);
+
+        let mut r2 = EdgeData::with_label("resides_in", EdgeDirection::Directed);
+        r2.multiplicity = Some("(1)".into());
+        f.state.add_edge_with_data(elf, rivendell, r2);
+
+        let mut r3 = EdgeData::with_label("allied_with", EdgeDirection::Bidirectional);
+        r3.multiplicity = Some("(1..*)".into());
+        f.state.add_edge_with_data(hero, elf, r3);
+
+        fixtures.push(f);
+    }
+
+    // 10. LPG MOVIE & ACTOR NETWORK (Small)
+    {
+        let mut f = GraphFixture::new(
+            "Demo: LPG Movie Network (Small: 3 Nodes)",
+            "Small multi-labelled Property Graph (Person, Actor, Director, Movie) with properties.",
+        );
+
+        let mut p1_props = Properties::new();
+        p1_props.insert("@display".into(), PropValue::Text("Keanu Reeves".into()));
+        p1_props.insert("@background".into(), PropValue::Text("#8b0000".into()));
+        p1_props.insert("born".into(), PropValue::Int(1964));
+        p1_props.insert("awards".into(), PropValue::Int(12));
+
+        let p1 = f.state.add_node_with_data(
+            Vec2::new(-140.0, -50.0),
+            Size2::new(140.0, 50.0),
+            NodeData::new(vec!["Person", "Actor"], p1_props),
+        );
+
+        let mut p2_props = Properties::new();
+        p2_props.insert("@display".into(), PropValue::Text("Lana Wachowski".into()));
+        p2_props.insert("@background".into(), PropValue::Text("#2e8b57".into()));
+        p2_props.insert("born".into(), PropValue::Int(1965));
+
+        let p2 = f.state.add_node_with_data(
+            Vec2::new(-140.0, 70.0),
+            Size2::new(140.0, 50.0),
+            NodeData::new(vec!["Person", "Director"], p2_props),
+        );
+
+        let mut m1_props = Properties::new();
+        m1_props.insert("@display".into(), PropValue::Text("The Matrix (1999)".into()));
+        m1_props.insert("@background".into(), PropValue::Text("#4682b4".into()));
+        m1_props.insert("released".into(), PropValue::Int(1999));
+        m1_props.insert("rating".into(), PropValue::Float(8.7));
+        m1_props.insert("genre".into(), PropValue::Text("Sci-Fi".into()));
+
+        let m1 = f.state.add_node_with_data(
+            Vec2::new(140.0, 0.0),
+            Size2::new(160.0, 50.0),
+            NodeData::new(vec!["Movie"], m1_props),
+        );
+
+        f.node_labels.insert(p1, "Keanu Reeves".into());
+        f.node_labels.insert(p2, "Lana Wachowski".into());
+        f.node_labels.insert(m1, "The Matrix (1999)".into());
+
+        let mut e1_props = Properties::new();
+        e1_props.insert("role".into(), PropValue::Text("Neo".into()));
+        let e1 = EdgeData::new(vec!["ACTED_IN"], EdgeDirection::Directed, e1_props);
+        f.state.add_edge_with_data(p1, m1, e1);
+
+        let e2 = EdgeData::with_label("DIRECTED", EdgeDirection::Directed);
+        f.state.add_edge_with_data(p2, m1, e2);
+
+        fixtures.push(f);
+    }
+
+    // 11. HubGS ENTERPRISE SCHEMA (Medium: 30 Nodes)
+    {
+        let mut f = GraphFixture::new(
+            "Demo: HubGS Enterprise Schema (Medium: 30 Nodes)",
+            "Medium-scale HubGS schema & instance graph (Departments, Teams, Employees, Projects).",
+        );
+
+        let colors = ["#8b0000", "#2e8b57", "#4682b4", "#d2691e", "#4b0082"];
+        let mut nodes = Vec::new();
+
+        for i in 0..30 {
+            let row = i / 6;
+            let col = i % 6;
+            let pos = Vec2::new((col as f32 - 2.5) * 80.0, (row as f32 - 2.0) * 70.0);
+            let mut props = Properties::new();
+            let label_name = match i % 3 {
+                0 => format!("Emp #{}", i),
+                1 => format!("Team Alpha-{}", i),
+                _ => format!("Proj Delta-{}", i),
+            };
+            props.insert("@display".into(), PropValue::Text(label_name.clone().into()));
+            props.insert("@background".into(), PropValue::Text(colors[i % colors.len()].into()));
+            props.insert("id_code".into(), PropValue::Int(1000 + i as i64));
+            props.insert("budget".into(), PropValue::Float((i * 5000) as f64));
+            props.insert("active".into(), PropValue::Bool(i % 2 == 0));
+
+            let labels = match i % 3 {
+                0 => vec!["Employee", "Person"],
+                1 => vec!["Team", "Unit"],
+                _ => vec!["Project", "Resource"],
+            };
+            let id = f.state.add_node_with_data(pos, Size2::new(75.0, 45.0), NodeData::new(labels, props));
+            f.node_labels.insert(id, label_name);
+            nodes.push(id);
+        }
+
+        // Connect HubGS Roles (reports_to, assigned_to, owns)
+        for i in 0..30 {
+            if i + 1 < 30 {
+                let mut role = EdgeData::with_label("reports_to", EdgeDirection::Directed);
+                role.multiplicity = Some("(1)".into());
+                f.state.add_edge_with_data(nodes[i], nodes[i + 1], role);
+            }
+            if i + 6 < 30 {
+                let mut role = EdgeData::with_label("owns", EdgeDirection::Bidirectional);
+                role.multiplicity = Some("(0..*)".into());
+                f.state.add_edge_with_data(nodes[i], nodes[i + 6], role);
+            }
+        }
+
+        fixtures.push(f);
+    }
+
+    // 12. LPG CYBER THREAT GRAPH (Large: 200 Nodes)
+    {
+        let mut f = GraphFixture::new(
+            "Demo: LPG Cyber Threat Graph (Large: 200 Nodes)",
+            "Large-scale Labelled Property Graph mapping Hosts, IP addresses, Threats, and CVEs.",
+        );
+
+        let mut nodes = Vec::new();
+        let side = 14;
+
+        for i in 0..200 {
+            let r = i / side;
+            let c = i % side;
+            let pos = Vec2::new((c as f32 - 7.0) * 55.0, (r as f32 - 7.0) * 55.0);
+
+            let mut props = Properties::new();
+            let host_name = format!("Host-192.168.1.{}", i + 1);
+            props.insert("@display".into(), PropValue::Text(host_name.clone().into()));
+            props.insert("@background".into(), PropValue::Text(if i % 5 == 0 { "#8b0000" } else { "#2e8b57" }.into()));
+            props.insert("port".into(), PropValue::Int((8000 + i % 100) as i64));
+            props.insert("severity".into(), PropValue::Float((i % 10) as f64 / 10.0));
+
+            let labels = if i % 4 == 0 {
+                vec!["Threat", "Malware"]
+            } else if i % 2 == 0 {
+                vec!["Host", "Server"]
+            } else {
+                vec!["IPAddress"]
+            };
+
+            let id = f.state.add_node_with_data(pos, Size2::new(50.0, 35.0), NodeData::new(labels, props));
+            f.node_labels.insert(id, host_name);
+            nodes.push(id);
+        }
+
+        // Add directed edges with properties
+        for i in 0..200 {
+            if i + 1 < 200 {
+                let mut e_props = Properties::new();
+                e_props.insert("bytes".into(), PropValue::Int((i * 128) as i64));
+                let edge_data = EdgeData::new(vec!["ATTACKS"], EdgeDirection::Directed, e_props);
+                f.state.add_edge_with_data(nodes[i], nodes[i + 1], edge_data);
+            }
+            if i + side < 200 {
+                let mut e_props = Properties::new();
+                e_props.insert("protocol".into(), PropValue::Text("TCP".into()));
+                let edge_data = EdgeData::new(vec!["CONNECTS_TO"], EdgeDirection::Directed, e_props);
+                f.state.add_edge_with_data(nodes[i], nodes[i + side], edge_data);
+            }
+        }
+
+        fixtures.push(f);
+    }
+}
