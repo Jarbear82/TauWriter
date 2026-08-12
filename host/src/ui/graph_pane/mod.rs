@@ -5,5 +5,5 @@ mod render;
 mod state;
 
 // Re-export the public API for consumers in `ui/mod.rs` etc.
-pub(crate) use data::{GraphEvent, LayoutMode};
+pub(crate) use data::GraphEvent;
 pub(crate) use state::GraphPaneView;

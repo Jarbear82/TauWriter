@@ -1,4 +1,4 @@
-use gpui::{prelude::*, EventEmitter};
+use gpui::EventEmitter;
 use std::collections::HashSet;
 
 /// Central expansion registry — tracks which block offsets are expanded.
@@ -18,6 +18,7 @@ impl ExpandedBlocks {
     }
 
     /// Check whether the block at `offset` is currently expanded.
+    #[allow(dead_code)]
     pub fn is_expanded(&self, offset: usize) -> bool {
         self.expanded.contains(&offset)
     }

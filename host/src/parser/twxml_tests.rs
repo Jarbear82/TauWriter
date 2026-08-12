@@ -19,7 +19,7 @@ fn test_parse_twxml_basic_structures_match() {
 
     match &blocks[0] {
         Block::Heading { level, text, .. } => {
-            assert_eq!(*level, 1);
+            assert_eq!(level, &1);
             assert_eq!(text, "Chapter 1");
         }
         _ => panic!("Expected Heading"),
@@ -29,11 +29,11 @@ fn test_parse_twxml_basic_structures_match() {
         Block::Paragraph { runs, .. } => {
             assert_eq!(runs.len(), 3);
             assert_eq!(runs[0].text, "Hello ");
-            assert_eq!(runs[0].bold, false);
+            assert!(!runs[0].bold);
             assert_eq!(runs[1].text, "world");
-            assert_eq!(runs[1].bold, true);
+            assert!(runs[1].bold);
             assert_eq!(runs[2].text, "!");
-            assert_eq!(runs[2].bold, false);
+            assert!(!runs[2].bold);
         }
         _ => panic!("Expected Paragraph"),
     }

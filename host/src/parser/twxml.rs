@@ -503,6 +503,7 @@ pub fn load_and_parse_twxml(
     ))
 }
 
+#[allow(dead_code)]
 pub fn parse_twxml(
     xml_content: &str,
 ) -> anyhow::Result<(
@@ -579,6 +580,7 @@ pub fn extract_plain_text_from_block(block: &Block) -> String {
 }
 
 /// Convert an existing Block AST node to a new TWXML markup tag format.
+#[allow(dead_code)]
 pub fn convert_block_to_twxml(block: &Block, target_type: &str) -> String {
     let text = extract_plain_text_from_block(block);
     let safe_text = if text.trim().is_empty() {
@@ -595,6 +597,57 @@ pub fn convert_block_to_twxml(block: &Block, target_type: &str) -> String {
         "list" => format!("<ul>\n<li>{}</li>\n</ul>", safe_text),
         "aside" => format!("<aside type=\"note\">\n<paragraph>{}</paragraph>\n</aside>", safe_text),
         _ => format!("<paragraph>{}</paragraph>", safe_text),
+    }
+}
+
+/// Result of detecting a markdown typing shortcut trigger at line start.
+#[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
+pub enum MarkdownTriggerResult {
+    Heading(String),
+    Section(String),
+    BlockQuote(String),
+    UnorderedList(String),
+    OrderedList(String),
+    CodeBlock(String),
+    NoMatch,
+}
+
+/// Detects if a block text input starts with a markdown trigger prefix (e.g. `# `, `## `, `> `, `- `, `1. `, ```).
+#[allow(dead_code)]
+pub fn detect_markdown_prefix_trigger(input_text: &str) -> MarkdownTriggerResult {
+    let trimmed = input_text.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("# ") {
+        MarkdownTriggerResult::Heading(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("## ") {
+        MarkdownTriggerResult::Section(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("### ") {
+        MarkdownTriggerResult::Section(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("> ") {
+        MarkdownTriggerResult::BlockQuote(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
+    {
+        MarkdownTriggerResult::UnorderedList(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("1. ") {
+        MarkdownTriggerResult::OrderedList(rest.trim_end().to_string())
+    } else if let Some(rest) = trimmed.strip_prefix("```") {
+        MarkdownTriggerResult::CodeBlock(rest.trim_end().to_string())
+    } else {
+        MarkdownTriggerResult::NoMatch
+    }
+}
+
+/// Detects if the current input caret word starts with `@` or `#` for HubRef LSP completion trigger.
+#[allow(dead_code)]
+pub fn detect_hubref_completion_trigger(input_text: &str, caret_offset: usize) -> Option<&str> {
+    let safe_offset = caret_offset.min(input_text.len());
+    let prefix = &input_text[..safe_offset];
+    let last_word = prefix.split_whitespace().last()?;
+    if last_word.starts_with('@') || last_word.starts_with('#') {
+        Some(&last_word[1..])
+    } else {
+        None
     }
 }
 
@@ -733,54 +786,6 @@ pub fn wrap_text_in_inline_format(text: &str, format_kind: &str, target_id: Opti
             format!("<hubref id=\"{}\">{}</hubref>", id, safe_text)
         }
         _ => safe_text.to_string(),
-    }
-}
-
-/// Result of detecting a markdown typing shortcut trigger at line start.
-#[derive(Debug, PartialEq, Eq)]
-pub enum MarkdownTriggerResult {
-    Heading(String),
-    Section(String),
-    BlockQuote(String),
-    UnorderedList(String),
-    OrderedList(String),
-    CodeBlock(String),
-    NoMatch,
-}
-
-/// Detects if a block text input starts with a markdown trigger prefix (e.g. `# `, `## `, `> `, `- `, `1. `, ```).
-pub fn detect_markdown_prefix_trigger(input_text: &str) -> MarkdownTriggerResult {
-    let trimmed = input_text.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("# ") {
-        MarkdownTriggerResult::Heading(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("## ") {
-        MarkdownTriggerResult::Section(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("### ") {
-        MarkdownTriggerResult::Section(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("> ") {
-        MarkdownTriggerResult::BlockQuote(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("- ")
-        .or_else(|| trimmed.strip_prefix("* "))
-    {
-        MarkdownTriggerResult::UnorderedList(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("1. ") {
-        MarkdownTriggerResult::OrderedList(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("```") {
-        MarkdownTriggerResult::CodeBlock(rest.trim_end().to_string())
-    } else {
-        MarkdownTriggerResult::NoMatch
-    }
-}
-
-/// Detects if the current input caret word starts with `@` or `#` for HubRef LSP completion trigger.
-pub fn detect_hubref_completion_trigger(input_text: &str, caret_offset: usize) -> Option<&str> {
-    let safe_offset = caret_offset.min(input_text.len());
-    let prefix = &input_text[..safe_offset];
-    let last_word = prefix.split_whitespace().last()?;
-    if last_word.starts_with('@') || last_word.starts_with('#') {
-        Some(&last_word[1..])
-    } else {
-        None
     }
 }
 

@@ -1,3 +1,5 @@
+pub(crate) mod tables;
+
 use super::collapsible::CollapsibleBlock;
 use super::expansion_state::ExpandedBlocks;
 use super::jump_links::{find_block_range_by_id, find_block_type_by_id, offset_to_position};
@@ -8,14 +10,12 @@ use gpui::{
     div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled,
 };
-use gpui_component::{scroll::ScrollableElement, table::*, Icon, IconName, Theme};
+use gpui_component::{scroll::ScrollableElement, Icon, IconName, Theme};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Conventionally accepted code editor colors (VS Code dark style).
 static CODE_BLOCK_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.12, 1.0));
-static CODE_BLOCK_HEADER_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.16, 1.0));
 static CODE_BLOCK_TEXT_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.83, 1.0));
 
 /// Standard warning/review background (light yellow, works on both light and dark themes).
@@ -26,9 +26,6 @@ static ASIDE_BORDER_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(43.0, 0.85
 
 /// Review warning icon/text color (warm orange).
 static REVIEW_WARNING_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(23.0, 0.82, 0.47, 1.0));
-
-/// Review border color (soft yellow-orange).
-static REVIEW_BORDER_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(35.0, 0.97, 0.90, 1.0));
 
 /// Build a HashMap<footnote_id, footnote_content> from blocks for O(1) lookups.
 /// Returns an empty map if no footnotes are present.
@@ -52,9 +49,6 @@ pub(crate) fn build_footnote_map(blocks: &[Block]) -> HashMap<SharedString, Shar
 }
 
 /// Render a single Block into an AnyElement.
-///
-/// Hoisted reads: `blocks`, `hubgs_instances`, and `footnote_map` are passed
-/// as references from the caller's single Entity read (in DocumentView::render).
 pub(crate) fn render_block(
     expanded_blocks: &Entity<ExpandedBlocks>,
     doc_blocks: &[Block],
@@ -173,9 +167,9 @@ pub(crate) fn render_block(
                 .w_full()
                 .mb_4()
                 .p_4()
-                .bg(theme.accent.opacity(0.15)) // Soft tinted aside/note bg
+                .bg(theme.accent.opacity(0.15))
                 .border_l_4()
-                .border_color(*ASIDE_BORDER_COLOR) // Warm amber border for aside/note semantics
+                .border_color(*ASIDE_BORDER_COLOR)
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
@@ -199,7 +193,7 @@ pub(crate) fn render_block(
             language,
             code,
             id,
-            attributes,
+            attributes: _,
             range,
         } => {
             let start_offset = range.as_ref().map(|r| r.start).unwrap_or(0);
@@ -212,9 +206,7 @@ pub(crate) fn render_block(
             };
 
             let id_clone = id.clone();
-            let attrs_clone: Vec<_> = attributes.iter().cloned().collect();
 
-            // Outer wrapper for CodeBlock's unique styling (dark bg, rounded corners)
             let mut container = div()
                 .id("codeblock")
                 .w_full()
@@ -222,7 +214,7 @@ pub(crate) fn render_block(
                 .border(px(1.))
                 .border_color(theme.border)
                 .rounded(px(4.))
-                .bg(*CODE_BLOCK_BG) // Conventionally accepted VS Code dark background
+                .bg(*CODE_BLOCK_BG)
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(format!(
                         "Element: CodeBlock\nid: {:?}",
@@ -236,11 +228,10 @@ pub(crate) fn render_block(
                 .map(|line| div().child(line.to_string()).into_any_element())
                 .collect();
 
-            // Use CollapsibleBlock for the toggle/header logic
             let collapsible_content = CollapsibleBlock::new(
                 lang_display.to_string(),
-                gpui::hsla(0.0, 0.0, 0.0, 0.0), // transparent (outer container provides border)
-                *CODE_BLOCK_BG,                 // inner bg (VS Code dark style)
+                gpui::hsla(0.0, 0.0, 0.0, 0.0),
+                *CODE_BLOCK_BG,
             )
             .with_body(vec![div()
                 .flex()
@@ -253,7 +244,6 @@ pub(crate) fn render_block(
                 .children(code_lines)
                 .into_any_element()]);
 
-            // Wrap in outer container with border/tooltip
             let content = collapsible_content.render(start_offset, expanded_blocks.clone(), cx);
             container = container.child(content);
 
@@ -368,214 +358,18 @@ pub(crate) fn render_block(
             id: _,
             attributes: _,
             range,
-        } => {
-            // Build header cells — simple clones.
-            let header_cells: Vec<_> = headers
-                .iter()
-                .map(|h| TableHead::new().child(h.replace("\r\n", " ").replace('\n', " ")))
-                .collect();
-
-            // Arc-wrapped references for cheap per-cell closure captures.
-            let doc_blocks_arc = Arc::new(doc_blocks.to_vec());
-            let hubgs_arc = Arc::new(
-                hubgs_instances
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>(),
-            );
-            let fn_map_arc = Arc::new(
-                footnote_map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect::<HashMap<_, _>>(),
-            );
-
-            // Build table body row-by-row via explicit loops.
-            // Each cell wraps its runs in an AnyElement iterator via .children().
-            let mut table_body = TableBody::new();
-            for (row_idx, row) in rows.iter().enumerate() {
-                let mut table_row = TableRow::new();
-                for (cell_idx, cell) in row.iter().enumerate() {
-                    let runs: Vec<_> = cell
-                        .iter()
-                        .enumerate()
-                        .map(|(run_idx, run)| {
-                            render_run(
-                                &*doc_blocks_arc,
-                                &*hubgs_arc,
-                                &*fn_map_arc,
-                                input_state.clone(),
-                                run,
-                                idx + 1000 * row_idx,
-                                run_idx + 100 * cell_idx,
-                                &theme,
-                            )
-                        })
-                        .collect();
-                    table_row = table_row.child(TableCell::new().children(runs));
-                }
-                table_body = table_body.child(table_row);
-            }
-
-            let table_range = range.clone();
-            let headers_clone = headers.to_vec();
-            let rows_clone = rows.to_vec();
-
-            let input_state_row_add = input_state.clone();
-            let headers_row_add = headers_clone.clone();
-            let rows_row_add = rows_clone.clone();
-            let range_row_add = table_range.clone();
-
-            let input_state_col_add = input_state.clone();
-            let headers_col_add = headers_clone.clone();
-            let rows_col_add = rows_clone.clone();
-            let range_col_add = table_range.clone();
-
-            let input_state_row_del = input_state.clone();
-            let headers_row_del = headers_clone.clone();
-            let rows_row_del = rows_clone.clone();
-            let range_row_del = table_range.clone();
-
-            let input_state_col_del = input_state.clone();
-            let headers_col_del = headers_clone.clone();
-            let rows_col_del = rows_clone.clone();
-            let range_col_del = table_range.clone();
-
-            let toolbar = div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .mb_2()
-                .text_xs()
-                .child(
-                    div()
-                        .px_2()
-                        .py_0p5()
-                        .rounded(px(3.))
-                        .bg(theme.accent)
-                        .text_color(theme.accent_foreground)
-                        .cursor_pointer()
-                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                            if let Some(ref r) = range_row_add {
-                                let h = headers_row_add.clone();
-                                let mut rw = rows_row_add.clone();
-                                let target_len = rw.len();
-                                crate::parser::table_add_row(h.len(), &mut rw, target_len);
-                                let new_twxml = crate::parser::table_to_twxml(&h, &rw);
-                                input_state_row_add.update(cx, |state, cx| {
-                                    let full_text = state.value().to_string();
-                                    if r.end <= full_text.len() {
-                                        let mut updated = full_text;
-                                        updated.replace_range(r.clone(), &new_twxml);
-                                        state.set_value(updated, window, cx);
-                                        cx.emit(gpui_component::input::InputEvent::Change);
-                                    }
-                                });
-                            }
-                        })
-                        .child("+ Row"),
-                )
-                .child(
-                    div()
-                        .px_2()
-                        .py_0p5()
-                        .rounded(px(3.))
-                        .bg(theme.accent)
-                        .text_color(theme.accent_foreground)
-                        .cursor_pointer()
-                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                            if let Some(ref r) = range_col_add {
-                                let mut h = headers_col_add.clone();
-                                let mut rw = rows_col_add.clone();
-                                let target_len = h.len();
-                                crate::parser::table_add_column(&mut h, &mut rw, target_len);
-                                let new_twxml = crate::parser::table_to_twxml(&h, &rw);
-                                input_state_col_add.update(cx, |state, cx| {
-                                    let full_text = state.value().to_string();
-                                    if r.end <= full_text.len() {
-                                        let mut updated = full_text;
-                                        updated.replace_range(r.clone(), &new_twxml);
-                                        state.set_value(updated, window, cx);
-                                        cx.emit(gpui_component::input::InputEvent::Change);
-                                    }
-                                });
-                            }
-                        })
-                        .child("+ Col"),
-                )
-                .child(
-                    div()
-                        .px_2()
-                        .py_0p5()
-                        .rounded(px(3.))
-                        .bg(theme.muted_foreground.opacity(0.3))
-                        .cursor_pointer()
-                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                            if let Some(ref r) = range_row_del {
-                                let h = headers_row_del.clone();
-                                let mut rw = rows_row_del.clone();
-                                if rw.len() > 1 {
-                                    let last_idx = rw.len() - 1;
-                                    crate::parser::table_delete_row(&mut rw, last_idx);
-                                    let new_twxml = crate::parser::table_to_twxml(&h, &rw);
-                                    input_state_row_del.update(cx, |state, cx| {
-                                        let full_text = state.value().to_string();
-                                        if r.end <= full_text.len() {
-                                            let mut updated = full_text;
-                                            updated.replace_range(r.clone(), &new_twxml);
-                                            state.set_value(updated, window, cx);
-                                            cx.emit(gpui_component::input::InputEvent::Change);
-                                        }
-                                    });
-                                }
-                            }
-                        })
-                        .child("- Row"),
-                )
-                .child(
-                    div()
-                        .px_2()
-                        .py_0p5()
-                        .rounded(px(3.))
-                        .bg(theme.muted_foreground.opacity(0.3))
-                        .cursor_pointer()
-                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                            if let Some(ref r) = range_col_del {
-                                let mut h = headers_col_del.clone();
-                                let mut rw = rows_col_del.clone();
-                                if h.len() > 1 {
-                                    let last_idx = h.len() - 1;
-                                    crate::parser::table_delete_column(&mut h, &mut rw, last_idx);
-                                    let new_twxml = crate::parser::table_to_twxml(&h, &rw);
-                                    input_state_col_del.update(cx, |state, cx| {
-                                        let full_text = state.value().to_string();
-                                        if r.end <= full_text.len() {
-                                            let mut updated = full_text;
-                                            updated.replace_range(r.clone(), &new_twxml);
-                                            state.set_value(updated, window, cx);
-                                            cx.emit(gpui_component::input::InputEvent::Change);
-                                        }
-                                    });
-                                }
-                            }
-                        })
-                        .child("- Col"),
-                );
-
-            div()
-                .id(("table_wrapper", idx))
-                .w_full()
-                .mb_4()
-                .child(toolbar)
-                .child(
-                    Table::new()
-                        .w_full()
-                        .overflow_x_hidden()
-                        .child(TableHeader::new().children(header_cells))
-                        .child(table_body),
-                )
-                .into_any_element()
-        }
+        } => tables::render_table_block(
+            expanded_blocks,
+            doc_blocks,
+            hubgs_instances,
+            footnote_map,
+            input_state,
+            headers,
+            rows,
+            range,
+            idx,
+            cx,
+        ),
         Block::HorizontalRule {
             id,
             attributes,
@@ -758,7 +552,7 @@ pub(crate) fn render_block(
                 .mb_4()
                 .p_4()
                 .rounded(px(4.))
-                .bg(*REVIEW_BGCOLOR) // Soft yellow warning background
+                .bg(*REVIEW_BGCOLOR)
                 .border(px(1.))
                 .border_color(*ASIDE_BORDER_COLOR)
                 .tooltip(move |window, cx| {
@@ -820,9 +614,6 @@ pub(crate) fn render_block(
 }
 
 /// Render a single TextRun into an AnyElement.
-///
-/// Hoisted reads: `doc_blocks`, `hubgs_instances`, and `footnote_map` are passed
-/// as references from the caller's single Entity read (in DocumentView::render).
 pub(crate) fn render_run(
     doc_blocks: &[Block],
     hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
@@ -863,13 +654,11 @@ pub(crate) fn render_run(
         text_el = text_el.text_size(px(10.)).mt_2();
     }
 
-    // Default Element Tooltip fallback for run elements
     let mut run_tooltip = element_tooltip("text", &run.id, &run.attributes);
 
     if let Some(ref hub_id) = run.hubref {
         let hub_id = hub_id.clone();
 
-        // O(1) HashMap lookup instead of Entity::read on every render frame
         let mut tooltip_text = format!("HubRef: {}", hub_id);
         if let Some((type_name, name, links)) = hubgs_instances.get(hub_id.as_ref()) {
             tooltip_text = format!("Hub: {} | name: \"{}\"", type_name, name);
@@ -889,7 +678,6 @@ pub(crate) fn render_run(
     } else if let Some(ref fn_id) = run.footnote_ref {
         let fn_id = fn_id.clone();
 
-        // O(1) HashMap lookup instead of O(n) linear scan per footnote reference
         let footnote_content = footnote_map
             .get(fn_id.as_ref())
             .cloned()
@@ -906,7 +694,6 @@ pub(crate) fn render_run(
     } else if let Some(ref link) = run.link {
         let link = link.clone();
 
-        // Build Link tooltip — synchronous lookup, no closures needed
         let mut tooltip_text = format!("Link: {}", link);
         if link.starts_with('#') {
             let target_id = &link[1..];
@@ -948,7 +735,6 @@ pub(crate) fn render_run(
     let run_text_fmt = run.text.to_string();
     let input_state_fmt = input_state.clone();
 
-    // Attach run tooltip and context menu action
     text_el
         .id(("run", block_idx * 1000 + run_idx))
         .tooltip(move |window, cx| {

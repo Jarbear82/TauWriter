@@ -3,6 +3,7 @@ pub(crate) mod twxml;
 #[cfg(test)]
 mod twxml_tests;
 
+#[allow(unused_imports)]
 pub use twxml::{
     blocks_to_markdown, convert_block_to_twxml, detect_hubref_completion_trigger,
     detect_markdown_prefix_trigger, extract_plain_text_from_block, generate_block_skeleton,

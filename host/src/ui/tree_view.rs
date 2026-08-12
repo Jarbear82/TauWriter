@@ -63,6 +63,7 @@ pub(crate) fn build_file_tree(dir: &Path) -> Vec<FileNode> {
 }
 
 /// Flatten a hierarchical FileNode tree into a flat list for virtualized rendering.
+#[allow(dead_code)]
 pub(crate) fn flatten_file_tree(nodes: &[FileNode]) -> Vec<FlatFileNode> {
     let empty_set = std::collections::HashSet::new();
     flatten_file_tree_with_collapse(nodes, &empty_set)

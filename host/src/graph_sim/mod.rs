@@ -17,6 +17,7 @@ pub(crate) struct HubgsLink {
 pub(crate) struct HubgsDefinition {
     pub(crate) name: SharedString,
     pub(crate) links: Vec<HubgsLink>,
+    #[allow(dead_code)]
     pub(crate) parents: Vec<SharedString>,
 }
 

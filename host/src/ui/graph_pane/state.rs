@@ -164,6 +164,7 @@ impl GraphPaneView {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn trigger_run_layout(&mut self, cx: &mut Context<Self>) {
         let layout_type = self.workspace.read(cx).layout_type;
         self.layout_mode = super::data::LayoutMode::RunLayout(layout_type);
@@ -648,6 +649,7 @@ impl GraphPaneView {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     fn handle_fit_view(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let view = match self.active_camera_idx {
             0 => &self.outline_view,

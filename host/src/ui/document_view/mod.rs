@@ -8,20 +8,15 @@ pub(crate) mod jump_links;
 mod jump_links_tests;
 mod renderers;
 
-use crate::ui::{DocumentHome, DocumentMode, ParseState, Workspace};
+use crate::ui::{DocumentHome, DocumentMode, Workspace};
 use expansion_state::ExpandedBlocks;
 use gpui::{
-    div, prelude::*, px, uniform_list, AnyElement, Context, Entity, InteractiveElement,
+    prelude::*, px, uniform_list, AnyElement, Context, Entity, InteractiveElement,
     ParentElement, Render, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement;
-use gpui_component::{alert::Alert, Icon, IconName};
-use once_cell::sync::Lazy;
+use gpui_component::{Icon, IconName};
 use std::collections::HashMap;
-
-/// Parse error warning colors (soft red palette).
-static PARSE_ERROR_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.85, 0.95, 1.0));
-static PARSE_ERROR_BORDER: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.82, 0.92, 1.0));
 
 pub(crate) struct DocumentView {
     workspace: Entity<Workspace>,
@@ -49,32 +44,6 @@ impl DocumentView {
             focused_block_idx: None,
             block_input_states: HashMap::new(),
         }
-    }
-
-    /// Handle a hub reference click by propagating to the workspace for graph pane coordination.
-    pub(crate) fn on_hubref_clicked(
-        &mut self,
-        hub_id: gpui::SharedString,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let _ = {
-            let w = self.workspace.read(cx);
-            if let Some(idx) = w.active_doc_idx {
-                if let Some(doc) = w.open_docs.get(idx) {
-                    (doc.path.clone(), doc.input_state.clone())
-                } else {
-                    return;
-                }
-            } else {
-                return;
-            }
-        };
-        // Update workspace selected hub so the graph pane can center on it
-        self.workspace.update(cx, |w, cx| {
-            w.selected_hub_id = Some(hub_id);
-            cx.notify();
-        });
     }
 }
 
@@ -214,11 +183,9 @@ impl Render for DocumentView {
         let doc_home_borrow = doc_home.read(cx);
         let parse_state_clone = doc_home_borrow.parse_state.clone();
         let blocks_clone = doc_home_borrow.blocks.clone();
-        let title_clone = doc_home_borrow.title.clone();
-        let author_clone = doc_home_borrow.author.clone();
         let metadata_clone = doc_home_borrow.metadata.clone();
         let hubgs_clone = doc_home_borrow.hubgs_instances.clone();
-        drop(doc_home_borrow);
+        let _ = doc_home_borrow;
 
         let footnote_map = crate::ui::document_view::renderers::build_footnote_map(&blocks_clone);
         let _parse_state = &parse_state_clone;

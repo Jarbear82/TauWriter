@@ -6,6 +6,7 @@ use gpui::SharedString;
 #[derive(Clone)]
 pub(crate) enum GraphEvent {
     NodeClicked(SharedString),
+    #[allow(dead_code)]
     RunLayout,
 }
 
@@ -14,5 +15,6 @@ pub(crate) enum GraphEvent {
 pub(crate) enum LayoutMode {
     #[default]
     None,
+    #[allow(dead_code)]
     RunLayout(super::super::LayoutType),
 }

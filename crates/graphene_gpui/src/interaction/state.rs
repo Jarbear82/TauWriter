@@ -206,7 +206,8 @@ impl InteractionState {
     ) -> Option<EdgeId> {
         for &edge_id in &view.edge_order {
             if let Some(edge) = view.edges.get(&edge_id) {
-                let (Some(src_node), Some(tgt_node)) = (view.nodes.get(&edge.source), view.nodes.get(&edge.target))
+                let (Some(src_node), Some(tgt_node)) =
+                    (view.nodes.get(&edge.source), view.nodes.get(&edge.target))
                 else {
                     continue;
                 };
@@ -231,8 +232,8 @@ impl InteractionState {
                     tgt_node.pos
                 };
 
-                let src_screen = viewport.model_to_screen(src_pos);
-                let tgt_screen = viewport.model_to_screen(tgt_pos);
+                let src_screen = viewport.model_to_canvas(src_pos);
+                let tgt_screen = viewport.model_to_canvas(tgt_pos);
 
                 let dist = distance_to_segment(
                     screen_pos,
@@ -287,7 +288,11 @@ impl InteractionState {
                     total_mouse_delta.y / viewport.zoom,
                 );
             session.optimistic_pos = target_pos;
-            return Some((session.node_id, target_pos, graphene_layout::engine::DragPhase::Update));
+            return Some((
+                session.node_id,
+                target_pos,
+                graphene_layout::engine::DragPhase::Update,
+            ));
         } else if let Some(last_pos) = self.pan_origin {
             let delta = gpui::point(position.x - last_pos.x, position.y - last_pos.y);
             viewport.offset.x += delta.x / viewport.zoom;

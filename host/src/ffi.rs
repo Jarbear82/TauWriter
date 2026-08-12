@@ -25,24 +25,11 @@ pub(crate) fn load_ts_language(
 unsafe extern "C" {
     /// Safety: Returns a static, read-only TSLanguage pointer for the TWXML grammar.
     fn tree_sitter_twxml() -> *const std::ffi::c_void;
-
-    /// Safety: Returns a static, read-only TSLanguage pointer for the HubGS grammar.
-    fn tree_sitter_hubgs() -> *const std::ffi::c_void;
 }
 
 /// Load the TWXML tree-sitter language. Returns `None` if the symbol is missing.
 pub(crate) fn load_twxml_language() -> Option<tree_sitter::Language> {
     let ptr = unsafe { tree_sitter_twxml() };
-    if ptr.is_null() {
-        None
-    } else {
-        load_ts_language(ptr).ok()
-    }
-}
-
-/// Load the HubGS tree-sitter language. Returns `None` if the symbol is missing.
-pub(crate) fn load_hubgs_language() -> Option<tree_sitter::Language> {
-    let ptr = unsafe { tree_sitter_hubgs() };
     if ptr.is_null() {
         None
     } else {

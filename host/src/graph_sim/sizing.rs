@@ -5,7 +5,7 @@
 //! unit-testable without a live window. This module is the only place that
 //! touches `Window`/`App`.
 
-use gpui::{px, App, Font, FontStyle, FontWeight, TextRun as GpuiTextRun, Window};
+use gpui::{px, Font, FontStyle, FontWeight, TextRun as GpuiTextRun, Window};
 
 /// Visual constants shared between measurement and the actual node renderer in
 /// `ui/graph_pane/render.rs`. If you touch padding/font sizes there, touch them
@@ -28,9 +28,6 @@ pub(crate) struct NodeContent<'a> {
     pub(crate) attributes: &'a [String],
 }
 
-/// A node-sizing function: content in, (width, height) in px out.
-/// Physics/layout code depends only on this trait object, never on GPUI directly.
-pub(crate) type NodeSizer<'a> = dyn FnMut(NodeContent) -> (f32, f32) + 'a;
 
 fn measure_line_width(window: &mut Window, text: &str, font_size: f32, bold: bool) -> f32 {
     if text.is_empty() {

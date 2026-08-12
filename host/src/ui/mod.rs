@@ -5,8 +5,8 @@
 
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
-use gpui::{div, prelude::*, Entity, SharedString, Window};
-use gpui_component::button::{Button, ButtonGroup};
+use gpui::{div, prelude::*, Entity, SharedString};
+use gpui_component::button::ButtonGroup;
 use gpui_component::input::InputState;
 use gpui_component::IconName;
 use std::path::PathBuf;
@@ -34,9 +34,7 @@ pub(crate) use super::lsp_client::LspClient;
 pub(crate) use document_view::DocumentView;
 pub(crate) use tree_view::{build_file_tree, FileNode};
 
-pub(crate) use graph_pane::GraphEvent;
 pub(crate) use graph_pane::GraphPaneView;
-pub(crate) use graph_pane::LayoutMode;
 pub(crate) use sidebar::SidebarView;
 pub(crate) use titlebar::{SettingsView, TitleBar};
 
@@ -414,14 +412,13 @@ impl MainView {
     }
 
     pub(crate) fn handle_document_change(&mut self, cx: &mut Context<Self>) {
-        let (active_doc_path, input_state, document_home) = {
+        let (active_doc_path, input_state) = {
             let w = self.workspace.read(cx);
             if let Some(idx) = w.active_doc_idx {
                 if let Some(doc) = w.open_docs.get(idx) {
                     (
                         Some(doc.path.clone()),
                         doc.input_state.clone(),
-                        doc.document_home.clone(),
                     )
                 } else {
                     return;
@@ -450,7 +447,7 @@ impl MainView {
             let visited_inner = std::sync::Arc::new(std::sync::Mutex::new(visited));
 
             cx.spawn(
-                async move |_this: gpui::WeakEntity<Self>, mut cx: &mut gpui::AsyncApp| {
+                async move |_this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
                     cx.background_executor()
                         .timer(std::time::Duration::from_millis(300))
                         .await;
@@ -613,22 +610,6 @@ impl MainView {
             });
         }
         cx.notify();
-    }
-
-    /// Handle a hub reference click from the document view.
-    pub(crate) fn on_hubref_clicked(
-        &mut self,
-        hub_id: gpui::SharedString,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Select the graph tab
-        self.select_graph_tab(&SelectGraphTab, window, cx);
-        // Set selected hub so the graph pane highlights/centers on it
-        self.workspace.update(cx, |w, cx| {
-            w.selected_hub_id = Some(hub_id);
-            cx.notify();
-        });
     }
 }
 

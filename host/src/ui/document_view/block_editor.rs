@@ -62,6 +62,7 @@ pub(crate) fn match_diagnostics_to_block<'a>(
         .min_by_key(|d| d.severity)
 }
 /// Calculates the visible windowed block range and spacer heights for virtual scroll optimization.
+#[allow(dead_code)]
 pub(crate) fn compute_virtual_viewport(
     total_blocks: usize,
     scroll_offset_y: f32,
