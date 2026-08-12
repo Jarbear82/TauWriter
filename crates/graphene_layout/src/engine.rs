@@ -38,6 +38,15 @@ pub enum LayoutCommand {
     MultilevelForce(MultilevelLayout<ForceDirectedLayout>),
     MaximalShift(crate::planar_shift::MaximalShiftLayout),
     CircularAdvanced(crate::circular_advanced::CircularAdvancedLayout),
+    Bipartite(crate::bipartite::BipartiteLayout),
+    Compound(crate::compound::CompoundLayout<ForceDirectedLayout>),
+    HierarchicalCompound(crate::compound::HierarchicalLayout<ForceDirectedLayout>),
+    HybridCompound(crate::compound::HybridCompoundLayout<ForceDirectedLayout, ForceDirectedLayout>),
+    RegionalPartition(crate::compound::RegionalPartitionLayout<fn(NodeId) -> usize, ForceDirectedLayout>),
+    BreadthFirst(crate::basic::BreadthFirstLayout),
+    Random(crate::basic::RandomLayout),
+    GridSorted(crate::grid_sorted::GridSortedLayout),
+    CollisionForce(crate::collision::CollisionForceDirectedLayout),
 }
 
 impl LayoutCommand {
@@ -57,6 +66,15 @@ impl LayoutCommand {
         "MultilevelForce",
         "MaximalShift",
         "CircularAdvanced",
+        "Bipartite",
+        "Compound",
+        "HierarchicalCompound",
+        "HybridCompound",
+        "RegionalPartition",
+        "BreadthFirst",
+        "Random",
+        "GridSorted",
+        "CollisionForce",
     ];
 
     pub fn from_name(name: &str, iterations: usize) -> Option<Self> {
@@ -88,6 +106,28 @@ impl LayoutCommand {
             ))),
             "MaximalShift" => Some(Self::MaximalShift(crate::planar_shift::MaximalShiftLayout::default())),
             "CircularAdvanced" => Some(Self::CircularAdvanced(crate::circular_advanced::CircularAdvancedLayout::default())),
+            "Bipartite" => Some(Self::Bipartite(crate::bipartite::BipartiteLayout::default())),
+            "Compound" => Some(Self::Compound(crate::compound::CompoundLayout {
+                sub_layout: ForceDirectedLayout::default().with_iterations(iterations),
+                padding: 20.0,
+            })),
+            "HierarchicalCompound" => Some(Self::HierarchicalCompound(
+                crate::compound::HierarchicalLayout::new(ForceDirectedLayout::default().with_iterations(iterations)),
+            )),
+            "HybridCompound" => Some(Self::HybridCompound(crate::compound::HybridCompoundLayout::new(
+                ForceDirectedLayout::default().with_iterations(iterations),
+                ForceDirectedLayout::default().with_iterations(iterations),
+            ))),
+            "RegionalPartition" => Some(Self::RegionalPartition(crate::compound::RegionalPartitionLayout {
+                cluster_fn: |_id| 0,
+                sub_layout: ForceDirectedLayout::default().with_iterations(iterations),
+                columns: 3,
+                cell_size: 250.0,
+            })),
+            "BreadthFirst" => Some(Self::BreadthFirst(crate::basic::BreadthFirstLayout::default())),
+            "Random" => Some(Self::Random(crate::basic::RandomLayout::default())),
+            "GridSorted" => Some(Self::GridSorted(crate::grid_sorted::GridSortedLayout::default())),
+            "CollisionForce" => Some(Self::CollisionForce(crate::collision::CollisionForceDirectedLayout::default().with_iterations(iterations))),
             _ => None,
         }
     }
@@ -604,6 +644,15 @@ impl<S: Copy + Default + Send + Sync + 'static> GraphEngineHandle<S> {
                     LayoutCommand::MultilevelForce(mut l) => l.compute(state),
                     LayoutCommand::MaximalShift(l) => l.apply(state),
                     LayoutCommand::CircularAdvanced(l) => l.apply(state),
+                    LayoutCommand::Bipartite(mut l) => l.compute(state),
+                    LayoutCommand::Compound(mut l) => l.compute(state),
+                    LayoutCommand::HierarchicalCompound(mut l) => l.compute(state),
+                    LayoutCommand::HybridCompound(mut l) => l.compute(state),
+                    LayoutCommand::RegionalPartition(mut l) => l.compute(state),
+                    LayoutCommand::BreadthFirst(mut l) => l.compute(state),
+                    LayoutCommand::Random(mut l) => l.compute(state),
+                    LayoutCommand::GridSorted(mut l) => l.compute(state),
+                    LayoutCommand::CollisionForce(mut l) => l.compute(state),
                 }
                 let collapsed = std::collections::HashSet::new();
                 crate::collision::finish_layout_epilogue(state, &collapsed, 10.0, 20.0);
@@ -669,12 +718,9 @@ impl<S: Copy + Default + Send + Sync + 'static> GraphEngineHandle<S> {
                     LayoutCommand::FCose(mut f) => {
                         f.step_next_phase(state);
                     }
-                    other => match other {
-                        LayoutCommand::ForceDirected(mut l) => l.compute(state),
-                        LayoutCommand::Circle(mut l) => l.compute(state),
-                        LayoutCommand::Grid(mut l) => l.compute(state),
-                        _ => unreachable!(),
-                    },
+                    other => {
+                        let _ = other;
+                    }
                 }
                 *version += 1;
                 Self::publish_snapshot(state, snapshot, *version);
