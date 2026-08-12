@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct TextRun {
     pub text: String,
     pub bold: bool,
@@ -18,25 +18,13 @@ pub struct TextRun {
     pub range: Option<std::ops::Range<usize>>,
 }
 
-impl Default for TextRun {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            bold: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
-            code: false,
-            superscript: false,
-            subscript: false,
-            hubref: None,
-            link: None,
-            footnote_ref: None,
-            id: None,
-            attributes: Vec::new(),
-            range: None,
-        }
-    }
+/// Parsed TWXML document payload containing metadata header attributes and block elements.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TwxmlParseResult {
+    pub title: String,
+    pub author: String,
+    pub metadata: Vec<(String, String)>,
+    pub blocks: Vec<Block>,
 }
 
 impl TextRun {

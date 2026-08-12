@@ -130,8 +130,8 @@ fn runs_to_markdown(runs: &[TextRun]) -> String {
             suffix.insert_str(0, "**");
         }
         if run.italic {
-            prefix.push_str("*");
-            suffix.insert_str(0, "*");
+            prefix.push('*');
+            suffix.insert(0, '*');
         }
         if run.underline {
             prefix.push_str("<u>");
@@ -142,8 +142,8 @@ fn runs_to_markdown(runs: &[TextRun]) -> String {
             suffix.insert_str(0, "~~");
         }
         if run.code {
-            prefix.push_str("`");
-            suffix.insert_str(0, "`");
+            prefix.push('`');
+            suffix.insert(0, '`');
         }
         if run.superscript {
             prefix.push_str("<sup>");

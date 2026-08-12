@@ -9,11 +9,7 @@ unsafe extern "C" {
 /// Load the HubGS tree-sitter language. Returns `None` if the symbol is missing or NULL.
 pub fn load_hubgs_language() -> Option<tree_sitter::Language> {
     let ptr = unsafe { tree_sitter_hubgs() };
-    if ptr.is_null() {
-        None
-    } else {
-        unsafe { Some(tree_sitter::Language::from_raw(ptr.cast())) }
-    }
+    unsafe { tauwriter_util::load_tree_sitter_language(ptr.cast()) }
 }
 
 pub mod ast;
@@ -107,27 +103,6 @@ pub fn node_to_hub_value(node: tree_sitter::Node, contents: &str) -> Option<HubV
     }
 }
 
-const MAX_RECURSION_DEPTH: usize = 200;
-
-fn count_errors(node: tree_sitter::Node) -> usize {
-    count_errors_impl(node, 0)
-}
-
-fn count_errors_impl(node: tree_sitter::Node, depth: usize) -> usize {
-    if depth > MAX_RECURSION_DEPTH {
-        return 0;
-    }
-    let mut count = if node.is_error() || node.is_missing() {
-        1
-    } else {
-        0
-    };
-    for child in node.children(&mut node.walk()) {
-        count += count_errors_impl(child, depth + 1);
-    }
-    count
-}
-
 fn parse_imports(root: &tree_sitter::Node, source: &[u8]) -> Vec<HubImport> {
     let mut imports = Vec::new();
     for child in root.named_children(&mut root.walk()) {
@@ -157,10 +132,10 @@ fn parse_imports(root: &tree_sitter::Node, source: &[u8]) -> Vec<HubImport> {
                     _ => {}
                 }
             }
-            if !identifiers.is_empty() && source_str.is_some() {
+            if let (false, Some(from_path)) = (identifiers.is_empty(), source_str) {
                 imports.push(HubImport {
                     types: identifiers,
-                    from: source_str.unwrap(),
+                    from: from_path,
                 });
             }
         }
@@ -439,6 +414,7 @@ fn parse_instance_assignment(
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 fn parse_definitions_ast(
     root: &tree_sitter::Node,
     contents: &str,

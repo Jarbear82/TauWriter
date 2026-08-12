@@ -19,9 +19,5 @@ unsafe extern "C" {
 /// Load the TWXML tree-sitter language. Returns `None` if the symbol is missing or NULL.
 pub fn load_twxml_language() -> Option<tree_sitter::Language> {
     let ptr = unsafe { tree_sitter_twxml() };
-    if ptr.is_null() {
-        None
-    } else {
-        unsafe { Some(tree_sitter::Language::from_raw(ptr.cast())) }
-    }
+    unsafe { tauwriter_util::load_tree_sitter_language(ptr.cast()) }
 }

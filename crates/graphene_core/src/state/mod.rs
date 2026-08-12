@@ -172,7 +172,7 @@ impl<S: Copy + Default> GraphState<S> {
         self.nodes.get(idx).props.get(key)
     }
 
-    pub fn display_label<'a>(&'a self, id: NodeId) -> Option<&'a str> {
+    pub fn display_label(&self, id: NodeId) -> Option<&str> {
         let idx = *self.node_keys.get(id)?;
         self.nodes.get(idx).display_label()
     }
@@ -506,22 +506,19 @@ impl<S: Copy + Default> GraphState<S> {
         let mut completed = Vec::new();
         for (node_id, track) in self.animations.tracks.iter_mut() {
             let Some(&idx) = self.node_keys.get(node_id) else { continue; };
-            match track {
-                AnimationTrack::Position { from, to, duration, elapsed } => {
-                    *elapsed += dt;
-                    let progress = if duration.is_zero() {
-                        1.0
-                    } else {
-                        (elapsed.as_secs_f32() / duration.as_secs_f32()).min(1.0)
-                    };
-                    let current = *from * (1.0 - progress) + *to * progress;
-                    self.positions.set(idx, current);
-                    self.dirty_flags |= DirtyFlags::POSITION_DIRTY;
-                    if progress >= 1.0 {
-                        completed.push(node_id);
-                    }
+            if let AnimationTrack::Position { from, to, duration, elapsed } = track {
+                *elapsed += dt;
+                let progress = if duration.is_zero() {
+                    1.0
+                } else {
+                    (elapsed.as_secs_f32() / duration.as_secs_f32()).min(1.0)
+                };
+                let current = *from * (1.0 - progress) + *to * progress;
+                self.positions.set(idx, current);
+                self.dirty_flags |= DirtyFlags::POSITION_DIRTY;
+                if progress >= 1.0 {
+                    completed.push(node_id);
                 }
-                _ => {}
             }
         }
         for node_id in completed {

@@ -316,16 +316,11 @@ impl<Ty: EdgeType> InsertPolicy<Ty> for SimpleOnly {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum NodeKind {
+    #[default]
     Vertex,
     HyperedgeProxy,
-}
-
-impl Default for NodeKind {
-    fn default() -> Self {
-        NodeKind::Vertex
-    }
 }
 
 /// Safe wrapper around a parallel array. Operates purely on `usize` indices.

@@ -494,12 +494,12 @@ pub fn load_and_parse_twxml(
     Vec<(SharedString, SharedString)>,
     Vec<Block>,
 )> {
-    let (title, author, meta, blocks) = tauwriter_twxml::load_and_parse_twxml(path)?;
+    let res = tauwriter_twxml::load_and_parse_twxml(path)?;
     Ok((
-        title,
-        author,
-        meta.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
-        blocks.into_iter().map(Block::from).collect(),
+        res.title,
+        res.author,
+        res.metadata.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
+        res.blocks.into_iter().map(Block::from).collect(),
     ))
 }
 
@@ -512,12 +512,12 @@ pub fn parse_twxml(
     Vec<(SharedString, SharedString)>,
     Vec<Block>,
 )> {
-    let (title, author, meta, blocks) = tauwriter_twxml::parse_twxml(xml_content)?;
+    let res = tauwriter_twxml::parse_twxml(xml_content)?;
     Ok((
-        title,
-        author,
-        meta.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
-        blocks.into_iter().map(Block::from).collect(),
+        res.title,
+        res.author,
+        res.metadata.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
+        res.blocks.into_iter().map(Block::from).collect(),
     ))
 }
 
@@ -531,13 +531,12 @@ pub fn parse_twxml_internal(
     Vec<(SharedString, SharedString)>,
     Vec<Block>,
 )> {
-    let (title, author, meta, blocks) =
-        tauwriter_twxml::parse_twxml_internal(xml_content, base_dir, visited)?;
+    let res = tauwriter_twxml::parse_twxml_internal(xml_content, base_dir, visited)?;
     Ok((
-        title,
-        author,
-        meta.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
-        blocks.into_iter().map(Block::from).collect(),
+        res.title,
+        res.author,
+        res.metadata.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
+        res.blocks.into_iter().map(Block::from).collect(),
     ))
 }
 

@@ -38,8 +38,8 @@ impl<'a, S: Copy> GraphView<'a, S> {
         for i in 0..e_len {
             let src = state.edge_sources[i];
             let tgt = state.edge_targets[i];
-            let src_contained = state.node_keys.get(src).map_or(false, |&idx| node_mask[idx]);
-            let tgt_contained = state.node_keys.get(tgt).map_or(false, |&idx| node_mask[idx]);
+            let src_contained = state.node_keys.get(src).is_some_and(|&idx| node_mask[idx]);
+            let tgt_contained = state.node_keys.get(tgt).is_some_and(|&idx| node_mask[idx]);
             if src_contained && tgt_contained {
                 edge_mask.set(i, true);
             }
@@ -53,11 +53,11 @@ impl<'a, S: Copy> GraphView<'a, S> {
     }
 
     pub fn contains_node(&self, id: NodeId) -> bool {
-        self.state.node_keys.get(id).map_or(false, |&idx| self.node_mask[idx])
+        self.state.node_keys.get(id).is_some_and(|&idx| self.node_mask[idx])
     }
 
     pub fn contains_edge(&self, id: EdgeId) -> bool {
-        self.state.edge_keys.get(id).map_or(false, |&idx| self.edge_mask[idx])
+        self.state.edge_keys.get(id).is_some_and(|&idx| self.edge_mask[idx])
     }
 
     pub fn nodes(&self) -> impl Iterator<Item = NodeId> + '_ {

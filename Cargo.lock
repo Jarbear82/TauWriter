@@ -6930,6 +6930,7 @@ dependencies = [
  "anyhow",
  "cc",
  "serde",
+ "tauwriter-util",
  "tree-sitter",
 ]
 
@@ -6998,6 +6999,7 @@ dependencies = [
  "roxmltree 0.20.0",
  "serde",
  "streaming-iterator",
+ "tauwriter-util",
  "tree-sitter",
 ]
 
@@ -7011,6 +7013,9 @@ dependencies = [
 [[package]]
 name = "tauwriter-util"
 version = "0.1.0"
+dependencies = [
+ "tree-sitter",
+]
 
 [[package]]
 name = "tauwriter-workspace"

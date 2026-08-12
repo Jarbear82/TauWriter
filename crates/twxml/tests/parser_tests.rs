@@ -12,10 +12,11 @@ fn test_parse_twxml_basic_structures_match() {
           </body>
         </document>
         "#;
-    let (title, author, _metadata, blocks) = parse_twxml(xml).unwrap();
-    assert_eq!(title, "Test Document");
-    assert_eq!(author, "Test Author");
-    assert_eq!(blocks.len(), 2);
+    let res = parse_twxml(xml).unwrap();
+    assert_eq!(res.title, "Test Document");
+    assert_eq!(res.author, "Test Author");
+    assert_eq!(res.blocks.len(), 2);
+    let blocks = res.blocks;
 
     match &blocks[0] {
         Block::Heading { level, text, .. } => {
@@ -59,7 +60,7 @@ fn test_parser_whitespace_normalization_and_br_handling_succeeds() {
           </body>
         </document>
         "#;
-    let (_, _, _metadata, blocks) = parse_twxml(xml).unwrap();
+    let blocks = parse_twxml(xml).unwrap().blocks;
     assert_eq!(blocks.len(), 1);
 
     match &blocks[0] {
@@ -78,7 +79,7 @@ fn test_parser_whitespace_normalization_and_br_handling_succeeds() {
 #[test]
 fn test_parser_extracts_correct_character_ranges() {
     let xml = "<document><body><heading>Chapter 1</heading><paragraph>Hello <bold>world</bold>!</paragraph></body></document>";
-    let (_, _, _metadata, blocks) = parse_twxml(xml).unwrap();
+    let blocks = parse_twxml(xml).unwrap().blocks;
     assert_eq!(blocks.len(), 2);
 
     match &blocks[0] {
@@ -131,7 +132,7 @@ fn test_parser_handles_details_footnotes_and_reviews() {
           </body>
         </document>
         "#;
-    let (_, _, _metadata, blocks) = parse_twxml(xml).unwrap();
+    let blocks = parse_twxml(xml).unwrap().blocks;
     assert_eq!(blocks.len(), 4);
 
     match &blocks[0] {

@@ -1,15 +1,10 @@
-use crate::types::{Block, ListItem, TextRun};
+use crate::types::{Block, ListItem, TextRun, TwxmlParseResult};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub fn load_and_parse_twxml(
     path: &str,
-) -> anyhow::Result<(
-    String,
-    String,
-    Vec<(String, String)>,
-    Vec<Block>,
-)> {
+) -> anyhow::Result<TwxmlParseResult> {
     let xml_content = std::fs::read_to_string(path)?;
     let base_dir = Path::new(path).parent();
     let mut visited = HashSet::new();
@@ -21,12 +16,7 @@ pub fn load_and_parse_twxml(
 
 pub fn parse_twxml(
     xml_content: &str,
-) -> anyhow::Result<(
-    String,
-    String,
-    Vec<(String, String)>,
-    Vec<Block>,
-)> {
+) -> anyhow::Result<TwxmlParseResult> {
     let mut visited = HashSet::new();
     parse_twxml_internal(xml_content, None, &mut visited)
 }
@@ -35,12 +25,7 @@ pub fn parse_twxml_internal(
     xml_content: &str,
     base_dir: Option<&Path>,
     visited: &mut HashSet<PathBuf>,
-) -> anyhow::Result<(
-    String,
-    String,
-    Vec<(String, String)>,
-    Vec<Block>,
-)> {
+) -> anyhow::Result<TwxmlParseResult> {
     let doc = roxmltree::Document::parse(xml_content)?;
     let root = doc.root_element();
 
@@ -68,7 +53,12 @@ pub fn parse_twxml_internal(
         }
     }
 
-    Ok((title, author, metadata, blocks))
+    Ok(TwxmlParseResult {
+        title,
+        author,
+        metadata,
+        blocks,
+    })
 }
 
 const MAX_PARSE_DEPTH: usize = 128;
@@ -106,10 +96,10 @@ fn parse_node(
                     if let Ok(content) = std::fs::read_to_string(&target_path) {
                         let sub_dir = target_path.parent();
                         let mut sub_visited = visited.clone();
-                        if let Ok((_, _, _, sub_blocks)) =
+                        if let Ok(res) =
                             parse_twxml_internal(&content, sub_dir, &mut sub_visited)
                         {
-                            resolved_blocks = Some(sub_blocks);
+                            resolved_blocks = Some(res.blocks);
                         }
                     }
                     visited.remove(&abs_path);
@@ -438,7 +428,7 @@ enum NextElement {
 }
 
 enum PrevElement {
-    Char(char),
+    Char,
     LineBreak,
     None,
 }
@@ -491,7 +481,7 @@ fn find_prev_semantic_element(
         for c_idx in (0..start).rev() {
             let c = chars[c_idx];
             if !c.is_whitespace() {
-                return PrevElement::Char(c);
+                return PrevElement::Char;
             }
         }
         if r_idx == 0 {
@@ -528,7 +518,7 @@ fn normalize_runs(runs: &mut Vec<TextRun>) {
                     i += 1;
                 }
 
-                if let (PrevElement::Char(_), NextElement::Char(next_c)) = (prev_el, next_el) {
+                if let (PrevElement::Char, NextElement::Char(next_c)) = (prev_el, next_el) {
                     let is_punctuation =
                         ['.', ',', ':', ';', '!', '?', ')', ']', '}'].contains(&next_c);
                     if !is_punctuation {
