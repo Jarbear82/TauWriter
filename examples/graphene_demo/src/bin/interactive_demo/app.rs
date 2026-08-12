@@ -77,6 +77,7 @@ pub struct DemoApp {
     pub input_edge_curvature: Entity<InputState>,
 
     pub node_name_state: Entity<InputState>,
+    pub edit_node_label_state: Entity<InputState>,
     pub edge_src_state: Entity<InputState>,
     pub edge_tgt_state: Entity<InputState>,
     pub edge_weight_state: Entity<InputState>,
@@ -198,6 +199,7 @@ impl DemoApp {
         let input_fa2_iterations = cx.new(|cx| InputState::new(window, cx).default_value("100"));
 
         let node_name_state = cx.new(|cx| InputState::new(window, cx));
+        let edit_node_label_state = cx.new(|cx| InputState::new(window, cx));
         let edge_src_state = cx.new(|cx| InputState::new(window, cx));
         let edge_tgt_state = cx.new(|cx| InputState::new(window, cx));
         let edge_weight_state = cx.new(|cx| InputState::new(window, cx).default_value("1.0"));
@@ -263,6 +265,7 @@ impl DemoApp {
             input_edge_stroke,
             input_edge_curvature,
             node_name_state,
+            edit_node_label_state,
             edge_src_state,
             edge_tgt_state,
             edge_weight_state,
@@ -570,7 +573,7 @@ impl DemoApp {
 
     pub fn update_selected_node_label(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.selected_node {
-            let label = self.node_name_state.read(cx).text().to_string();
+            let label = self.edit_node_label_state.read(cx).text().to_string();
             if !label.trim().is_empty() {
                 self.engine
                     .send_command(graphene_layout::GraphCommand::SetNodeLabel {

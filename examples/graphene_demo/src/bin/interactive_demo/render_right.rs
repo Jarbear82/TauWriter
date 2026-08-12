@@ -299,7 +299,7 @@ impl DemoApp {
                                                 .text_size(px(10.0))
                                                 .child("Edit Primary Node Label"),
                                         )
-                                        .child(Input::new(&self.node_name_state))
+                                        .child(Input::new(&self.edit_node_label_state))
                                         .child(
                                             Button::new("update-node-label-btn")
                                                 .primary()
