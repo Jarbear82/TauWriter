@@ -20,6 +20,7 @@ impl db::Db for RootDatabase {
 }
 
 /// Thread-safe handle for the salsa database.
+/// Provides exclusive input mutations via `with_db` and lock-free thread-local database snapshots via `snapshot()`.
 pub struct SalsaThreadHandle(Arc<std::sync::Mutex<RootDatabase>>);
 
 impl SalsaThreadHandle {
@@ -27,6 +28,7 @@ impl SalsaThreadHandle {
         SalsaThreadHandle(Arc::new(std::sync::Mutex::new(db)))
     }
 
+    /// Mutate inputs or database state using exclusive write access.
     pub fn with_db<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut RootDatabase) -> R,
@@ -35,17 +37,22 @@ impl SalsaThreadHandle {
         f(&mut *guard)
     }
 
+    /// Obtain an isolated thread-local database snapshot for parallel, lock-free query execution.
+    /// The lock is held only briefly to clone the Salsa database handle.
+    pub fn snapshot(&self) -> RootDatabase {
+        self.0.lock().unwrap().clone()
+    }
+
     pub fn clone_db(&self) -> SalsaThreadHandle {
         SalsaThreadHandle(self.0.clone())
     }
 
     pub fn peek_db(&self) -> RootDatabase {
-        self.0.lock().unwrap().clone()
+        self.snapshot()
     }
 
     pub fn read_db(&self, workspace: db::Workspace) -> (RootDatabase, db::Workspace) {
-        let guard = self.0.lock().unwrap();
-        (guard.clone(), workspace)
+        (self.snapshot(), workspace)
     }
 }
 
@@ -77,10 +84,9 @@ impl AnalysisHost {
     }
 
     pub fn validate_file(&self, path: &str, content: String) -> Vec<db::ValidationError> {
-        self.db_handle.with_db(|db| {
-            let source_file = db::SourceFile::new(db, path.to_string(), content);
-            db::validate_file(&*db, self.workspace, source_file)
-        })
+        let db = self.db_handle.snapshot();
+        let source_file = db::SourceFile::new(&db, path.to_string(), content);
+        db::validate_file(&db, self.workspace, source_file)
     }
 }
 
@@ -89,3 +95,29 @@ impl Default for AnalysisHost {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_salsa_thread_handle_parallel_snapshots() {
+        let handle = SalsaThreadHandle::default();
+        let db1 = handle.snapshot();
+        let db2 = handle.snapshot();
+
+        let t1 = std::thread::spawn(move || {
+            let _ws = db::Workspace::new(&db1, Vec::new());
+            42
+        });
+
+        let t2 = std::thread::spawn(move || {
+            let _ws = db::Workspace::new(&db2, Vec::new());
+            84
+        });
+
+        assert_eq!(t1.join().unwrap(), 42);
+        assert_eq!(t2.join().unwrap(), 84);
+    }
+}
+

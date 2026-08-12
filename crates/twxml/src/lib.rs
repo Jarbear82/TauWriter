@@ -22,12 +22,6 @@ pub fn load_twxml_language() -> Option<tree_sitter::Language> {
     if ptr.is_null() {
         None
     } else {
-        const _: () = assert!(
-            std::mem::size_of::<*const std::ffi::c_void>()
-                == std::mem::size_of::<tree_sitter::Language>(),
-            "tree_sitter::Language layout changed — transmute is no longer valid"
-        );
-        let lang = unsafe { std::mem::transmute::<*const std::ffi::c_void, tree_sitter::Language>(ptr) };
-        Some(lang)
+        unsafe { Some(tree_sitter::Language::from_raw(ptr.cast())) }
     }
 }

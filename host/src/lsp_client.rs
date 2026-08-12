@@ -53,52 +53,68 @@ impl LspClient {
 
         let mut reader = BufReader::new(stdout);
         std::thread::spawn(move || {
-            let mut line = String::new();
             loop {
-                line.clear();
-                if reader.read_line(&mut line).is_err() || line.is_empty() {
-                    break;
-                }
-                if line.starts_with("Content-Length:") {
-                    let len_str = line.trim_start_matches("Content-Length:").trim();
-                    if let Ok(len) = len_str.parse::<usize>() {
-                        let mut empty = String::new();
-                        let _ = reader.read_line(&mut empty);
+                let mut content_length = None;
+                let mut line = String::new();
 
-                        let mut body_buf = vec![0u8; len];
-                        if reader.read_exact(&mut body_buf).is_ok() {
-                            if let Ok(json_str) = String::from_utf8(body_buf) {
-                                if let Ok(val) =
-                                    serde_json::from_str::<serde_json::Value>(&json_str)
-                                {
-                                    if val["method"] == "textDocument/publishDiagnostics" {
-                                        let mut diags = Vec::new();
-                                        if let Some(arr) = val["params"]["diagnostics"].as_array() {
-                                            for item in arr {
-                                                let msg = item["message"]
-                                                    .as_str()
-                                                    .unwrap_or("")
-                                                    .to_string();
-                                                let line_num = item["range"]["start"]["line"]
-                                                    .as_u64()
-                                                    .unwrap_or(0)
-                                                    as usize;
-                                                let severity =
-                                                    item["severity"].as_u64().unwrap_or(1) as usize;
-                                                diags.push(Diagnostic {
-                                                    line: line_num,
-                                                    severity,
-                                                    message: msg,
-                                                });
-                                            }
-                                        }
-
-                                        let uri =
-                                            val["params"]["uri"].as_str().unwrap_or("").to_string();
-                                        let _ = diag_tx.send((uri, diags));
-                                    }
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let trimmed = line.trim();
+                            if trimmed.is_empty() {
+                                if content_length.is_some() {
+                                    break; // Header section complete
+                                } else {
+                                    continue; // Skip blank lines before headers
                                 }
                             }
+                            if let Some(val) = trimmed.strip_prefix("Content-Length:") {
+                                if let Ok(len) = val.trim().parse::<usize>() {
+                                    content_length = Some(len);
+                                }
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+
+                let Some(len) = content_length else {
+                    break; // EOF or stream end
+                };
+
+                let mut body_buf = vec![0u8; len];
+                if reader.read_exact(&mut body_buf).is_err() {
+                    break;
+                }
+
+                if let Ok(json_str) = String::from_utf8(body_buf) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                        if val["method"] == "textDocument/publishDiagnostics" {
+                            let mut diags = Vec::new();
+                            if let Some(arr) = val["params"]["diagnostics"].as_array() {
+                                for item in arr {
+                                    let msg = item["message"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let line_num = item["range"]["start"]["line"]
+                                        .as_u64()
+                                        .unwrap_or(0)
+                                        as usize;
+                                    let severity =
+                                        item["severity"].as_u64().unwrap_or(1) as usize;
+                                    diags.push(Diagnostic {
+                                        line: line_num,
+                                        severity,
+                                        message: msg,
+                                    });
+                                }
+                            }
+
+                            let uri = val["params"]["uri"].as_str().unwrap_or("").to_string();
+                            let _ = diag_tx.send((uri, diags));
                         }
                     }
                 }
@@ -180,6 +196,19 @@ impl LspClient {
 
 impl Drop for LspClient {
     fn drop(&mut self) {
+        let shutdown_msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 9999,
+            "method": "shutdown"
+        });
+        let _ = self.tx.send(shutdown_msg.to_string());
+
+        let exit_msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "exit"
+        });
+        let _ = self.tx.send(exit_msg.to_string());
+
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut child) = guard.take() {
                 let _ = child.kill();

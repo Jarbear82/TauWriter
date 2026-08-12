@@ -8,18 +8,7 @@ pub(crate) fn load_ts_language(
     if ptr.is_null() {
         anyhow::bail!("tree-sitter language pointer is NULL");
     }
-    // `tree_sitter::Language` is a thin newtype wrapper around a raw
-    // pointer in tree-sitter 0.26; assert that invariant explicitly so a
-    // future dependency bump fails loudly here instead of silently producing UB.
-    const _: () = assert!(
-        std::mem::size_of::<*const std::ffi::c_void>()
-            == std::mem::size_of::<tree_sitter::Language>(),
-        "tree_sitter::Language layout changed — transmute is no longer valid"
-    );
-    // SAFETY: size assertion above guarantees layout compatibility for this
-    // tree-sitter version; ptr is verified non-null above and is expected
-    // to be a `TSLanguage*` returned by a `tree_sitter_<lang>()` FFI symbol.
-    Ok(unsafe { std::mem::transmute::<*const std::ffi::c_void, tree_sitter::Language>(ptr) })
+    Ok(unsafe { tree_sitter::Language::from_raw(ptr.cast()) })
 }
 
 unsafe extern "C" {
