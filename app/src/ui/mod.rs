@@ -6,9 +6,7 @@
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
 use gpui::{div, prelude::*, Entity, SharedString};
-use gpui_component::button::ButtonGroup;
 use gpui_component::input::InputState;
-use gpui_component::IconName;
 use std::path::PathBuf;
 
 gpui::actions!(
@@ -16,6 +14,7 @@ gpui::actions!(
     [ToggleSettings, SelectDocumentTab, SelectGraphTab]
 );
 
+pub(crate) mod dock;
 mod document_view;
 pub(crate) mod graph_pane;
 pub(crate) mod sidebar;
@@ -25,9 +24,9 @@ mod tree_view;
 mod ui_tests;
 
 // Split-out modules
-mod document_tabs;
-mod mode_dropdown;
-mod window_chrome;
+pub(crate) mod document_tabs;
+pub(crate) mod mode_dropdown;
+pub(crate) mod window_chrome;
 
 pub(crate) use super::lsp_client::Diagnostic;
 pub(crate) use super::lsp_client::LspClient;
@@ -36,7 +35,7 @@ pub(crate) use tree_view::{build_file_tree, FileNode};
 
 pub(crate) use graph_pane::GraphPaneView;
 pub(crate) use sidebar::SidebarView;
-pub(crate) use titlebar::{SettingsView, TitleBar};
+pub(crate) use titlebar::{open_settings_dialog, SettingsView, TitleBar};
 
 // ─── Enums ──────────────────────────────────────────────────────────────────
 
@@ -109,14 +108,16 @@ impl Workspace {
 }
 
 // ─── MainView struct ────────────────────────────────────────────────────────
-#[derive(Debug)]
 pub(crate) struct MainView {
     pub(crate) focus_handle: gpui::FocusHandle,
     pub(crate) workspace: Entity<Workspace>,
+    #[allow(dead_code)]
     pub(crate) sidebar: Entity<sidebar::SidebarView>,
+    #[allow(dead_code)]
     pub(crate) document_view: Entity<DocumentView>,
+    #[allow(dead_code)]
     pub(crate) graph_pane: Entity<graph_pane::GraphPaneView>,
-    pub(crate) settings_window: Option<gpui::WindowHandle<gpui_component::Root>>,
+    pub(crate) dock_area: Entity<gpui_component::dock::DockArea>,
     #[allow(dead_code)]
     pub(crate) document_home: Entity<DocumentHome>,
     #[allow(dead_code)]
@@ -154,27 +155,14 @@ impl MainView {
     pub(crate) fn toggle_settings(
         &mut self,
         _: &ToggleSettings,
-        _: &mut gpui::Window,
+        window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(handle) = self.settings_window.take() {
-            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        use gpui_component::WindowExt;
+        if window.has_active_dialog(cx) {
+            window.close_dialog(cx);
         } else {
-            let bounds =
-                gpui::Bounds::centered(None, gpui::size(gpui::px(350.), gpui::px(500.)), cx);
-            if let Ok(handle) = cx.open_window(
-                gpui::WindowOptions {
-                    window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
-                    window_decorations: Some(gpui::WindowDecorations::Client),
-                    ..Default::default()
-                },
-                move |window, cx| {
-                    let view = cx.new(|cx| SettingsView::new(cx));
-                    cx.new(|cx| gpui_component::Root::new(view, window, cx))
-                },
-            ) {
-                self.settings_window = Some(handle);
-            }
+            open_settings_dialog(window, cx);
         }
         cx.notify();
     }
@@ -668,236 +656,10 @@ impl gpui::Render for MainView {
 
         // Workspace state
         let workspace = self.workspace.read(cx);
-        let active_doc_idx = workspace.active_doc_idx;
-        let file_explorer = self.sidebar.clone();
-
-        // ── Doc tabs + mode selector ──
-        let mut doc_tab_bar = document_tabs::render_doc_tab_bar(
-            theme_val.background,
-            sidebar_bg,
-            border_color,
-            fg_color,
-            theme_muted_foreground,
-            &workspace.open_docs,
-            active_doc_idx,
-            cx.entity().clone(),
-        );
-
-        // Assemble tab bar + mode selector area
-        if let Some(idx) = active_doc_idx {
-            if workspace.open_docs.get(idx).is_some() {
-                doc_tab_bar = doc_tab_bar.child(div().px_3().flex().items_center().child(
-                    mode_dropdown::render_mode_selector(
-                        workspace.open_docs[idx].mode,
-                        idx,
-                        cx.entity().clone(),
-                    ),
-                ));
-            }
-        }
-
-        // ── Graph tabs bar ──
-        let active_graph_tab = workspace.active_graph_tab;
-        let selected_graph_index = match active_graph_tab {
-            GraphTab::DocumentGraph => 0,
-            GraphTab::DefinitionsSchema => 1,
-            GraphTab::InstancesRelation => 2,
-        };
-
-        let view_clone_graph = cx.entity().clone();
-        let graph_tab_configs = vec![
-            ("Document Graph", IconName::File),
-            ("Definitions Schema", IconName::LayoutDashboard),
-            ("Instances Relation", IconName::Network),
-        ];
-
-        let graph_tab_bar = gpui_component::tab::TabBar::new("graph-tab-bar")
-            .selected_index(selected_graph_index)
-            .on_click(move |index, _, cx| {
-                let tab = match index {
-                    0 => GraphTab::DocumentGraph,
-                    1 => GraphTab::DefinitionsSchema,
-                    2 => GraphTab::InstancesRelation,
-                    _ => return,
-                };
-                view_clone_graph.update(cx, |this, cx| {
-                    this.workspace.update(cx, |w, cx| {
-                        w.active_graph_tab = tab;
-                        cx.notify();
-                    });
-                    cx.notify();
-                });
-            })
-            .children(
-                graph_tab_configs
-                    .into_iter()
-                    .map(|(label, icon)| gpui_component::tab::Tab::new().icon(icon).label(label)),
-            );
-
-        // ── Layout type selector + run layout button ──
-        let current_layout_type = workspace.layout_type;
-
-        let graph_pane_for_layout = self.graph_pane.clone();
-
-        use gpui_component::button::{Button, DropdownButton as GpuiDropdownButton};
-        use gpui_component::menu::PopupMenuItem;
-
-        let layout_label = match current_layout_type {
-            LayoutType::ForceDirected => "Force",
-            LayoutType::Sugiyama => "Tree",
-            LayoutType::Cose => "Compound",
-            LayoutType::Circular => "Circle",
-            LayoutType::Grid => "Grid",
-        };
-
-        let graph_pane_for_dropdown = graph_pane_for_layout.clone();
-
-        let layout_selector_bar = gpui::div()
-            .flex()
-            .items_center()
-            .gap_1p5()
-            .px_2()
-            .py_1()
-            .border_b(gpui::px(1.))
-            .border_color(border_color)
-            .child(
-                GpuiDropdownButton::new("layout-mode-selector")
-                    .button(Button::new("layout-btn").label(layout_label))
-                    .dropdown_menu(move |menu, _event, _cx| {
-                        let graph_pane = graph_pane_for_dropdown.clone();
-                        [
-                            ("Force (ForceAtlas2)", LayoutType::ForceDirected),
-                            ("Tree (Sugiyama)", LayoutType::Sugiyama),
-                            ("Compound (CoSE)", LayoutType::Cose),
-                            ("Circle", LayoutType::Circular),
-                            ("Grid", LayoutType::Grid),
-                        ]
-                        .into_iter()
-                        .fold(menu, |menu, (label, layout_type)| {
-                            let graph_pane = graph_pane.clone();
-                            menu.item(PopupMenuItem::new(label).on_click(
-                                move |_event, _window, cx| {
-                                    let _ = graph_pane.update(cx, |pane, cx| {
-                                        pane.workspace.update(cx, |w, _| {
-                                            w.layout_type = layout_type;
-                                        });
-                                    });
-                                },
-                            ))
-                        })
-                    }),
-            )
-            .child(
-                ButtonGroup::new("button-group")
-                    .child(Button::new("run-layout").label("Run Layout").on_click(
-                        move |_, _, cx| {
-                            let _ =
-                                graph_pane_for_layout.update(cx, |pane, cx| pane.run_layout(cx));
-                        },
-                    ))
-                    .child({
-                        let pane_entity = self.graph_pane.clone();
-                        let auto_colors = self.graph_pane.read(cx).auto_node_colors;
-                        gpui_component::button::Button::new("toggle_auto_colors")
-                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                                let _ = pane_entity.update(cx, |this, cx| {
-                                    this.auto_node_colors = !this.auto_node_colors;
-                                    this.auto_edge_colors = this.auto_node_colors;
-                                    cx.notify();
-                                });
-                            })
-                            .label(if auto_colors {
-                                "Auto Color: ON"
-                            } else {
-                                "Auto Color: OFF"
-                            })
-                    })
-                    .child({
-                        let pane_entity = self.graph_pane.clone();
-                        let is_ticking = self.graph_pane.read(cx).is_ticking;
-                        gpui_component::button::Button::new("toggle_physics")
-                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                                let _ = pane_entity.update(cx, |this, cx| {
-                                    if this.is_ticking {
-                                        this.is_ticking = false;
-                                    } else {
-                                        this.run_layout(cx);
-                                    }
-                                });
-                            })
-                            .label(if is_ticking {
-                                "Pause Physics"
-                            } else {
-                                "Play Physics"
-                            })
-                    })
-                    .child({
-                        let pane_entity = self.graph_pane.clone();
-                        gpui_component::button::Button::new("fit_view")
-                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
-                                let _ = pane_entity.update(cx, |this, cx| {
-                                    this.fit_view(cx);
-                                });
-                            })
-                            .label("Fit View")
-                    }),
-            );
-
-        // ── Resizable layout assembly ──
-        let workspace_column = div().flex_1().h_full().relative().child(
-            gpui_component::resizable::h_resizable("document-graph-split")
-                .child(
-                    gpui_component::resizable::resizable_panel().child(
-                        div()
-                            .size_full()
-                            .flex()
-                            .flex_col()
-                            .child(doc_tab_bar)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .h(gpui::px(0.))
-                                    .w_full()
-                                    .overflow_hidden()
-                                    .child(self.document_view.clone()),
-                            ),
-                    ),
-                )
-                .child(
-                    gpui_component::resizable::resizable_panel().child(
-                        div()
-                            .size_full()
-                            .flex()
-                            .flex_col()
-                            .child(graph_tab_bar)
-                            .child(layout_selector_bar)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .h(gpui::px(0.))
-                                    .child(self.graph_pane.clone()),
-                            ),
-                    ),
-                ),
-        );
-
-        let viewport_width = _window.viewport_size().width;
-        let explorer_min = viewport_width * 0.15;
-        let explorer_max = viewport_width * 0.5;
-
-        let main_splitter = gpui_component::resizable::h_resizable("explorer-workspace")
-            .child(
-                gpui_component::resizable::resizable_panel()
-                    .size(gpui::px(250.))
-                    .size_range(explorer_min..explorer_max)
-                    .child(file_explorer),
-            )
-            .child(gpui_component::resizable::resizable_panel().child(workspace_column));
 
         // ── Title bar ──
         let title = self.document_home.read(cx).title.clone();
         let title_bar = TitleBar {
-            settings_open: self.settings_window.is_some(),
             title,
             view: cx.entity().clone(),
         };
@@ -925,6 +687,8 @@ impl gpui::Render for MainView {
             cx.entity().clone(),
         );
 
+        let dialog_layer = gpui_component::Root::render_dialog_layer(_window, cx);
+
         div()
             .key_context("MainView")
             .track_focus(&self.focus_handle)
@@ -944,8 +708,9 @@ impl gpui::Render for MainView {
                     .h(gpui::px(0.))
                     .overflow_hidden()
                     .w_full()
-                    .child(main_splitter),
+                    .child(self.dock_area.clone()),
             )
             .child(bottom_bar)
+            .children(dialog_layer)
     }
 }

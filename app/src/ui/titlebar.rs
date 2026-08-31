@@ -7,7 +7,18 @@ use gpui::{div, Context, Entity, IntoElement, Render};
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::list::ListItem;
 use gpui_component::scroll::ScrollableElement;
-use gpui_component::{Icon, IconName, Selectable};
+use gpui_component::{Icon, IconName, WindowExt};
+
+// ─── Settings Dialog ────────────────────────────────────────────────────────
+
+pub(crate) fn open_settings_dialog(window: &mut gpui::Window, cx: &mut gpui::App) {
+    window.open_dialog(cx, |dialog, _window, _cx| {
+        dialog
+            .w(gpui::px(480.))
+            .title("Settings")
+            .child(SettingsPanel)
+    });
+}
 
 // ─── SettingsPanel (theme picker) ───────────────────────────────────────────
 
@@ -17,7 +28,6 @@ pub(crate) struct SettingsPanel;
 impl RenderOnce for SettingsPanel {
     fn render(self, _window: &mut gpui::Window, cx: &mut gpui::App) -> impl IntoElement {
         let theme_val = gpui_component::Theme::global(cx);
-        let sidebar_bg = theme_val.sidebar;
         let theme_muted_foreground = theme_val.muted_foreground;
 
         let theme_name = theme_val.theme_name();
@@ -54,7 +64,7 @@ impl RenderOnce for SettingsPanel {
                     div()
                         .flex()
                         .items_center()
-                        .gap_1p5()
+                        .gap_2()
                         .child(mode_icon)
                         .child(theme_config.name.clone()),
                 );
@@ -65,25 +75,26 @@ impl RenderOnce for SettingsPanel {
         gpui::div()
             .id("theme_settings_panel")
             .w_full()
-            .h_full()
-            .bg(sidebar_bg)
             .flex()
             .flex_col()
             .child(
                 gpui::div()
-                    .p_3()
+                    .px_3()
+                    .py_2()
                     .text_xs()
                     .font_weight(gpui::FontWeight::BOLD)
                     .text_color(theme_muted_foreground)
-                    .child("THEME SETTINGS"),
+                    .child("THEMES"),
             )
             .child(
                 gpui::div()
                     .id("theme_list")
-                    .flex_1()
+                    .max_h(gpui::px(350.))
                     .overflow_y_scrollbar()
                     .flex()
                     .flex_col()
+                    .gap_1()
+                    .px_1()
                     .children(theme_items),
             )
     }
@@ -120,17 +131,9 @@ impl Render for SettingsView {
             .bg(bg_color)
             .text_color(fg_color)
             .child(
-                gpui::div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .h(gpui::px(32.))
+                gpui_component::TitleBar::new()
                     .bg(sidebar_bg)
-                    .border_b(gpui::px(1.))
                     .border_color(border_color)
-                    .px_4()
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::BOLD)
                     .child(
                         div()
                             .flex()
@@ -148,7 +151,6 @@ impl Render for SettingsView {
 
 #[derive(IntoElement)]
 pub(crate) struct TitleBar {
-    pub(crate) settings_open: bool,
     pub(crate) title: gpui::SharedString,
     pub(crate) view: Entity<crate::ui::MainView>,
 }
@@ -159,34 +161,18 @@ impl RenderOnce for TitleBar {
         let sidebar_bg = theme.sidebar;
         let border_color = theme.border;
         let theme_muted_foreground = theme.muted_foreground;
-        let theme_accent = theme.accent;
 
-        let settings_open = self.settings_open;
         let title = self.title.clone();
-        let view = self.view.clone();
+        let view_settings = self.view.clone();
 
-        let view_settings = view;
-
-        gpui::div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(gpui::px(40.))
+        gpui_component::TitleBar::new()
             .bg(sidebar_bg)
-            .border_b(gpui::px(1.))
             .border_color(border_color)
-            // Drag and Move Area (spans left and middle)
             .child(
                 gpui::div()
-                    .flex_1()
-                    .h_full()
                     .flex()
                     .items_center()
                     .gap_3()
-                    .pl_4()
-                    .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
-                        window.start_window_move();
-                    })
                     .child(
                         gpui::div()
                             .w(gpui::px(10.))
@@ -207,62 +193,18 @@ impl RenderOnce for TitleBar {
                             .child(format!("— {title}")),
                     ),
             )
-            // Window Controls & Settings Button
             .child(
-                gpui::div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .pr_4()
-                    .child(
-                        Button::new("settings_btn")
-                            .label("Settings")
-                            .icon(IconName::Settings)
-                            .selected(settings_open)
-                            .ghost()
-                            .on_click(move |_, window, cx| {
-                                view_settings.update(cx, |this, cx| {
-                                    this.toggle_settings(&crate::ui::ToggleSettings, window, cx);
-                                });
-                            }),
-                    )
-                    .child(
-                        // Minimize Button
-                        gpui::div()
-                            .w(gpui::px(12.))
-                            .h(gpui::px(12.))
-                            .rounded_full()
-                            .bg(theme_muted_foreground.opacity(0.3))
-                            .hover(move |s| s.bg(theme_accent))
-                            .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
-                                window.minimize_window();
-                            }),
-                    )
-                    .child(
-                        // Zoom/Maximize Button
-                        gpui::div()
-                            .w(gpui::px(12.))
-                            .h(gpui::px(12.))
-                            .rounded_full()
-                            .bg(theme_muted_foreground.opacity(0.3))
-                            .hover(move |s| s.bg(theme_accent))
-                            .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
-                                window.zoom_window();
-                            }),
-                    )
-                    .child(
-                        // Close Button
-                        gpui::div()
-                            .w(gpui::px(12.))
-                            .h(gpui::px(12.))
-                            .rounded_full()
-                            .bg(theme_muted_foreground.opacity(0.3))
-                            .hover(|s| s.bg(gpui::rgb(0xff5f56)))
-                            .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
-                                window.remove_window();
-                            }),
-                    ),
+                gpui::div().flex().items_center().gap_2().child(
+                    Button::new("settings_btn")
+                        .label("Settings")
+                        .icon(IconName::Settings)
+                        .ghost()
+                        .on_click(move |_, window, cx| {
+                            view_settings.update(cx, |this, cx| {
+                                this.toggle_settings(&crate::ui::ToggleSettings, window, cx);
+                            });
+                        }),
+                ),
             )
     }
 }
-

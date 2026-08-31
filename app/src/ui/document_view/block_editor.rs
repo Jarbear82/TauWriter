@@ -5,11 +5,13 @@
 //! - A main content card containing styled read-only projections of TWXML AST blocks.
 
 use gpui::{
-    div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
+    div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement, Keystroke,
     ParentElement, Render, SharedString, Styled,
 };
+use gpui_component::kbd::Kbd;
 use gpui_component::scroll::ScrollableElement;
-use gpui_component::{Icon, IconName, Theme};
+use gpui_component::tag::Tag;
+use gpui_component::{Icon, IconName, Sizable, Theme};
 use std::collections::HashMap;
 
 use super::expansion_state::ExpandedBlocks;
@@ -276,20 +278,19 @@ pub(crate) fn render_block_card(
                 .px_2()
                 .py_1()
                 .mb_1()
-                .rounded(px(4.))
-                .bg(theme.accent.opacity(0.15))
-                .text_color(theme.accent)
-                .text_xs()
-                .font_weight(gpui::FontWeight::BOLD)
-                .child(format!("EDITING BLOCK #{}", idx + 1))
+                .child(Tag::primary().small().child(format!("Editing Block #{}", idx + 1)))
                 .child(
                     div()
                         .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
                         .px_2()
                         .py_0p5()
                         .rounded(px(3.))
                         .bg(theme.accent)
                         .text_color(theme.accent_foreground)
+                        .text_xs()
                         .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
                             if let Some(v) = view_weak_header.upgrade() {
                                 v.update(cx, |this, cx| {
@@ -312,7 +313,8 @@ pub(crate) fn render_block_card(
                                 });
                             }
                         })
-                        .child("Done (Ctrl+Enter)"),
+                        .child("Done")
+                        .child(Kbd::new(Keystroke::parse("ctrl-enter").unwrap())),
                 ),
         )
     } else {

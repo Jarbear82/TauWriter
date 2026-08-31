@@ -8,7 +8,7 @@ mod render_right;
 mod theme;
 
 use app::DemoApp;
-use gpui::{AppContext, Application, WindowBounds, WindowOptions};
+use gpui::{AppContext, Application, WindowOptions};
 
 fn main() {
     let platform = gpui_platform::current_platform(false);
@@ -16,11 +16,6 @@ fn main() {
         gpui_component::init(cx);
         cx.open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(gpui::Bounds::centered(
-                    None,
-                    gpui::size(gpui::px(1280.0), gpui::px(800.0)),
-                    cx,
-                ))),
                 titlebar: Some(gpui::TitlebarOptions {
                     title: Some("Graphene-RS Interactive Visualizer".into()),
                     appears_transparent: true,

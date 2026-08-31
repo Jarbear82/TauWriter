@@ -10,6 +10,7 @@ use gpui::{
     div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled,
 };
+use gpui_component::description_list::{DescriptionItem, DescriptionList};
 use gpui_component::{scroll::ScrollableElement, Icon, IconName, Theme};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -18,14 +19,6 @@ use std::collections::HashMap;
 static CODE_BLOCK_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.12, 1.0));
 static CODE_BLOCK_TEXT_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.83, 1.0));
 
-/// Standard warning/review background (light yellow, works on both light and dark themes).
-static REVIEW_BGCOLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(48.0, 1.0, 0.975, 1.0));
-
-/// Warm amber border for aside/note blocks.
-static ASIDE_BORDER_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(43.0, 0.85, 0.47, 1.0));
-
-/// Review warning icon/text color (warm orange).
-static REVIEW_WARNING_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(23.0, 0.82, 0.47, 1.0));
 
 /// Build a HashMap<footnote_id, footnote_content> from blocks for O(1) lookups.
 /// Returns an empty map if no footnotes are present.
@@ -150,9 +143,12 @@ pub(crate) fn render_block(
                 .collect();
 
             CollapsibleBlock::new("Quote".to_string(), theme.border, theme.group_box)
-                .with_body(vec![
-                    div().flex().flex_wrap().w_full().children(body_runs).into_any_element()
-                ])
+                .with_body(vec![div()
+                    .flex()
+                    .flex_wrap()
+                    .w_full()
+                    .children(body_runs)
+                    .into_any_element()])
                 .render(start_offset, expanded_blocks.clone(), cx)
         }
         Block::Aside {
@@ -167,9 +163,10 @@ pub(crate) fn render_block(
                 .w_full()
                 .mb_4()
                 .p_4()
-                .bg(theme.accent.opacity(0.15))
+                .bg(theme.accent.opacity(0.12))
                 .border_l_4()
-                .border_color(*ASIDE_BORDER_COLOR)
+                .border_color(theme.accent)
+                .rounded_r(px(4.))
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
@@ -314,42 +311,23 @@ pub(crate) fn render_block(
             range: _,
         } => {
             let tooltip_text = element_tooltip("dl", id, attributes);
-            let items_elements = items.iter().enumerate().map(|(item_idx, (term, runs))| {
+            let mut desc_list = DescriptionList::new().bordered(true);
+            for (_item_idx, (term, runs)) in items.iter().enumerate() {
                 let clean_term = term.replace("\r\n", " ").replace('\n', " ");
-                div()
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .mb_1()
-                            .child(clean_term),
-                    )
-                    .child(div().pl_4().mb_2().flex().flex_wrap().children(
-                        runs.iter().enumerate().map(|(run_idx, run)| {
-                            render_run(
-                                doc_blocks,
-                                hubgs_instances,
-                                footnote_map,
-                                input_state.clone(),
-                                run,
-                                idx,
-                                run_idx + 100 * item_idx,
-                                &theme,
-                            )
-                        }),
-                    ))
-            });
+                let val_str: String = runs.iter().map(|r| r.text.as_ref()).collect();
+                desc_list = desc_list.child(
+                    DescriptionItem::new(clean_term).value(val_str),
+                );
+            }
 
             div()
                 .id(("dl", idx))
                 .w_full()
                 .mb_4()
-                .flex()
-                .flex_col()
-                .pl_4()
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
-                .children(items_elements)
+                .child(desc_list)
                 .into_any_element()
         }
         Block::Table {
@@ -546,45 +524,56 @@ pub(crate) fn render_block(
             range: _,
         } => {
             let tooltip_text = element_tooltip("review", id, attributes);
-            let mut container = div()
+            let review_children: Vec<AnyElement> = blocks
+                .iter()
+                .enumerate()
+                .map(|(inner_idx, inner_block)| {
+                    render_block(
+                        expanded_blocks,
+                        doc_blocks,
+                        hubgs_instances,
+                        footnote_map,
+                        input_state.clone(),
+                        inner_block,
+                        idx + 1000 * inner_idx,
+                        cx,
+                    )
+                })
+                .collect();
+
+            div()
                 .id(("review", idx))
                 .w_full()
                 .mb_4()
                 .p_4()
                 .rounded(px(4.))
-                .bg(*REVIEW_BGCOLOR)
-                .border(px(1.))
-                .border_color(*ASIDE_BORDER_COLOR)
+                .bg(theme.warning.opacity(0.1))
+                .border_l_4()
+                .border_color(theme.warning)
                 .tooltip(move |window, cx| {
                     gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
-                });
-
-            container = container.child(
-                div()
-                    .mb_2()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(*REVIEW_WARNING_COLOR)
-                    .child(Icon::new(IconName::TriangleAlert).size(gpui::px(13.)))
-                    .child("FLAG FOR REVIEW"),
-            );
-
-            for (inner_idx, inner_block) in blocks.iter().enumerate() {
-                container = container.child(render_block(
-                    expanded_blocks,
-                    doc_blocks,
-                    hubgs_instances,
-                    footnote_map,
-                    input_state.clone(),
-                    inner_block,
-                    idx + 1000 * inner_idx,
-                    cx,
-                ));
-            }
-            container.into_any_element()
+                })
+                .child(
+                    div()
+                        .mb_2()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(theme.warning)
+                        .child(Icon::new(IconName::TriangleAlert).size(gpui::px(13.)))
+                        .child("FLAG FOR REVIEW"),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .w_full()
+                        .gap_2()
+                        .children(review_children),
+                )
+                .into_any_element()
         }
         Block::Include {
             src: _,
@@ -673,7 +662,7 @@ pub(crate) fn render_run(
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
-                log::debug!("[host] User clicked on Hub Reference ID: {}", hub_id);
+                log::debug!("[app] User clicked on Hub Reference ID: {}", hub_id);
             });
     } else if let Some(ref fn_id) = run.footnote_ref {
         let fn_id = fn_id.clone();
@@ -682,14 +671,18 @@ pub(crate) fn render_run(
             .get(fn_id.as_ref())
             .cloned()
             .unwrap_or_else(|| -> SharedString { "Footnote definition not found".into() });
-        run_tooltip = format!("Footnote Ref: {} | {}", fn_id, footnote_content.replace("\r\n", " ").replace('\n', " "));
+        run_tooltip = format!(
+            "Footnote Ref: {} | {}",
+            fn_id,
+            footnote_content.replace("\r\n", " ").replace('\n', " ")
+        );
 
         text_el = text_el
             .text_color(theme.accent)
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _cx| {
-                log::debug!("[host] User clicked on Footnote Reference ID: {}", fn_id);
+                log::debug!("[app] User clicked on Footnote Reference ID: {}", fn_id);
             });
     } else if let Some(ref link) = run.link {
         let link = link.clone();
@@ -712,7 +705,7 @@ pub(crate) fn render_run(
             .cursor_pointer()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                log::debug!("[host] User clicked internal/external link: {}", link);
+                log::debug!("[app] User clicked internal/external link: {}", link);
                 if link.starts_with("http") {
                     cx.open_url(&link);
                 } else if link.starts_with('#') {
@@ -742,7 +735,8 @@ pub(crate) fn render_run(
         })
         .on_mouse_down(gpui::MouseButton::Right, move |_, window, cx| {
             if let Some(ref r) = run_range_fmt {
-                let formatted = crate::parser::wrap_text_in_inline_format(&run_text_fmt, "bold", None);
+                let formatted =
+                    crate::parser::wrap_text_in_inline_format(&run_text_fmt, "bold", None);
                 input_state_fmt.update(cx, |state, cx| {
                     let full_text = state.value().to_string();
                     if r.end <= full_text.len() {

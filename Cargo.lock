@@ -6883,6 +6883,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauwriter-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "env_logger",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "gpui_platform",
+ "graphene_core",
+ "graphene_gpui",
+ "graphene_layout",
+ "graphene_style",
+ "log",
+ "once_cell",
+ "roxmltree 0.20.0",
+ "serde",
+ "serde_json",
+ "tauwriter-analysis",
+ "tauwriter-hubgs",
+ "tauwriter-text",
+ "tauwriter-twxml",
+ "tokio",
+ "tree-sitter",
+]
+
+[[package]]
 name = "tauwriter-cli"
 version = "0.1.0"
 dependencies = [
@@ -7023,34 +7051,6 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "tauwriter-project",
-]
-
-[[package]]
-name = "tauwriter_host"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc",
- "env_logger",
- "gpui",
- "gpui-component",
- "gpui-component-assets",
- "gpui_platform",
- "graphene_core",
- "graphene_gpui",
- "graphene_layout",
- "graphene_style",
- "log",
- "once_cell",
- "roxmltree 0.20.0",
- "serde",
- "serde_json",
- "tauwriter-analysis",
- "tauwriter-hubgs",
- "tauwriter-text",
- "tauwriter-twxml",
- "tokio",
- "tree-sitter",
 ]
 
 [[package]]

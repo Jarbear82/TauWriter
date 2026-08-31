@@ -95,16 +95,11 @@ impl LspClient {
                             let mut diags = Vec::new();
                             if let Some(arr) = val["params"]["diagnostics"].as_array() {
                                 for item in arr {
-                                    let msg = item["message"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let line_num = item["range"]["start"]["line"]
-                                        .as_u64()
-                                        .unwrap_or(0)
-                                        as usize;
-                                    let severity =
-                                        item["severity"].as_u64().unwrap_or(1) as usize;
+                                    let msg = item["message"].as_str().unwrap_or("").to_string();
+                                    let line_num =
+                                        item["range"]["start"]["line"].as_u64().unwrap_or(0)
+                                            as usize;
+                                    let severity = item["severity"].as_u64().unwrap_or(1) as usize;
                                     diags.push(Diagnostic {
                                         line: line_num,
                                         severity,
@@ -219,7 +214,7 @@ impl Drop for LspClient {
 }
 
 pub(crate) fn find_lsp_binary() -> Option<std::path::PathBuf> {
-    // 1. Prefer a binary next to the running host executable (works in
+    // 1. Prefer a binary next to the running app executable (works in
     //    both debug and release, regardless of CWD).
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
@@ -244,6 +239,6 @@ pub(crate) fn find_lsp_binary() -> Option<std::path::PathBuf> {
         }
     }
 
-    log::warn!("Could not locate tauwriter-lsp binary next to the host executable or in target/");
+    log::warn!("Could not locate tauwriter-lsp binary next to the app executable or in target/");
     None
 }

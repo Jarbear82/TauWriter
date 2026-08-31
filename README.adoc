@@ -30,7 +30,7 @@ Analysis (tauwriter-analysis)
         ↑
 Protocol (tauwriter-lsp, tauwriter-cli)
         ↑
-Application (tauwriter-project, tauwriter-workspace, tauwriter-document, tauwriter-graph, tauwriter-ui, tauwriter_host)
+Application (tauwriter-project, tauwriter-workspace, tauwriter-document, tauwriter-graph, tauwriter-ui, tauwriter-app)
 ----
 
 Rules:
@@ -38,7 +38,7 @@ Rules:
 * `tauwriter-analysis` contains pure Salsa database queries, diagnostic production, and semantic analysis with zero UI dependencies.
 * `graphene_*` crates handle domain-agnostic graph visualization, force-directed layout, and GPUI rendering.
 * `tauwriter-lsp` and `tauwriter-cli` adapt the pure analysis core to LSP JSON-RPC and CLI subcommands.
-* `tauwriter_host` is the primary standalone GPUI application.
+* `tauwriter-app` is the primary standalone GPUI application.
 
 == 📁 Monorepo Structure
 
@@ -68,7 +68,7 @@ tauwriter/
 │   ├── document/                       # Per-document buffer & block editor surface
 │   ├── graph/                          # TauWriter graph projection & navigation
 │   └── ui/                             # Reusable TauWriter GPUI components
-├── host/                               # Primary GPUI host application binary
+├── app/                               # Primary GPUI application binary
 ├── lsp/                                # Industrial-grade LSP JSON-RPC server binary
 ├── extension/                          # Zed extension (grammars + LSP launcher)
 ├── examples/                           # Sample .hubgs and .twxml knowledge bases
@@ -106,11 +106,11 @@ cargo test --workspace
 cargo run -p tauwriter-cli -- validate examples/brave_little_tailor.hubgs
 ----
 
-=== Run GPUI host application
+=== Run GPUI application
 
 [source,bash]
 ----
-cargo run -p tauwriter_host
+cargo run -p tauwriter-app
 ----
 
 === Run interactive graph visualizer demo (Graphene)

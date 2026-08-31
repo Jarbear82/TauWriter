@@ -44,7 +44,7 @@ Strategy Selection Criteria: The application operates as a linear transformation
 
 [source,text]
 ----
-host/src/
+app/src/
 ├── main.rs (App entrypoint & window coordinator)
 ├── lsp_client.rs (JSON-RPC communications client)
 ├── graph_sim.rs (Force-directed layout physics)

@@ -1,4 +1,4 @@
-//! TWXML parser adapter for TauWriter host — delegates core parsing, AST building,
+//! TWXML parser adapter for TauWriter app — delegates core parsing, AST building,
 //! outline extraction, and markdown generation to the `tauwriter-twxml` crate while
 //! adapting strings to GPUI's `SharedString`.
 
@@ -92,7 +92,11 @@ impl From<&TextRun> for tauwriter_twxml::TextRun {
             link: r.link.as_ref().map(|s| s.to_string()),
             footnote_ref: r.footnote_ref.as_ref().map(|s| s.to_string()),
             id: r.id.as_ref().map(|s| s.to_string()),
-            attributes: r.attributes.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            attributes: r
+                .attributes
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             range: r.range.clone(),
         }
     }
@@ -117,7 +121,11 @@ impl From<&ListItem> for tauwriter_twxml::ListItem {
     fn from(item: &ListItem) -> Self {
         Self {
             checked: item.checked,
-            runs: item.runs.iter().map(tauwriter_twxml::TextRun::from).collect(),
+            runs: item
+                .runs
+                .iter()
+                .map(tauwriter_twxml::TextRun::from)
+                .collect(),
         }
     }
 }
@@ -261,110 +269,216 @@ fn convert_attrs(attrs: Vec<(String, String)>) -> Vec<(SharedString, SharedStrin
 }
 
 fn convert_attrs_back(attrs: &[(SharedString, SharedString)]) -> Vec<(String, String)> {
-    attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    attrs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 impl From<tauwriter_twxml::Block> for Block {
     fn from(b: tauwriter_twxml::Block) -> Self {
         match b {
-            tauwriter_twxml::Block::Heading { level, text, id, attributes, range } => Block::Heading {
+            tauwriter_twxml::Block::Heading {
+                level,
+                text,
+                id,
+                attributes,
+                range,
+            } => Block::Heading {
                 level,
                 text: SharedString::from(text),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Paragraph { runs, id, attributes, range } => Block::Paragraph {
+            tauwriter_twxml::Block::Paragraph {
+                runs,
+                id,
+                attributes,
+                range,
+            } => Block::Paragraph {
                 runs: runs.into_iter().map(TextRun::from).collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::BlockQuote { runs, id, attributes, range } => Block::BlockQuote {
+            tauwriter_twxml::Block::BlockQuote {
+                runs,
+                id,
+                attributes,
+                range,
+            } => Block::BlockQuote {
                 runs: runs.into_iter().map(TextRun::from).collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Aside { runs, id, attributes, range } => Block::Aside {
+            tauwriter_twxml::Block::Aside {
+                runs,
+                id,
+                attributes,
+                range,
+            } => Block::Aside {
                 runs: runs.into_iter().map(TextRun::from).collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::CodeBlock { language, code, id, attributes, range } => Block::CodeBlock {
+            tauwriter_twxml::Block::CodeBlock {
+                language,
+                code,
+                id,
+                attributes,
+                range,
+            } => Block::CodeBlock {
                 language: SharedString::from(language),
                 code: SharedString::from(code),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::List { ordered, items, id, attributes, range } => Block::List {
+            tauwriter_twxml::Block::List {
+                ordered,
+                items,
+                id,
+                attributes,
+                range,
+            } => Block::List {
                 ordered,
                 items: items.into_iter().map(ListItem::from).collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::DescriptionList { items, id, attributes, range } => Block::DescriptionList {
-                items: items.into_iter().map(|(t, r)| (SharedString::from(t), r.into_iter().map(TextRun::from).collect())).collect(),
+            tauwriter_twxml::Block::DescriptionList {
+                items,
+                id,
+                attributes,
+                range,
+            } => Block::DescriptionList {
+                items: items
+                    .into_iter()
+                    .map(|(t, r)| {
+                        (
+                            SharedString::from(t),
+                            r.into_iter().map(TextRun::from).collect(),
+                        )
+                    })
+                    .collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Table { headers, rows, id, attributes, range } => Block::Table {
+            tauwriter_twxml::Block::Table {
+                headers,
+                rows,
+                id,
+                attributes,
+                range,
+            } => Block::Table {
                 headers: headers.into_iter().map(SharedString::from).collect(),
-                rows: rows.into_iter().map(|row| row.into_iter().map(|cell| cell.into_iter().map(TextRun::from).collect()).collect()).collect(),
+                rows: rows
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .map(|cell| cell.into_iter().map(TextRun::from).collect())
+                            .collect()
+                    })
+                    .collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::HorizontalRule { id, attributes, range } => Block::HorizontalRule {
+            tauwriter_twxml::Block::HorizontalRule {
+                id,
+                attributes,
+                range,
+            } => Block::HorizontalRule {
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Image { src, alt, id, attributes, range } => Block::Image {
+            tauwriter_twxml::Block::Image {
+                src,
+                alt,
+                id,
+                attributes,
+                range,
+            } => Block::Image {
                 src: SharedString::from(src),
                 alt: alt.map(SharedString::from),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Audio { src, alt, id, attributes, range } => Block::Audio {
+            tauwriter_twxml::Block::Audio {
+                src,
+                alt,
+                id,
+                attributes,
+                range,
+            } => Block::Audio {
                 src: SharedString::from(src),
                 alt: alt.map(SharedString::from),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Video { src, alt, id, attributes, range } => Block::Video {
+            tauwriter_twxml::Block::Video {
+                src,
+                alt,
+                id,
+                attributes,
+                range,
+            } => Block::Video {
                 src: SharedString::from(src),
                 alt: alt.map(SharedString::from),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Details { summary, blocks, id, attributes, range } => Block::Details {
+            tauwriter_twxml::Block::Details {
+                summary,
+                blocks,
+                id,
+                attributes,
+                range,
+            } => Block::Details {
                 summary: SharedString::from(summary),
                 blocks: blocks.into_iter().map(Block::from).collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Footnote { id, runs, attributes, range } => Block::Footnote {
+            tauwriter_twxml::Block::Footnote {
+                id,
+                runs,
+                attributes,
+                range,
+            } => Block::Footnote {
                 id: SharedString::from(id),
                 runs: runs.into_iter().map(TextRun::from).collect(),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Review { blocks, id, attributes, range } => Block::Review {
+            tauwriter_twxml::Block::Review {
+                blocks,
+                id,
+                attributes,
+                range,
+            } => Block::Review {
                 blocks: blocks.into_iter().map(Block::from).collect(),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
                 range,
             },
-            tauwriter_twxml::Block::Include { src, id, attributes, range, resolved_blocks } => Block::Include {
+            tauwriter_twxml::Block::Include {
+                src,
+                id,
+                attributes,
+                range,
+                resolved_blocks,
+            } => Block::Include {
                 src: SharedString::from(src),
                 id: id.map(SharedString::from),
                 attributes: convert_attrs(attributes),
@@ -378,109 +492,214 @@ impl From<tauwriter_twxml::Block> for Block {
 impl From<&Block> for tauwriter_twxml::Block {
     fn from(b: &Block) -> Self {
         match b {
-            Block::Heading { level, text, id, attributes, range } => tauwriter_twxml::Block::Heading {
+            Block::Heading {
+                level,
+                text,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Heading {
                 level: *level,
                 text: text.to_string(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Paragraph { runs, id, attributes, range } => tauwriter_twxml::Block::Paragraph {
+            Block::Paragraph {
+                runs,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Paragraph {
                 runs: runs.iter().map(tauwriter_twxml::TextRun::from).collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::BlockQuote { runs, id, attributes, range } => tauwriter_twxml::Block::BlockQuote {
+            Block::BlockQuote {
+                runs,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::BlockQuote {
                 runs: runs.iter().map(tauwriter_twxml::TextRun::from).collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Aside { runs, id, attributes, range } => tauwriter_twxml::Block::Aside {
+            Block::Aside {
+                runs,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Aside {
                 runs: runs.iter().map(tauwriter_twxml::TextRun::from).collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::CodeBlock { language, code, id, attributes, range } => tauwriter_twxml::Block::CodeBlock {
+            Block::CodeBlock {
+                language,
+                code,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::CodeBlock {
                 language: language.to_string(),
                 code: code.to_string(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::List { ordered, items, id, attributes, range } => tauwriter_twxml::Block::List {
+            Block::List {
+                ordered,
+                items,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::List {
                 ordered: *ordered,
                 items: items.iter().map(tauwriter_twxml::ListItem::from).collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::DescriptionList { items, id, attributes, range } => tauwriter_twxml::Block::DescriptionList {
-                items: items.iter().map(|(t, r)| (t.to_string(), r.iter().map(tauwriter_twxml::TextRun::from).collect())).collect(),
+            Block::DescriptionList {
+                items,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::DescriptionList {
+                items: items
+                    .iter()
+                    .map(|(t, r)| {
+                        (
+                            t.to_string(),
+                            r.iter().map(tauwriter_twxml::TextRun::from).collect(),
+                        )
+                    })
+                    .collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Table { headers, rows, id, attributes, range } => tauwriter_twxml::Block::Table {
+            Block::Table {
+                headers,
+                rows,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Table {
                 headers: headers.iter().map(|h| h.to_string()).collect(),
-                rows: rows.iter().map(|row| row.iter().map(|cell| cell.iter().map(tauwriter_twxml::TextRun::from).collect()).collect()).collect(),
+                rows: rows
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|cell| cell.iter().map(tauwriter_twxml::TextRun::from).collect())
+                            .collect()
+                    })
+                    .collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::HorizontalRule { id, attributes, range } => tauwriter_twxml::Block::HorizontalRule {
+            Block::HorizontalRule {
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::HorizontalRule {
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Image { src, alt, id, attributes, range } => tauwriter_twxml::Block::Image {
+            Block::Image {
+                src,
+                alt,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Image {
                 src: src.to_string(),
                 alt: alt.as_ref().map(|s| s.to_string()),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Audio { src, alt, id, attributes, range } => tauwriter_twxml::Block::Audio {
+            Block::Audio {
+                src,
+                alt,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Audio {
                 src: src.to_string(),
                 alt: alt.as_ref().map(|s| s.to_string()),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Video { src, alt, id, attributes, range } => tauwriter_twxml::Block::Video {
+            Block::Video {
+                src,
+                alt,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Video {
                 src: src.to_string(),
                 alt: alt.as_ref().map(|s| s.to_string()),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Details { summary, blocks, id, attributes, range } => tauwriter_twxml::Block::Details {
+            Block::Details {
+                summary,
+                blocks,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Details {
                 summary: summary.to_string(),
                 blocks: blocks.iter().map(tauwriter_twxml::Block::from).collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Footnote { id, runs, attributes, range } => tauwriter_twxml::Block::Footnote {
+            Block::Footnote {
+                id,
+                runs,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Footnote {
                 id: id.to_string(),
                 runs: runs.iter().map(tauwriter_twxml::TextRun::from).collect(),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Review { blocks, id, attributes, range } => tauwriter_twxml::Block::Review {
+            Block::Review {
+                blocks,
+                id,
+                attributes,
+                range,
+            } => tauwriter_twxml::Block::Review {
                 blocks: blocks.iter().map(tauwriter_twxml::Block::from).collect(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
             },
-            Block::Include { src, id, attributes, range, resolved_blocks } => tauwriter_twxml::Block::Include {
+            Block::Include {
+                src,
+                id,
+                attributes,
+                range,
+                resolved_blocks,
+            } => tauwriter_twxml::Block::Include {
                 src: src.to_string(),
                 id: id.as_ref().map(|s| s.to_string()),
                 attributes: convert_attrs_back(attributes),
                 range: range.clone(),
-                resolved_blocks: resolved_blocks.as_ref().map(|b| b.iter().map(tauwriter_twxml::Block::from).collect()),
+                resolved_blocks: resolved_blocks
+                    .as_ref()
+                    .map(|b| b.iter().map(tauwriter_twxml::Block::from).collect()),
             },
         }
     }
@@ -498,7 +717,10 @@ pub fn load_and_parse_twxml(
     Ok((
         res.title,
         res.author,
-        res.metadata.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
+        res.metadata
+            .into_iter()
+            .map(|(k, v)| (SharedString::from(k), SharedString::from(v)))
+            .collect(),
         res.blocks.into_iter().map(Block::from).collect(),
     ))
 }
@@ -516,7 +738,10 @@ pub fn parse_twxml(
     Ok((
         res.title,
         res.author,
-        res.metadata.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
+        res.metadata
+            .into_iter()
+            .map(|(k, v)| (SharedString::from(k), SharedString::from(v)))
+            .collect(),
         res.blocks.into_iter().map(Block::from).collect(),
     ))
 }
@@ -535,13 +760,17 @@ pub fn parse_twxml_internal(
     Ok((
         res.title,
         res.author,
-        res.metadata.into_iter().map(|(k, v)| (SharedString::from(k), SharedString::from(v))).collect(),
+        res.metadata
+            .into_iter()
+            .map(|(k, v)| (SharedString::from(k), SharedString::from(v)))
+            .collect(),
         res.blocks.into_iter().map(Block::from).collect(),
     ))
 }
 
 pub fn blocks_to_markdown(blocks: &[Block]) -> String {
-    let raw_blocks: Vec<tauwriter_twxml::Block> = blocks.iter().map(tauwriter_twxml::Block::from).collect();
+    let raw_blocks: Vec<tauwriter_twxml::Block> =
+        blocks.iter().map(tauwriter_twxml::Block::from).collect();
     tauwriter_twxml::blocks_to_markdown(&raw_blocks)
 }
 
@@ -566,7 +795,11 @@ pub fn extract_plain_text_from_block(block: &Block) -> String {
         Block::Heading { text, .. } => text.to_string(),
         Block::Paragraph { runs, .. }
         | Block::BlockQuote { runs, .. }
-        | Block::Aside { runs, .. } => runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join(""),
+        | Block::Aside { runs, .. } => runs
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect::<Vec<_>>()
+            .join(""),
         Block::CodeBlock { code, .. } => code.to_string(),
         Block::List { items, .. } => items
             .iter()
@@ -594,7 +827,10 @@ pub fn convert_block_to_twxml(block: &Block, target_type: &str) -> String {
         "blockquote" => format!("<blockquote>{}</blockquote>", safe_text),
         "code" => format!("<codeblock language=\"rust\">{}</codeblock>", safe_text),
         "list" => format!("<ul>\n<li>{}</li>\n</ul>", safe_text),
-        "aside" => format!("<aside type=\"note\">\n<paragraph>{}</paragraph>\n</aside>", safe_text),
+        "aside" => format!(
+            "<aside type=\"note\">\n<paragraph>{}</paragraph>\n</aside>",
+            safe_text
+        ),
         _ => format!("<paragraph>{}</paragraph>", safe_text),
     }
 }
@@ -624,7 +860,8 @@ pub fn detect_markdown_prefix_trigger(input_text: &str) -> MarkdownTriggerResult
         MarkdownTriggerResult::Section(rest.trim_end().to_string())
     } else if let Some(rest) = trimmed.strip_prefix("> ") {
         MarkdownTriggerResult::BlockQuote(rest.trim_end().to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("- ")
+    } else if let Some(rest) = trimmed
+        .strip_prefix("- ")
         .or_else(|| trimmed.strip_prefix("* "))
     {
         MarkdownTriggerResult::UnorderedList(rest.trim_end().to_string())
@@ -656,7 +893,10 @@ pub fn reorder_blocks_in_document(
     src_range: std::ops::Range<usize>,
     target_range: std::ops::Range<usize>,
 ) -> String {
-    if src_range == target_range || src_range.start >= doc_text.len() || target_range.start >= doc_text.len() {
+    if src_range == target_range
+        || src_range.start >= doc_text.len()
+        || target_range.start >= doc_text.len()
+    {
         return doc_text.to_string();
     }
 
@@ -772,7 +1012,11 @@ pub fn normalize_block_text_for_editing(text: &str) -> String {
 }
 
 /// Wraps plain text selection in TWXML inline formatting markup (bold, italic, code, underline, hubref).
-pub fn wrap_text_in_inline_format(text: &str, format_kind: &str, target_id: Option<&str>) -> String {
+pub fn wrap_text_in_inline_format(
+    text: &str,
+    format_kind: &str,
+    target_id: Option<&str>,
+) -> String {
     let trimmed = text.trim();
     let safe_text = if trimmed.is_empty() { "text" } else { trimmed };
     match format_kind {
@@ -787,4 +1031,3 @@ pub fn wrap_text_in_inline_format(text: &str, format_kind: &str, target_id: Opti
         _ => safe_text.to_string(),
     }
 }
-

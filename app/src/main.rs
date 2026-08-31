@@ -1,4 +1,4 @@
-//! TauWriter host — a GPUI desktop application for editing TWXML documents.
+//! TauWriter app — a GPUI desktop application for editing TWXML documents.
 //!
 //! Architecture:
 //! - `ui::` — the MainView component (window, tabs, panels)
@@ -69,7 +69,9 @@ fn open_window(twxml_path: String, cx: &mut App) {
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            titlebar: Some(gpui_component::TitleBar::title_bar_options()),
             window_decorations: Some(gpui::WindowDecorations::Client), // Disable native title bar for CSD
+            app_owns_titlebar_drag: true,
             ..Default::default()
         },
         move |window, cx| {
@@ -199,9 +201,66 @@ fn open_window(twxml_path: String, cx: &mut App) {
             })
             .detach();
 
-            let demo_view = cx.new(|cx| {
+            let dock_area = cx.new(|cx| {
+                gpui_component::dock::DockArea::new("tauwriter-dock", Some(1), window, cx)
+            });
+
+            let dock_area_clone = dock_area.clone();
+            let main_view = cx.new(|cx| {
                 cx.observe(&document_home, |_, _, cx| cx.notify()).detach();
                 cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+
+                let main_view_entity = cx.entity().clone();
+                let files_panel = cx.new(|cx| ui::dock::FilesPanel::new(sidebar.clone(), cx));
+                let editor_panel = cx.new(|cx| {
+                    ui::dock::EditorPanel::new(
+                        document_view.clone(),
+                        workspace.clone(),
+                        main_view_entity.clone(),
+                        cx,
+                    )
+                });
+                let graph_panel = cx.new(|cx| {
+                    ui::dock::GraphPanel::new(
+                        graph_pane.clone(),
+                        workspace.clone(),
+                        main_view_entity.clone(),
+                        cx,
+                    )
+                });
+
+                let dock_area_weak = dock_area_clone.downgrade();
+                let files_tab = gpui_component::dock::DockItem::tab(
+                    files_panel,
+                    &dock_area_weak,
+                    window,
+                    cx,
+                );
+                let editor_tab = gpui_component::dock::DockItem::tab(
+                    editor_panel,
+                    &dock_area_weak,
+                    window,
+                    cx,
+                );
+                let graph_tab = gpui_component::dock::DockItem::tab(
+                    graph_panel,
+                    &dock_area_weak,
+                    window,
+                    cx,
+                );
+
+                let center_item = gpui_component::dock::DockItem::split_with_sizes(
+                    gpui::Axis::Horizontal,
+                    vec![files_tab, editor_tab, graph_tab],
+                    vec![Some(px(250.)), None, Some(px(400.))],
+                    &dock_area_weak,
+                    window,
+                    cx,
+                );
+
+                dock_area_clone.update(cx, |area, cx| {
+                    area.set_center(center_item, window, cx);
+                });
 
                 // Subscribe to SidebarView file selection event
                 let sidebar_sub = cx.subscribe_in(&sidebar, window, {
@@ -311,7 +370,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     sidebar,
                     document_view,
                     graph_pane,
-                    settings_window: None,
+                    dock_area,
                     document_home,
                     input_state,
                     _sidebar_sub: sidebar_sub,
@@ -324,7 +383,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 client.notify_open(&path, &xml_content);
             }
 
-            cx.new(|cx| gpui_component::Root::new(demo_view, window, cx))
+            cx.new(|cx| gpui_component::Root::new(main_view, window, cx))
         },
     );
 

@@ -21,12 +21,12 @@ members = [
     "crates/document",
     "crates/graph",
     "crates/ui",
-    "host",
+    "app",
     "lsp",
     "extension",
     "examples/graphene_demo",
 ]
-default-members = ["host"]
+default-members = ["app"]
 
 [workspace.package]
 edition = "2021"
