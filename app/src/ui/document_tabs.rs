@@ -2,26 +2,26 @@
 //!
 //! Extracted from `ui/mod.rs` to reduce file length and isolate document tab UI logic.
 
-use gpui::prelude::*;
-use gpui::{div, px, Entity};
-use gpui_component::{
+use gpui_kit::prelude::*;
+use gpui_kit::{div, px, Entity};
+use gpui_kit::component::{
     tab::{Tab, TabBar},
     IconName,
 };
 
 use super::OpenDocument;
 
-/// Renders the document tab bar container driven by `gpui_component::tab::TabBar` and `Tab`.
+/// Renders the document tab bar container driven by `gpui_kit::component::tab::TabBar` and `Tab`.
 pub(crate) fn render_doc_tab_bar(
-    _theme_bg: gpui::Hsla,
-    theme_sidebar: gpui::Hsla,
-    theme_border: gpui::Hsla,
-    _theme_fg: gpui::Hsla,
-    theme_muted: gpui::Hsla,
+    _theme_bg: gpui_kit::Hsla,
+    theme_sidebar: gpui_kit::Hsla,
+    theme_border: gpui_kit::Hsla,
+    _theme_fg: gpui_kit::Hsla,
+    theme_muted: gpui_kit::Hsla,
     open_docs: &[OpenDocument],
     active_doc_idx: Option<usize>,
     view: Entity<super::MainView>,
-) -> gpui::Div {
+) -> gpui_kit::Div {
     let view_select = view.clone();
 
     let tab_items: Vec<Tab> = open_docs
@@ -39,8 +39,8 @@ pub(crate) fn render_doc_tab_bar(
                 .px_1()
                 .text_xs()
                 .text_color(theme_muted)
-                .hover(|s| s.text_color(gpui::rgb(0xff5f56)))
-                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                .hover(|s| s.text_color(gpui_kit::rgb(0xff5f56)))
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, _, cx| {
                     view_close.update(cx, |this, cx| {
                         this.close_document_tab(i, cx);
                     });

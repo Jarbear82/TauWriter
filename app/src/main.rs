@@ -6,8 +6,8 @@
 //! - `graph_sim` — HubGS force-directed layout engine
 //! - `lsp_client` — tauwriter-lsp subprocess management
 
-use gpui::{prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
-use gpui_component_assets::Assets;
+use gpui_kit::{prelude::*, px, size, App, Application, Bounds, WindowBounds, WindowOptions};
+use gpui_kit::assets::Assets;
 use lsp_client::{Diagnostic, LspClient};
 use parser::{load_and_parse_twxml, Block, TextRun};
 use std::path::PathBuf;
@@ -38,13 +38,13 @@ fn main() {
         }
     }
 
-    let platform = gpui_platform::current_platform(false);
+    let platform = gpui_kit::platform::current_platform(false);
     let twxml_path_clone = twxml_path.clone();
     Application::with_platform(platform)
         .with_assets(Assets)
         .run(move |cx: &mut App| {
             // Initialize gpui_component library
-            gpui_component::init(cx);
+            gpui_kit::component::init(cx);
             open_window(twxml_path_clone, cx);
         });
 }
@@ -69,17 +69,17 @@ fn open_window(twxml_path: String, cx: &mut App) {
     let opened = cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(gpui_component::TitleBar::title_bar_options()),
-            window_decorations: Some(gpui::WindowDecorations::Client), // Disable native title bar for CSD
+            titlebar: Some(gpui_kit::component::TitleBar::title_bar_options()),
+            window_decorations: Some(gpui_kit::WindowDecorations::Client), // Disable native title bar for CSD
             app_owns_titlebar_drag: true,
             ..Default::default()
         },
         move |window, cx| {
             // Bind global/view keys
             cx.bind_keys([
-                gpui::KeyBinding::new("ctrl-s", ToggleSettings, None),
-                gpui::KeyBinding::new("ctrl-1", SelectDocumentTab, None),
-                gpui::KeyBinding::new("ctrl-2", SelectGraphTab, None),
+                gpui_kit::KeyBinding::new("ctrl-s", ToggleSettings, None),
+                gpui_kit::KeyBinding::new("ctrl-1", SelectDocumentTab, None),
+                gpui_kit::KeyBinding::new("ctrl-2", SelectGraphTab, None),
             ]);
 
             // Load and parse twxml
@@ -116,7 +116,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
 
             // Load and watch themes from local themes directory
             let themes_dir = workspace_root.join("themes");
-            let _ = gpui_component::ThemeRegistry::watch_dir(themes_dir, cx, |_| {});
+            let _ = gpui_kit::component::ThemeRegistry::watch_dir(themes_dir, cx, |_| {});
 
             // Register custom tree-sitter language for twxml.
             // The FFI symbol must be linked by build.rs; if missing, log a warning
@@ -124,7 +124,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
             let lang = load_twxml_language();
             let highlights = include_str!("../../extension/languages/twxml/highlights.scm");
             if let Some(language) = lang {
-                let config = gpui_component::highlighter::LanguageConfig::new(
+                let config = gpui_kit::component::highlighter::LanguageConfig::new(
                     "twxml",
                     language,
                     vec![],
@@ -132,22 +132,40 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     "",
                     "",
                 );
-                gpui_component::highlighter::LanguageRegistry::singleton()
+                gpui_kit::component::highlighter::LanguageRegistry::singleton()
                     .register("twxml", &config);
             } else {
                 eprintln!("Warning: TWXML grammar not linked. Syntax highlighting disabled.");
             }
 
-            // Initialize input state for XML Editor (default first tab)
-            let input_state = cx.new(|cx| {
-                gpui_component::input::InputState::new(window, cx)
-                    .multi_line(true)
-                    .code_editor("twxml")
-                    .line_number(true)
-            });
+            // Register language configuration for TWXML
+            gpui_kit::component::input::set_language_config(
+                "twxml",
+                ui::create_twxml_language_config(),
+                cx,
+            );
 
             // Set initial XML Editor content
             let xml_content = std::fs::read_to_string(&path).unwrap_or_default();
+
+            // Initialize editor state for Source/Raw Editor (default first tab)
+            let editor_state = cx.new(|cx| {
+                gpui_kit::component::input::EditorState::new(window, cx)
+                    .language(ui::language_for_path(&path))
+                    .line_number(true)
+                    .folding(true)
+                    .show_whitespaces(true)
+                    .tab_size(gpui_kit::component::input::TabSize {
+                        tab_size: 4,
+                        hard_tabs: false,
+                    })
+                    .default_value(xml_content.clone())
+            });
+
+            // Initialize input state for XML Editor (default first tab)
+            let input_state = cx.new(|cx| {
+                gpui_kit::component::input::InputState::new(window, cx)
+            });
             input_state.update(cx, |state, cx| {
                 state.set_value(xml_content.clone(), window, cx);
             });
@@ -157,6 +175,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     path: path.clone(),
                     mode: ui::DocumentMode::RawEditor,
                     document_home: document_home.clone(),
+                    editor_state: editor_state.clone(),
                     input_state: input_state.clone(),
                     doc_subscriptions: Vec::new(),
                 });
@@ -168,6 +187,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 ui::DocumentView::new(
                     workspace.clone(),
                     document_home.clone(),
+                    editor_state.clone(),
                     input_state.clone(),
                     cx,
                 )
@@ -185,7 +205,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
             });
 
             let workspace_clone = workspace.clone();
-            cx.spawn(|cx: &mut gpui::AsyncApp| {
+            cx.spawn(|cx: &mut gpui_kit::AsyncApp| {
                 let cx = cx.clone();
                 let workspace = workspace_clone;
                 async move {
@@ -202,7 +222,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
             .detach();
 
             let dock_area = cx.new(|cx| {
-                gpui_component::dock::DockArea::new("tauwriter-dock", Some(1), window, cx)
+                gpui_kit::component::dock::DockArea::new("tauwriter-dock", Some(1), window, cx)
             });
 
             let dock_area_clone = dock_area.clone();
@@ -229,37 +249,24 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     )
                 });
 
-                let dock_area_weak = dock_area_clone.downgrade();
-                let files_tab = gpui_component::dock::DockItem::tab(
-                    files_panel,
-                    &dock_area_weak,
-                    window,
-                    cx,
-                );
-                let editor_tab = gpui_component::dock::DockItem::tab(
-                    editor_panel,
-                    &dock_area_weak,
-                    window,
-                    cx,
-                );
-                let graph_tab = gpui_component::dock::DockItem::tab(
-                    graph_panel,
-                    &dock_area_weak,
-                    window,
-                    cx,
-                );
+                use gpui_kit::component::dock::{panel_handle, DockLayout};
 
-                let center_item = gpui_component::dock::DockItem::split_with_sizes(
-                    gpui::Axis::Horizontal,
-                    vec![files_tab, editor_tab, graph_tab],
-                    vec![Some(px(250.)), None, Some(px(400.))],
-                    &dock_area_weak,
-                    window,
-                    cx,
-                );
+                let center_layout = DockLayout::h_split()
+                    .child(
+                        DockLayout::tabs().panel_view(panel_handle(files_panel), cx),
+                        Some(px(250.)),
+                    )
+                    .child(
+                        DockLayout::tabs().panel_view(panel_handle(editor_panel), cx),
+                        None,
+                    )
+                    .child(
+                        DockLayout::tabs().panel_view(panel_handle(graph_panel), cx),
+                        Some(px(400.)),
+                    );
 
                 dock_area_clone.update(cx, |area, cx| {
-                    area.set_center(center_item, window, cx);
+                    area.set_center(center_layout, window, cx);
                 });
 
                 // Subscribe to SidebarView file selection event
@@ -296,22 +303,22 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     }
                 });
 
-                // Subscribe to InputEvent::Change to sync XML edits to the Preview
-                let input_sub = cx.subscribe_in(&input_state, window, {
+                // Subscribe to InputEvent::Change to sync Editor edits to the Preview
+                let editor_sub = cx.subscribe_in(&editor_state, window, {
                     let workspace = workspace.clone();
                     move |_this: &mut MainView,
                           _,
-                          ev: &gpui_component::input::InputEvent,
+                          ev: &gpui_kit::component::input::InputEvent,
                           _window,
                           cx| match ev {
-                        gpui_component::input::InputEvent::Change => {
-                            let (active_doc_path, active_input_state, active_doc_home) = {
+                        gpui_kit::component::input::InputEvent::Change => {
+                            let (active_doc_path, active_editor_state, active_doc_home) = {
                                 let w = workspace.read(cx);
                                 if let Some(idx) = w.active_doc_idx {
                                     if let Some(doc) = w.open_docs.get(idx) {
                                         (
                                             Some(doc.path.clone()),
-                                            doc.input_state.clone(),
+                                            doc.editor_state.clone(),
                                             doc.document_home.clone(),
                                         )
                                     } else {
@@ -322,7 +329,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                                 }
                             };
 
-                            let text = active_input_state.read(cx).value().to_string();
+                            let text = active_editor_state.read(cx).value().to_string();
                             let lsp_client = workspace.update(cx, |w, _| {
                                 w.selected_path = active_doc_path.clone();
                                 w.lsp_client.clone()
@@ -372,10 +379,11 @@ fn open_window(twxml_path: String, cx: &mut App) {
                     graph_pane,
                     dock_area,
                     document_home,
+                    editor_state,
                     input_state,
                     _sidebar_sub: sidebar_sub,
                     _graph_sub: graph_sub,
-                    _input_sub: input_sub,
+                    _input_sub: editor_sub,
                 }
             });
 
@@ -383,7 +391,7 @@ fn open_window(twxml_path: String, cx: &mut App) {
                 client.notify_open(&path, &xml_content);
             }
 
-            cx.new(|cx| gpui_component::Root::new(main_view, window, cx))
+            cx.new(|cx| gpui_kit::component::Root::new(main_view, window, cx))
         },
     );
 

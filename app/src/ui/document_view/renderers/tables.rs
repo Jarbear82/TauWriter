@@ -1,27 +1,29 @@
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
 use crate::ui::DocumentView;
-use gpui::{div, prelude::*, px, AnyElement, Context, Entity, ParentElement, SharedString, Styled};
-use gpui_component::table::*;
+use gpui_kit::component::table::*;
+use gpui_kit::{
+    div, prelude::*, px, AnyElement, Context, Entity, ParentElement, SharedString, Styled,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::render_run;
 use super::super::expansion_state::ExpandedBlocks;
+use super::render_run;
 
 pub(crate) fn render_table_block(
     _expanded_blocks: &Entity<ExpandedBlocks>,
     doc_blocks: &[Block],
     hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
     footnote_map: &HashMap<SharedString, SharedString>,
-    input_state: Entity<gpui_component::input::InputState>,
+    input_state: Entity<gpui_kit::component::input::InputState>,
     headers: &[SharedString],
     rows: &[Vec<Vec<TextRun>>],
     range: &Option<std::ops::Range<usize>>,
     idx: usize,
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
-    let theme = gpui_component::Theme::global(cx).clone();
+    let theme = gpui_kit::component::Theme::global(cx).clone();
 
     // Build header cells — simple clones.
     let header_cells: Vec<_> = headers
@@ -108,7 +110,7 @@ pub(crate) fn render_table_block(
                 .bg(theme.accent)
                 .text_color(theme.accent_foreground)
                 .cursor_pointer()
-                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                     if let Some(ref r) = range_row_add {
                         let h = headers_row_add.clone();
                         let mut rw = rows_row_add.clone();
@@ -121,7 +123,7 @@ pub(crate) fn render_table_block(
                                 let mut updated = full_text;
                                 updated.replace_range(r.clone(), &new_twxml);
                                 state.set_value(updated, window, cx);
-                                cx.emit(gpui_component::input::InputEvent::Change);
+                                cx.emit(gpui_kit::component::input::InputEvent::Change);
                             }
                         });
                     }
@@ -136,7 +138,7 @@ pub(crate) fn render_table_block(
                 .bg(theme.accent)
                 .text_color(theme.accent_foreground)
                 .cursor_pointer()
-                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                     if let Some(ref r) = range_col_add {
                         let mut h = headers_col_add.clone();
                         let mut rw = rows_col_add.clone();
@@ -149,7 +151,7 @@ pub(crate) fn render_table_block(
                                 let mut updated = full_text;
                                 updated.replace_range(r.clone(), &new_twxml);
                                 state.set_value(updated, window, cx);
-                                cx.emit(gpui_component::input::InputEvent::Change);
+                                cx.emit(gpui_kit::component::input::InputEvent::Change);
                             }
                         });
                     }
@@ -163,7 +165,7 @@ pub(crate) fn render_table_block(
                 .rounded(px(3.))
                 .bg(theme.muted_foreground.opacity(0.3))
                 .cursor_pointer()
-                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                     if let Some(ref r) = range_row_del {
                         let h = headers_row_del.clone();
                         let mut rw = rows_row_del.clone();
@@ -177,7 +179,7 @@ pub(crate) fn render_table_block(
                                     let mut updated = full_text;
                                     updated.replace_range(r.clone(), &new_twxml);
                                     state.set_value(updated, window, cx);
-                                    cx.emit(gpui_component::input::InputEvent::Change);
+                                    cx.emit(gpui_kit::component::input::InputEvent::Change);
                                 }
                             });
                         }
@@ -192,7 +194,7 @@ pub(crate) fn render_table_block(
                 .rounded(px(3.))
                 .bg(theme.muted_foreground.opacity(0.3))
                 .cursor_pointer()
-                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                     if let Some(ref r) = range_col_del {
                         let mut h = headers_col_del.clone();
                         let mut rw = rows_col_del.clone();
@@ -206,7 +208,7 @@ pub(crate) fn render_table_block(
                                     let mut updated = full_text;
                                     updated.replace_range(r.clone(), &new_twxml);
                                     state.set_value(updated, window, cx);
-                                    cx.emit(gpui_component::input::InputEvent::Change);
+                                    cx.emit(gpui_kit::component::input::InputEvent::Change);
                                 }
                             });
                         }

@@ -1,9 +1,9 @@
-use gpui::prelude::*;
-use gpui::{div, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render, Window};
-use gpui_component::button::{Button, ButtonGroup, DropdownButton as GpuiDropdownButton};
-use gpui_component::dock::{Panel, PanelEvent};
-use gpui_component::menu::PopupMenuItem;
-use gpui_component::IconName;
+use gpui_kit::prelude::*;
+use gpui_kit::{div, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render, Window};
+use gpui_kit::component::button::{Button, ButtonGroup, DropdownButton as GpuiDropdownButton};
+use gpui_kit::component::dock::{BasePanel, Panel, PanelEvent};
+use gpui_kit::component::menu::PopupMenuItem;
+use gpui_kit::component::IconName;
 
 use crate::ui::graph_pane::GraphPaneView;
 use crate::ui::{GraphTab, LayoutType, MainView, Workspace};
@@ -35,16 +35,18 @@ impl GraphPanel {
 impl EventEmitter<PanelEvent> for GraphPanel {}
 
 impl Focusable for GraphPanel {
-    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+    fn focus_handle(&self, _: &gpui_kit::App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Panel for GraphPanel {
+impl BasePanel for GraphPanel {
     fn panel_name(&self) -> &'static str {
         "GraphPanel"
     }
+}
 
+impl Panel for GraphPanel {
     fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         "Knowledge Graph"
     }
@@ -52,7 +54,7 @@ impl Panel for GraphPanel {
 
 impl Render for GraphPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme_val = gpui_component::Theme::global(cx);
+        let theme_val = gpui_kit::component::Theme::global(cx);
         let border_color = theme_val.border;
 
         let workspace = self.workspace.read(cx);
@@ -70,7 +72,7 @@ impl Render for GraphPanel {
             ("Instances Relation", IconName::Network),
         ];
 
-        let graph_tab_bar = gpui_component::tab::TabBar::new("graph-tab-bar")
+        let graph_tab_bar = gpui_kit::component::tab::TabBar::new("graph-tab-bar")
             .selected_index(selected_graph_index)
             .on_click(move |index, _, cx| {
                 let tab = match index {
@@ -90,7 +92,7 @@ impl Render for GraphPanel {
             .children(
                 graph_tab_configs
                     .into_iter()
-                    .map(|(label, icon)| gpui_component::tab::Tab::new().icon(icon).label(label)),
+                    .map(|(label, icon)| gpui_kit::component::tab::Tab::new().icon(icon).label(label)),
             );
 
         let current_layout_type = workspace.layout_type;
@@ -111,7 +113,7 @@ impl Render for GraphPanel {
             .gap_1p5()
             .px_2()
             .py_1()
-            .border_b(gpui::px(1.))
+            .border_b(gpui_kit::px(1.))
             .border_color(border_color)
             .child(
                 GpuiDropdownButton::new("layout-mode-selector")
@@ -152,7 +154,7 @@ impl Render for GraphPanel {
                         let pane_entity = self.graph_pane.clone();
                         let auto_colors = self.graph_pane.read(cx).auto_node_colors;
                         Button::new("toggle_auto_colors")
-                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                            .on_mouse_down(gpui_kit::MouseButton::Left, move |_ev, _window, cx| {
                                 let _ = pane_entity.update(cx, |this, cx| {
                                     this.auto_node_colors = !this.auto_node_colors;
                                     this.auto_edge_colors = this.auto_node_colors;
@@ -169,7 +171,7 @@ impl Render for GraphPanel {
                         let pane_entity = self.graph_pane.clone();
                         let is_ticking = self.graph_pane.read(cx).is_ticking;
                         Button::new("toggle_physics")
-                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                            .on_mouse_down(gpui_kit::MouseButton::Left, move |_ev, _window, cx| {
                                 let _ = pane_entity.update(cx, |this, cx| {
                                     if this.is_ticking {
                                         this.is_ticking = false;
@@ -187,7 +189,7 @@ impl Render for GraphPanel {
                     .child({
                         let pane_entity = self.graph_pane.clone();
                         Button::new("fit_view")
-                            .on_mouse_down(gpui::MouseButton::Left, move |_ev, _window, cx| {
+                            .on_mouse_down(gpui_kit::MouseButton::Left, move |_ev, _window, cx| {
                                 let _ = pane_entity.update(cx, |this, cx| {
                                     this.fit_view(cx);
                                 });
@@ -205,7 +207,7 @@ impl Render for GraphPanel {
             .child(
                 div()
                     .flex_1()
-                    .h(gpui::px(0.))
+                    .h(gpui_kit::px(0.))
                     .child(self.graph_pane.clone()),
             )
     }

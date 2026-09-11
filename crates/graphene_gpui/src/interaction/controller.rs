@@ -2,7 +2,7 @@ use crate::interaction::expansion::ExpansionState;
 use crate::interaction::state::InteractionState;
 use crate::render::draw_pipeline::{Viewport, MAX_ZOOM, MIN_ZOOM};
 use crate::view::GraphView;
-use gpui::Point;
+use gpui_kit::Point;
 use graphene_core::{math::Vec2, EdgeId, NodeId};
 use graphene_layout::engine::DragPhase;
 use std::time::Instant;
@@ -205,9 +205,9 @@ mod tests {
         let mut state = GraphState::<ComputedStyle>::new();
         let node_id = state.add_node(Vec2::new(0.0, 0.0), Size2::new(50.0, 50.0));
         let view = GraphView::from_state(&state);
-        let bounds = gpui::Bounds {
-            origin: gpui::Point { x: 0.0, y: 0.0 },
-            size: gpui::Size {
+        let bounds = gpui_kit::Bounds {
+            origin: gpui_kit::Point { x: 0.0, y: 0.0 },
+            size: gpui_kit::Size {
                 width: 800.0,
                 height: 600.0,
             },
@@ -236,9 +236,9 @@ mod tests {
 
     #[test]
     fn test_scroll_zoom() {
-        let mut viewport = Viewport::new(gpui::Bounds {
-            origin: gpui::Point { x: 0.0, y: 0.0 },
-            size: gpui::Size {
+        let mut viewport = Viewport::new(gpui_kit::Bounds {
+            origin: gpui_kit::Point { x: 0.0, y: 0.0 },
+            size: gpui_kit::Size {
                 width: 800.0,
                 height: 600.0,
             },

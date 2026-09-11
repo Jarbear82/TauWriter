@@ -1,8 +1,8 @@
 use graphene_style::{ColorValue, EdgeStyle, NodeStyle};
 
-pub fn color_value_to_hsla(color: ColorValue) -> gpui::Hsla {
+pub fn color_value_to_hsla(color: ColorValue) -> gpui_kit::Hsla {
     let rgba = match color {
-        ColorValue::Rgba(r, g, b, a) => gpui::rgba(
+        ColorValue::Rgba(r, g, b, a) => gpui_kit::rgba(
             ((r * 255.0) as u32) << 24
                 | ((g * 255.0) as u32) << 16
                 | ((b * 255.0) as u32) << 8
@@ -12,9 +12,9 @@ pub fn color_value_to_hsla(color: ColorValue) -> gpui::Hsla {
     rgba.into()
 }
 
-pub fn color_value_to_rgba(color: ColorValue) -> gpui::Rgba {
+pub fn color_value_to_rgba(color: ColorValue) -> gpui_kit::Rgba {
     match color {
-        ColorValue::Rgba(r, g, b, a) => gpui::rgba(
+        ColorValue::Rgba(r, g, b, a) => gpui_kit::rgba(
             ((r * 255.0) as u32) << 24
                 | ((g * 255.0) as u32) << 16
                 | ((b * 255.0) as u32) << 8
@@ -26,29 +26,29 @@ pub fn color_value_to_rgba(color: ColorValue) -> gpui::Rgba {
 pub use color_value_to_rgba as color_to_gpui;
 pub use color_value_to_rgba as color_value_to_gpui_color;
 
-pub fn rgb_to_gpui(c: graphene_style::Rgb) -> gpui::Rgba {
-    gpui::rgba((c.r as u32) << 24 | (c.g as u32) << 16 | (c.b as u32) << 8 | 0xFF)
+pub fn rgb_to_gpui(c: graphene_style::Rgb) -> gpui_kit::Rgba {
+    gpui_kit::rgba((c.r as u32) << 24 | (c.g as u32) << 16 | (c.b as u32) << 8 | 0xFF)
 }
 
-pub fn rgba_to_gpui(c: graphene_style::Rgba) -> gpui::Rgba {
-    gpui::rgba((c.r as u32) << 24 | (c.g as u32) << 16 | (c.b as u32) << 8 | (c.a as u32))
+pub fn rgba_to_gpui(c: graphene_style::Rgba) -> gpui_kit::Rgba {
+    gpui_kit::rgba((c.r as u32) << 24 | (c.g as u32) << 16 | (c.b as u32) << 8 | (c.a as u32))
 }
 
-pub fn foreground_to_gpui(fg: graphene_style::Foreground) -> gpui::Rgba {
+pub fn foreground_to_gpui(fg: graphene_style::Foreground) -> gpui_kit::Rgba {
     rgb_to_gpui(fg.to_rgb())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiTheme {
-    pub bg: gpui::Rgba,
-    pub panel_bg: gpui::Rgba,
-    pub border: gpui::Rgba,
-    pub accent: gpui::Rgba,
-    pub text: gpui::Rgba,
-    pub text_dim: gpui::Rgba,
-    pub node_fill: gpui::Rgba,
-    pub node_border: gpui::Rgba,
-    pub edge_color: gpui::Rgba,
+    pub bg: gpui_kit::Rgba,
+    pub panel_bg: gpui_kit::Rgba,
+    pub border: gpui_kit::Rgba,
+    pub accent: gpui_kit::Rgba,
+    pub text: gpui_kit::Rgba,
+    pub text_dim: gpui_kit::Rgba,
+    pub node_fill: gpui_kit::Rgba,
+    pub node_border: gpui_kit::Rgba,
+    pub edge_color: gpui_kit::Rgba,
 }
 
 pub type GpuiTheme = UiTheme;
@@ -95,15 +95,15 @@ impl StyleBridgeAdapter {
         Self::default()
     }
 
-    pub fn node_fill_hsla(&self, style: &NodeStyle) -> gpui::Hsla {
+    pub fn node_fill_hsla(&self, style: &NodeStyle) -> gpui_kit::Hsla {
         color_value_to_hsla(style.fill_color)
     }
 
-    pub fn node_border_hsla(&self, style: &NodeStyle) -> gpui::Hsla {
+    pub fn node_border_hsla(&self, style: &NodeStyle) -> gpui_kit::Hsla {
         color_value_to_hsla(style.border_color)
     }
 
-    pub fn edge_line_hsla(&self, style: &EdgeStyle) -> gpui::Hsla {
+    pub fn edge_line_hsla(&self, style: &EdgeStyle) -> gpui_kit::Hsla {
         color_value_to_hsla(style.line_color)
     }
 }
@@ -117,9 +117,9 @@ mod tests {
     fn test_color_value_to_hsla_roundtrip() {
         let color = ColorValue::Rgba(1.0, 0.0, 0.0, 1.0);
         let rgba = color_value_to_rgba(color);
-        assert_eq!(rgba, gpui::rgba(0xff0000ff));
+        assert_eq!(rgba, gpui_kit::rgba(0xff0000ff));
         let hsla = color_value_to_hsla(color);
-        assert_eq!(hsla, gpui::Hsla::from(rgba));
+        assert_eq!(hsla, gpui_kit::Hsla::from(rgba));
     }
 
     #[test]
@@ -139,4 +139,3 @@ mod tests {
         assert_eq!(ui_theme.accent, color_value_to_rgba(theme.accent));
     }
 }
-

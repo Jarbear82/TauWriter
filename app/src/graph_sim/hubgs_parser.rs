@@ -1,5 +1,5 @@
 use crate::graph_sim::{HubgsDefinition, HubgsInstance, HubgsLink, InstanceLink};
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 pub(crate) fn parse_hubgs(
     content: &str,

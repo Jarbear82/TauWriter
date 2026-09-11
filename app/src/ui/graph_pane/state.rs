@@ -1,6 +1,6 @@
 //! Stateful viewer for graph panes — GraphPaneView struct definition + business logic.
 
-use gpui::{prelude::*, Entity, SharedString, Window};
+use gpui_kit::{prelude::*, Entity, SharedString, Window};
 use graphene_core::{math::Vec2, DataExpansionMode, GraphState, NodeId, PropValue};
 use graphene_gpui::render::draw_pipeline::Viewport;
 use graphene_gpui::{ExpansionState, GraphCanvasController, GraphView, InteractionState};
@@ -18,7 +18,7 @@ use crate::ui::Workspace;
 #[derive(Debug, Clone)]
 pub(crate) struct GraphPaneView {
     pub(crate) workspace: Entity<Workspace>,
-    pub(crate) window_handle: gpui::AnyWindowHandle,
+    pub(crate) window_handle: gpui_kit::AnyWindowHandle,
 
     // Three graph tab states & views (0=Document Outline, 1=Definitions Schema, 2=Instances Relation)
     pub(crate) outline_state: GraphState<ComputedStyle>,
@@ -54,7 +54,7 @@ pub(crate) struct GraphPaneView {
     pub(crate) active_camera_idx: usize,
 
     // Real pane content-box bounds in window space (set by parent via bounds callback)
-    pub(crate) pane_bounds: gpui::Bounds<f32>,
+    pub(crate) pane_bounds: gpui_kit::Bounds<f32>,
 }
 
 /// Per-tab camera state so each graph pane has independent pan/zoom.
@@ -75,12 +75,12 @@ impl Default for CameraState {
     }
 }
 
-impl gpui::EventEmitter<super::data::GraphEvent> for GraphPaneView {}
+impl gpui_kit::EventEmitter<super::data::GraphEvent> for GraphPaneView {}
 
 impl GraphPaneView {
     pub(crate) fn new(
         workspace: Entity<Workspace>,
-        window: &mut gpui::Window,
+        window: &mut gpui_kit::Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut this = Self {
@@ -111,7 +111,7 @@ impl GraphPaneView {
             wcag_contrast_auto: true,
             camera_states: [CameraState::default(); 3],
             active_camera_idx: 0,
-            pane_bounds: gpui::Bounds::default(),
+            pane_bounds: gpui_kit::Bounds::default(),
         };
         // Load graph data on creation
         this.recalculate_data(&workspace, cx);
@@ -121,9 +121,9 @@ impl GraphPaneView {
     pub(crate) fn active_viewport(&self) -> Viewport {
         let cam = self.active_camera();
         let bounds = if self.pane_bounds.size.width <= 0.0 || self.pane_bounds.size.height <= 0.0 {
-            gpui::Bounds {
-                origin: gpui::point(0.0, 0.0),
-                size: gpui::size(100.0, 100.0),
+            gpui_kit::Bounds {
+                origin: gpui_kit::point(0.0, 0.0),
+                size: gpui_kit::size(100.0, 100.0),
             }
         } else {
             self.pane_bounds
@@ -205,7 +205,7 @@ impl GraphPaneView {
         }
         self.is_ticking = true;
 
-        cx.spawn(|this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+        cx.spawn(|this: gpui_kit::WeakEntity<Self>, cx: &mut gpui_kit::AsyncApp| {
             let cx = cx.clone();
             async move {
                 let mut sim_instances = graphene_layout::livesim::LiveForceSimulation::new();
@@ -328,7 +328,7 @@ impl GraphPaneView {
         let window_handle = self.window_handle;
 
         cx.spawn(
-            move |this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+            move |this: gpui_kit::WeakEntity<Self>, cx: &mut gpui_kit::AsyncApp| {
                 let mut cx = cx.clone();
                 async move {
                     let parse_result = cx
@@ -489,11 +489,11 @@ impl GraphPaneView {
 
     pub(crate) fn handle_mouse_down(
         &mut self,
-        ev: &gpui::MouseDownEvent,
+        ev: &gpui_kit::MouseDownEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let click_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+        let click_pos = gpui_kit::point(f32::from(ev.position.x), f32::from(ev.position.y));
         let viewport = self.active_viewport();
 
         let view_ref = match self.active_camera_idx {
@@ -572,11 +572,11 @@ impl GraphPaneView {
 
     pub(crate) fn handle_mouse_move(
         &mut self,
-        ev: &gpui::MouseMoveEvent,
+        ev: &gpui_kit::MouseMoveEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let mouse_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+        let mouse_pos = gpui_kit::point(f32::from(ev.position.x), f32::from(ev.position.y));
         let mut viewport = self.active_viewport();
 
         let view_ref = match self.active_camera_idx {
@@ -604,7 +604,7 @@ impl GraphPaneView {
 
     pub(crate) fn handle_mouse_up(
         &mut self,
-        _ev: &gpui::MouseUpEvent,
+        _ev: &gpui_kit::MouseUpEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -631,13 +631,13 @@ impl GraphPaneView {
 
     pub(crate) fn handle_scroll_wheel(
         &mut self,
-        ev: &gpui::ScrollWheelEvent,
+        ev: &gpui_kit::ScrollWheelEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let amount = match ev.delta {
-            gpui::ScrollDelta::Pixels(p) => f32::from(p.y),
-            gpui::ScrollDelta::Lines(p) => p.y * 20.0,
+            gpui_kit::ScrollDelta::Pixels(p) => f32::from(p.y),
+            gpui_kit::ScrollDelta::Lines(p) => p.y * 20.0,
         };
         self.apply_zoom(amount, cx);
     }
@@ -664,12 +664,12 @@ impl GraphPaneView {
 
     pub(crate) fn handle_bounds_changed(
         &mut self,
-        bounds: gpui::Bounds<gpui::Pixels>,
+        bounds: gpui_kit::Bounds<gpui_kit::Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let bounds_f32 = gpui::Bounds {
-            origin: gpui::point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32()),
-            size: gpui::size(bounds.size.width.as_f32(), bounds.size.height.as_f32()),
+        let bounds_f32 = gpui_kit::Bounds {
+            origin: gpui_kit::point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32()),
+            size: gpui_kit::size(bounds.size.width.as_f32(), bounds.size.height.as_f32()),
         };
 
         if self.pane_bounds != bounds_f32 {

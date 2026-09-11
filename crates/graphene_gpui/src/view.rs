@@ -41,7 +41,7 @@ impl NodeSizeCache {
 
     pub fn get_or_measure(
         &mut self,
-        text_system: &gpui::TextSystem,
+        text_system: &gpui_kit::TextSystem,
         label: &str,
         font_size: f32,
         max_len: usize,
@@ -62,8 +62,8 @@ impl NodeSizeCache {
             label.to_string()
         };
 
-        let font_id = text_system.resolve_font(&gpui::font(".SystemUIFont"));
-        let font_size_px = gpui::px(font_size);
+        let font_id = text_system.resolve_font(&gpui_kit::font(".SystemUIFont"));
+        let font_size_px = gpui_kit::px(font_size);
         let mut measured_w = 0.0;
 
         for ch in display_text.chars() {
@@ -86,7 +86,7 @@ impl NodeSizeCache {
 
     pub fn get_or_measure_window(
         &mut self,
-        text_system: &gpui::WindowTextSystem,
+        text_system: &gpui_kit::WindowTextSystem,
         label: &str,
         font_size: f32,
         max_len: usize,
@@ -107,18 +107,18 @@ impl NodeSizeCache {
             label.to_string()
         };
 
-        let font_size_px = gpui::px(font_size);
-        let runs = [gpui::TextRun {
+        let font_size_px = gpui_kit::px(font_size);
+        let runs = [gpui_kit::TextRun {
             len: display_text.len(),
-            font: gpui::font(".SystemUIFont"),
-            color: gpui::Hsla::default(),
+            font: gpui_kit::font(".SystemUIFont"),
+            color: gpui_kit::Hsla::default(),
             background_color: None,
             underline: None,
             strikethrough: None,
         }];
 
         let shaped_line = text_system.shape_line(
-            gpui::SharedString::from(display_text),
+            gpui_kit::SharedString::from(display_text),
             font_size_px,
             &runs,
             None,
@@ -380,7 +380,7 @@ impl<S: Copy + Default + Send + Sync + 'static> GraphView<S> {
 
     pub fn measure_and_cache_node_sizes(
         &mut self,
-        text_system: &gpui::TextSystem,
+        text_system: &gpui_kit::TextSystem,
         font_size: f32,
         max_label_len: usize,
         collapsed_parents: &std::collections::HashSet<NodeId>,

@@ -4,14 +4,14 @@
 //! - A left gutter containing drag handle, add block (+), edit pencil, and drag to reorder.
 //! - A main content card containing styled read-only projections of TWXML AST blocks.
 
-use gpui::{
+use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::component::tag::Tag;
+use gpui_kit::component::{Icon, IconName, Sizable, Theme};
+use gpui_kit::{
     div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement, Keystroke,
     ParentElement, Render, SharedString, Styled,
 };
-use gpui_component::kbd::Kbd;
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::tag::Tag;
-use gpui_component::{Icon, IconName, Sizable, Theme};
 use std::collections::HashMap;
 
 use super::expansion_state::ExpandedBlocks;
@@ -31,7 +31,11 @@ struct DragBlockView {
 }
 
 impl Render for DragBlockView {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(
+        &mut self,
+        _window: &mut gpui_kit::Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = Theme::global(cx);
         div()
             .p_2()
@@ -40,7 +44,7 @@ impl Render for DragBlockView {
             .bg(theme.accent.opacity(0.9))
             .text_color(theme.accent_foreground)
             .text_xs()
-            .font_weight(gpui::FontWeight::BOLD)
+            .font_weight(gpui_kit::FontWeight::BOLD)
             .shadow_md()
             .child(format!("Reordering Block #{}", self.src_idx + 1))
     }
@@ -92,15 +96,15 @@ pub(crate) fn compute_virtual_viewport(
 pub(crate) fn render_block_editor(
     _workspace_entity: &Entity<crate::ui::Workspace>,
     _document_home: &Entity<crate::ui::DocumentHome>,
-    input_state: Entity<gpui_component::input::InputState>,
+    input_state: Entity<gpui_kit::component::input::InputState>,
     expanded_blocks: &Entity<ExpandedBlocks>,
     blocks: &[Block],
     active_file: &str,
     focused_block_idx: Option<usize>,
-    block_input_states: &HashMap<usize, Entity<gpui_component::input::InputState>>,
+    block_input_states: &HashMap<usize, Entity<gpui_kit::component::input::InputState>>,
     hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
     footnote_map: &HashMap<SharedString, SharedString>,
-    frontmatter_el: Option<gpui::Div>,
+    frontmatter_el: Option<gpui_kit::Div>,
     diagnostics_content: AnyElement,
     diagnostics: &[crate::lsp_client::Diagnostic],
     cx: &mut Context<DocumentView>,
@@ -114,7 +118,7 @@ pub(crate) fn render_block_editor(
     let block_editor_header = format!("BLOCK EDITOR: {} ({} blocks)", active_file, blocks.len());
 
     let content_area: AnyElement = if blocks.is_empty() {
-        gpui::div()
+        gpui_kit::div()
             .id("block_editor_empty")
             .flex_1()
             .w_full()
@@ -126,10 +130,14 @@ pub(crate) fn render_block_editor(
             .p_8()
             .text_color(theme_muted_foreground)
             .child(Icon::new(IconName::File).size(px(32.)))
-            .child(div().text_sm().child("Empty document. Click '+' or type '/' to insert a block."))
+            .child(
+                div()
+                    .text_sm()
+                    .child("Empty document. Click '+' or type '/' to insert a block."),
+            )
             .into_any_element()
     } else {
-        let mut scroll_container = gpui::div()
+        let mut scroll_container = gpui_kit::div()
             .id("block_editor_scroll_container")
             .flex_1()
             .h(px(0.))
@@ -155,33 +163,33 @@ pub(crate) fn render_block_editor(
         scroll_container.into_any_element()
     };
 
-    gpui_component::resizable::v_resizable("block-editor-diagnostics")
+    gpui_kit::component::resizable::v_resizable("block-editor-diagnostics")
         .child(
-            gpui_component::resizable::resizable_panel().child(
-                gpui::div()
+            gpui_kit::component::resizable::resizable_panel().child(
+                gpui_kit::div()
                     .size_full()
                     .flex()
                     .flex_col()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .p_2()
                             .bg(sidebar_bg)
-                            .border_b(gpui::px(1.))
+                            .border_b(gpui_kit::px(1.))
                             .border_color(border_color)
                             .text_xs()
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_color(theme_muted_foreground)
                             .child(block_editor_header),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .id("block_editor_container")
                             .flex_1()
-                            .h(gpui::px(0.))
+                            .h(gpui_kit::px(0.))
                             .p_4()
                             .bg(theme_group_box)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .size_full()
                                     .flex()
                                     .flex_col()
@@ -192,30 +200,30 @@ pub(crate) fn render_block_editor(
             ),
         )
         .child(
-            gpui_component::resizable::resizable_panel()
-                .size(gpui::px(180.))
-                .size_range(gpui::px(80.)..gpui::px(400.))
+            gpui_kit::component::resizable::resizable_panel()
+                .size(gpui_kit::px(180.))
+                .size_range(gpui_kit::px(80.)..gpui_kit::px(400.))
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .size_full()
-                        .border_t(gpui::px(1.))
+                        .border_t(gpui_kit::px(1.))
                         .border_color(border_color)
                         .bg(sidebar_bg)
                         .flex()
                         .flex_col()
                         .child(
-                            gpui::div()
+                            gpui_kit::div()
                                 .p_2()
                                 .bg(sidebar_bg)
-                                .border_b(gpui::px(1.))
+                                .border_b(gpui_kit::px(1.))
                                 .border_color(border_color)
                                 .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
+                                .font_weight(gpui_kit::FontWeight::BOLD)
                                 .text_color(theme_muted_foreground)
                                 .child("LSP DIAGNOSTICS"),
                         )
                         .child(
-                            gpui::div()
+                            gpui_kit::div()
                                 .id("block_diagnostics_list")
                                 .flex_1()
                                 .overflow_hidden()
@@ -233,11 +241,11 @@ pub(crate) fn render_block_card(
     doc_blocks: &[Block],
     hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
     footnote_map: &HashMap<SharedString, SharedString>,
-    input_state: Entity<gpui_component::input::InputState>,
+    input_state: Entity<gpui_kit::component::input::InputState>,
     block: &Block,
     idx: usize,
     focused_block_idx: Option<usize>,
-    block_input_states: &HashMap<usize, Entity<gpui_component::input::InputState>>,
+    block_input_states: &HashMap<usize, Entity<gpui_kit::component::input::InputState>>,
     diagnostics: &[crate::lsp_client::Diagnostic],
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
@@ -248,7 +256,15 @@ pub(crate) fn render_block_card(
     );
 
     // Render left gutter controls
-    let gutter = render_gutter(idx, is_collapsible, &theme, block, input_state.clone(), diagnostics, cx);
+    let gutter = render_gutter(
+        idx,
+        is_collapsible,
+        &theme,
+        block,
+        input_state.clone(),
+        diagnostics,
+        cx,
+    );
 
     // Render block content read-only projection
     let content_projection = super::renderers::render_block(
@@ -278,7 +294,11 @@ pub(crate) fn render_block_card(
                 .px_2()
                 .py_1()
                 .mb_1()
-                .child(Tag::primary().small().child(format!("Editing Block #{}", idx + 1)))
+                .child(
+                    Tag::primary()
+                        .small()
+                        .child(format!("Editing Block #{}", idx + 1)),
+                )
                 .child(
                     div()
                         .cursor_pointer()
@@ -291,11 +311,12 @@ pub(crate) fn render_block_card(
                         .bg(theme.accent)
                         .text_color(theme.accent_foreground)
                         .text_xs()
-                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                        .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                             if let Some(v) = view_weak_header.upgrade() {
                                 v.update(cx, |this, cx| {
                                     if let Some(block_state) = this.block_input_states.get(&idx) {
-                                        let new_block_text = block_state.read(cx).value().to_string();
+                                        let new_block_text =
+                                            block_state.read(cx).value().to_string();
                                         if let Some(r) = card_range_done.clone() {
                                             this.input_state.update(cx, |state, cx| {
                                                 let doc_text = state.value().to_string();
@@ -303,7 +324,9 @@ pub(crate) fn render_block_card(
                                                     let mut new_doc = doc_text;
                                                     new_doc.replace_range(r, &new_block_text);
                                                     state.set_value(new_doc, window, cx);
-                                                    cx.emit(gpui_component::input::InputEvent::Change);
+                                                    cx.emit(
+                                                        gpui_kit::component::input::InputEvent::Change,
+                                                    );
                                                 }
                                             });
                                         }
@@ -331,9 +354,13 @@ pub(crate) fn render_block_card(
 
     let content_area: AnyElement = if is_focused {
         let input_elem = if let Some(ref b_state) = block_input_entity {
-            gpui_component::input::Input::new(b_state).w_full().into_any_element()
+            gpui_kit::component::input::Input::new(b_state)
+                .w_full()
+                .into_any_element()
         } else {
-            gpui_component::input::Input::new(&input_state).w_full().into_any_element()
+            gpui_kit::component::input::Input::new(&input_state)
+                .w_full()
+                .into_any_element()
         };
 
         let input_box: AnyElement = if is_codeblock {
@@ -373,7 +400,7 @@ pub(crate) fn render_block_card(
             .flex_1()
             .w_full()
             .cursor_text()
-            .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                 let raw_text = if let Some(r) = card_range_click.clone() {
                     let full_doc = input_state_click.read(cx).value().to_string();
                     if r.end <= full_doc.len() {
@@ -394,7 +421,8 @@ pub(crate) fn render_block_card(
                 if let Some(v) = view_weak_click.upgrade() {
                     v.update(cx, |this, cx| {
                         let block_state = cx.new(|cx| {
-                            let mut state = gpui_component::input::InputState::new(window, cx).multi_line(true);
+                            let mut state =
+                                gpui_kit::component::input::InputState::new(window, cx);
                             state.set_value(block_text, window, cx);
                             state
                         });
@@ -412,7 +440,10 @@ pub(crate) fn render_block_card(
     let (card_bg, card_border) = if is_focused {
         (theme.accent.opacity(0.06), theme.accent)
     } else {
-        (gpui::hsla(0.0, 0.0, 0.0, 0.0), gpui::hsla(0.0, 0.0, 0.0, 0.0))
+        (
+            gpui_kit::hsla(0.0, 0.0, 0.0, 0.0),
+            gpui_kit::hsla(0.0, 0.0, 0.0, 0.0),
+        )
     };
 
     div()
@@ -427,14 +458,21 @@ pub(crate) fn render_block_card(
         .bg(card_bg)
         .border(px(1.))
         .border_color(card_border)
-        .hover(|s| s.bg(theme.accent.opacity(0.08)).border_color(theme.accent.opacity(0.5)))
+        .hover(|s| {
+            s.bg(theme.accent.opacity(0.08))
+                .border_color(theme.accent.opacity(0.5))
+        })
         .drag_over::<DragBlock>(move |div, _dragged, _window, cx| {
             let theme = Theme::global(cx);
-            div.bg(theme.accent.opacity(0.12)).border_color(theme.accent)
+            div.bg(theme.accent.opacity(0.12))
+                .border_color(theme.accent)
         })
         .on_drop(move |dragged: &DragBlock, window, cx| {
             let src_idx = dragged.src_idx;
-            if src_idx != target_idx && src_idx < doc_blocks_vec.len() && target_idx < doc_blocks_vec.len() {
+            if src_idx != target_idx
+                && src_idx < doc_blocks_vec.len()
+                && target_idx < doc_blocks_vec.len()
+            {
                 let src_range = doc_blocks_vec[src_idx].range();
                 let target_range = doc_blocks_vec[target_idx].range();
                 if let (Some(sr), Some(tr)) = (src_range, target_range) {
@@ -442,7 +480,7 @@ pub(crate) fn render_block_card(
                         let text = state.value().to_string();
                         let new_doc = crate::parser::reorder_blocks_in_document(&text, sr, tr);
                         state.set_value(new_doc, window, cx);
-                        cx.emit(gpui_component::input::InputEvent::Change);
+                        cx.emit(gpui_kit::component::input::InputEvent::Change);
                     });
                 }
             }
@@ -456,13 +494,13 @@ pub(crate) fn render_block_card(
 }
 
 /// Helper to convert a byte offset in document text to InputState Position.
-fn offset_to_position(text: &str, offset: usize) -> gpui_component::input::Position {
+fn offset_to_position(text: &str, offset: usize) -> gpui_kit::component::input::Position {
     let safe_offset = offset.min(text.len());
     let prefix = &text[..safe_offset];
     let line = prefix.lines().count().saturating_sub(1);
     let last_line = prefix.lines().last().unwrap_or("");
     let col = last_line.len();
-    gpui_component::input::Position::new(line as u32, col as u32)
+    gpui_kit::component::input::Position::new(line as u32, col as u32)
 }
 
 /// Renders the left gutter controls for a block card.
@@ -471,7 +509,7 @@ fn render_gutter(
     _is_collapsible: bool,
     theme: &Theme,
     block: &Block,
-    input_state: Entity<gpui_component::input::InputState>,
+    input_state: Entity<gpui_kit::component::input::InputState>,
     diagnostics: &[crate::lsp_client::Diagnostic],
     cx: &mut Context<DocumentView>,
 ) -> AnyElement {
@@ -503,14 +541,24 @@ fn render_gutter(
         .group_hover("block_card_group", |s| s.opacity(1.0));
 
     if let Some(diag) = diag_opt {
-        let color = if diag.severity == 1 { theme.danger } else { theme.warning };
+        let color = if diag.severity == 1 {
+            theme.danger
+        } else {
+            theme.warning
+        };
         let msg = diag.message.clone();
         gutter_el = gutter_el.child(
             div()
                 .id(("diag_badge", idx))
                 .cursor_pointer()
-                .tooltip(move |w, cx| gpui_component::tooltip::Tooltip::new(msg.clone()).build(w, cx))
-                .child(Icon::new(IconName::TriangleAlert).size(px(12.)).text_color(color)),
+                .tooltip(move |w, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new(msg.clone()).build(w, cx)
+                })
+                .child(
+                    Icon::new(IconName::TriangleAlert)
+                        .size(px(12.))
+                        .text_color(color),
+                ),
         );
     }
 
@@ -520,23 +568,35 @@ fn render_gutter(
             div()
                 .id(("drag_handle", idx))
                 .cursor_pointer()
-                .on_drag(DragBlock { src_idx: idx }, move |dragged, _offset, _window, cx| {
-                    cx.new(|_| DragBlockView {
-                        src_idx: dragged.src_idx,
-                    })
+                .on_drag(
+                    DragBlock { src_idx: idx },
+                    move |dragged, _offset, _window, cx| {
+                        cx.new(|_| DragBlockView {
+                            src_idx: dragged.src_idx,
+                        })
+                    },
+                )
+                .tooltip(|w, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new("Drag to reorder block").build(w, cx)
                 })
-                .tooltip(|w, cx| gpui_component::tooltip::Tooltip::new("Drag to reorder block").build(w, cx))
-                .child(Icon::new(IconName::Menu).size(px(12.)).text_color(muted_color)),
+                .child(
+                    Icon::new(IconName::Menu)
+                        .size(px(12.))
+                        .text_color(muted_color),
+                ),
         )
         // Insert Block Button (+)
         .child(
             div()
                 .id(("add_block_btn", idx))
                 .cursor_pointer()
-                .tooltip(|w, cx| gpui_component::tooltip::Tooltip::new("Add block below (+)").build(w, cx))
-                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                .tooltip(|w, cx| {
+                    gpui_kit::component::tooltip::Tooltip::new("Add block below (+)").build(w, cx)
+                })
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                     if let Some(offset) = add_offset {
-                        let skeleton = format!("\n{}", crate::parser::generate_block_skeleton("paragraph"));
+                        let skeleton =
+                            format!("\n{}", crate::parser::generate_block_skeleton("paragraph"));
                         input_state_add.update(cx, |state, cx| {
                             let text = state.value().to_string();
                             let pos = offset_to_position(&text, offset);
@@ -545,15 +605,19 @@ fn render_gutter(
                         });
                     }
                 })
-                .child(Icon::new(IconName::Plus).size(px(12.)).text_color(muted_color)),
+                .child(
+                    Icon::new(IconName::Plus)
+                        .size(px(12.))
+                        .text_color(muted_color),
+                ),
         )
         // Edit Pencil / Caret Jump Button
         .child(
             div()
                 .id(("edit_block_btn", idx))
                 .cursor_pointer()
-                .tooltip(|w, cx| gpui_component::tooltip::Tooltip::new("Edit block").build(w, cx))
-                .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                .tooltip(|w, cx| gpui_kit::component::tooltip::Tooltip::new("Edit block").build(w, cx))
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                     let raw_text = if let Some(r) = card_range_edit.clone() {
                         let full_doc = input_state_edit.read(cx).value().to_string();
                         if r.end <= full_doc.len() {
@@ -574,7 +638,7 @@ fn render_gutter(
                     if let Some(v) = view_weak_edit.upgrade() {
                         v.update(cx, |this, cx| {
                             let block_state = cx.new(|cx| {
-                                let mut state = gpui_component::input::InputState::new(window, cx).multi_line(true);
+                                let mut state = gpui_kit::component::input::InputState::new(window, cx);
                                 state.set_value(block_text, window, cx);
                                 state
                             });
@@ -584,7 +648,11 @@ fn render_gutter(
                         });
                     }
                 })
-                .child(Icon::new(IconName::Settings).size(px(12.)).text_color(muted_color)),
+                .child(
+                    Icon::new(IconName::Settings)
+                        .size(px(12.))
+                        .text_color(muted_color),
+                ),
         )
         .into_any_element()
 }

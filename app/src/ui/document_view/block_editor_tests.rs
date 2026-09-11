@@ -231,7 +231,7 @@ mod tests {
     fn test_table_cell_text_extraction_and_update() {
         use crate::parser::{table_to_twxml, TextRun};
 
-        let headers: Vec<gpui::SharedString> = vec!["Col 1".into(), "Col 2".into()];
+        let headers: Vec<gpui_kit::SharedString> = vec!["Col 1".into(), "Col 2".into()];
         let mut rows: Vec<Vec<Vec<TextRun>>> = vec![
             vec![vec![TextRun::new("A1")], vec![TextRun::new("B1")]],
             vec![vec![TextRun::new("A2")], vec![TextRun::new("B2")]],
@@ -250,7 +250,7 @@ mod tests {
     fn test_table_add_row_and_column() {
         use crate::parser::{table_add_column, table_add_row, table_to_twxml, TextRun};
 
-        let mut headers: Vec<gpui::SharedString> = vec!["Name".into(), "Role".into()];
+        let mut headers: Vec<gpui_kit::SharedString> = vec!["Name".into(), "Role".into()];
         let mut rows: Vec<Vec<Vec<TextRun>>> = vec![
             vec![vec![TextRun::new("Tailor")], vec![TextRun::new("Hero")]],
         ];
@@ -274,7 +274,7 @@ mod tests {
     fn test_table_delete_row_and_column() {
         use crate::parser::{table_delete_column, table_delete_row, TextRun};
 
-        let mut headers: Vec<gpui::SharedString> = vec!["H1".into(), "H2".into(), "H3".into()];
+        let mut headers: Vec<gpui_kit::SharedString> = vec!["H1".into(), "H2".into(), "H3".into()];
         let mut rows: Vec<Vec<Vec<TextRun>>> = vec![
             vec![vec![TextRun::new("A")], vec![TextRun::new("B")], vec![TextRun::new("C")]],
             vec![vec![TextRun::new("D")], vec![TextRun::new("E")], vec![TextRun::new("F")]],

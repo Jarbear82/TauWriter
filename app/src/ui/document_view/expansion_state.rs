@@ -1,4 +1,4 @@
-use gpui::EventEmitter;
+use gpui_kit::EventEmitter;
 use std::collections::HashSet;
 
 /// Central expansion registry — tracks which block offsets are expanded.

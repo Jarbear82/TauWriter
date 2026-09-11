@@ -2,9 +2,9 @@
 //!
 //! Extracted from `ui/mod.rs` to reduce file length and isolate navigation UI logic.
 
-use gpui::prelude::*;
-use gpui::{div, Context, Entity, EventEmitter};
-use gpui_component::{
+use gpui_kit::prelude::*;
+use gpui_kit::{div, Context, Entity, EventEmitter};
+use gpui_kit::component::{
     list::ListItem,
     tree::{tree, TreeState},
     Icon, IconName,
@@ -50,8 +50,8 @@ impl SidebarView {
 impl EventEmitter<SidebarEvent> for SidebarView {}
 
 impl Render for SidebarView {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = gpui_component::Theme::global(cx);
+    fn render(&mut self, _window: &mut gpui_kit::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = gpui_kit::component::Theme::global(cx);
         let theme_muted_foreground = theme.muted_foreground;
         let sidebar_bg = theme.sidebar;
         let border_color = theme.border;
@@ -76,7 +76,7 @@ impl Render for SidebarView {
                         (None, IconName::File)
                     };
 
-                    let padding_left = gpui::px((entry.depth() * 12 + 8) as f32);
+                    let padding_left = gpui_kit::px((entry.depth() * 12 + 8) as f32);
 
                     let is_active_selected = selected
                         || workspace.read(cx).selected_path.as_ref().map_or(false, |p| {
@@ -88,16 +88,16 @@ impl Render for SidebarView {
                         .items_center()
                         .gap_1p5()
                         .pl(padding_left)
-                        .text_size(gpui::px(12.));
+                        .text_size(gpui_kit::px(12.));
 
                     if let Some(chev) = chevron {
-                        row_content = row_content.child(Icon::new(chev).size(gpui::px(12.)));
+                        row_content = row_content.child(Icon::new(chev).size(gpui_kit::px(12.)));
                     } else {
-                        row_content = row_content.child(div().w(gpui::px(12.)));
+                        row_content = row_content.child(div().w(gpui_kit::px(12.)));
                     }
 
                     row_content = row_content
-                        .child(Icon::new(icon).size(gpui::px(14.)))
+                        .child(Icon::new(icon).size(gpui_kit::px(14.)))
                         .child(item.label.clone());
 
                     let mut list_item = ListItem::new(ix)
@@ -118,24 +118,24 @@ impl Render for SidebarView {
             }
         });
 
-        gpui::div()
+        gpui_kit::div()
             .w_full()
             .h_full()
             .bg(sidebar_bg)
-            .border_r(gpui::px(1.))
+            .border_r(gpui_kit::px(1.))
             .border_color(border_color)
             .flex()
             .flex_col()
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .p_3()
                     .text_xs()
-                    .font_weight(gpui::FontWeight::BOLD)
+                    .font_weight(gpui_kit::FontWeight::BOLD)
                     .text_color(theme_muted_foreground)
                     .child("WORKSPACE FILES"),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .id("file_list")
                     .flex_1()
                     .overflow_hidden()
@@ -145,7 +145,3 @@ impl Render for SidebarView {
             )
     }
 }
-
-
-
-

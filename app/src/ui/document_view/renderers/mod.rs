@@ -6,18 +6,18 @@ use super::jump_links::{find_block_range_by_id, find_block_type_by_id, offset_to
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
 use crate::ui::DocumentView;
-use gpui::{
+use gpui_kit::{
     div, prelude::*, px, AnyElement, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled,
 };
-use gpui_component::description_list::{DescriptionItem, DescriptionList};
-use gpui_component::{scroll::ScrollableElement, Icon, IconName, Theme};
+use gpui_kit::component::description_list::{DescriptionItem, DescriptionList};
+use gpui_kit::component::{scroll::ScrollableElement, Icon, IconName, Theme};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
 /// Conventionally accepted code editor colors (VS Code dark style).
-static CODE_BLOCK_BG: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.12, 1.0));
-static CODE_BLOCK_TEXT_COLOR: Lazy<gpui::Hsla> = Lazy::new(|| gpui::hsla(0.0, 0.0, 0.83, 1.0));
+static CODE_BLOCK_BG: Lazy<gpui_kit::Hsla> = Lazy::new(|| gpui_kit::hsla(0.0, 0.0, 0.12, 1.0));
+static CODE_BLOCK_TEXT_COLOR: Lazy<gpui_kit::Hsla> = Lazy::new(|| gpui_kit::hsla(0.0, 0.0, 0.83, 1.0));
 
 
 /// Build a HashMap<footnote_id, footnote_content> from blocks for O(1) lookups.
@@ -47,7 +47,7 @@ pub(crate) fn render_block(
     doc_blocks: &[Block],
     hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
     footnote_map: &HashMap<SharedString, SharedString>,
-    input_state: Entity<gpui_component::input::InputState>,
+    input_state: Entity<gpui_kit::component::input::InputState>,
     block: &Block,
     idx: usize,
     cx: &mut Context<DocumentView>,
@@ -77,12 +77,12 @@ pub(crate) fn render_block(
                 .w_full()
                 .mt_6()
                 .mb_2()
-                .font_weight(gpui::FontWeight::BOLD)
+                .font_weight(gpui_kit::FontWeight::BOLD)
                 .text_size(size)
                 .flex()
                 .flex_wrap()
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(clean_heading)
                 .into_any_element()
@@ -101,7 +101,7 @@ pub(crate) fn render_block(
                 .flex()
                 .flex_wrap()
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .children(runs.iter().enumerate().map(|(run_idx, run)| {
                     render_run(
@@ -168,7 +168,7 @@ pub(crate) fn render_block(
                 .border_color(theme.accent)
                 .rounded_r(px(4.))
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .flex()
                 .flex_wrap()
@@ -213,7 +213,7 @@ pub(crate) fn render_block(
                 .rounded(px(4.))
                 .bg(*CODE_BLOCK_BG)
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(format!(
+                    gpui_kit::component::tooltip::Tooltip::new(format!(
                         "Element: CodeBlock\nid: {:?}",
                         id_clone
                     ))
@@ -227,7 +227,7 @@ pub(crate) fn render_block(
 
             let collapsible_content = CollapsibleBlock::new(
                 lang_display.to_string(),
-                gpui::hsla(0.0, 0.0, 0.0, 0.0),
+                gpui_kit::hsla(0.0, 0.0, 0.0, 0.0),
                 *CODE_BLOCK_BG,
             )
             .with_body(vec![div()
@@ -257,7 +257,7 @@ pub(crate) fn render_block(
             let tooltip_text = element_tooltip(if *ordered { "ol" } else { "ul" }, id, attributes);
             let items_elements = items.iter().enumerate().map(|(item_idx, item)| {
                 let bullet_el = if let Some(checked) = item.checked {
-                    gpui_component::checkbox::Checkbox::new(format!(
+                    gpui_kit::component::checkbox::Checkbox::new(format!(
                         "chk-{}-{}",
                         start_offset, item_idx
                     ))
@@ -299,7 +299,7 @@ pub(crate) fn render_block(
                 .flex_col()
                 .pl_4()
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .children(items_elements)
                 .into_any_element()
@@ -325,7 +325,7 @@ pub(crate) fn render_block(
                 .w_full()
                 .mb_4()
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(desc_list)
                 .into_any_element()
@@ -361,7 +361,7 @@ pub(crate) fn render_block(
                 .h(px(1.))
                 .bg(theme.muted_foreground.opacity(0.3))
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .into_any_element()
         }
@@ -385,7 +385,7 @@ pub(crate) fn render_block(
                 .flex_col()
                 .items_center()
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(format!("Image: {} (Alt: {})", src, alt_display))
                 .into_any_element()
@@ -407,7 +407,7 @@ pub(crate) fn render_block(
                 .rounded(px(4.))
                 .bg(theme.group_box)
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(format!("Audio: {} (Alt: {})", src, alt_display))
                 .into_any_element()
@@ -429,7 +429,7 @@ pub(crate) fn render_block(
                 .rounded(px(4.))
                 .bg(theme.group_box)
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(format!("Video: {} (Alt: {})", src, alt_display))
                 .into_any_element()
@@ -453,7 +453,7 @@ pub(crate) fn render_block(
                 .rounded(px(4.))
                 .bg(theme.sidebar.opacity(0.3))
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 });
 
             let collapsible_content =
@@ -496,11 +496,11 @@ pub(crate) fn render_block(
                 .flex_wrap()
                 .gap_2()
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(
                     div()
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .child(format!("{}:", id)),
                 )
                 .children(runs.iter().enumerate().map(|(run_idx, run)| {
@@ -551,7 +551,7 @@ pub(crate) fn render_block(
                 .border_l_4()
                 .border_color(theme.warning)
                 .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
                 .child(
                     div()
@@ -560,9 +560,9 @@ pub(crate) fn render_block(
                         .items_center()
                         .gap_2()
                         .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .text_color(theme.warning)
-                        .child(Icon::new(IconName::TriangleAlert).size(gpui::px(13.)))
+                        .child(Icon::new(IconName::TriangleAlert).size(gpui_kit::px(13.)))
                         .child("FLAG FOR REVIEW"),
                 )
                 .child(
@@ -607,11 +607,11 @@ pub(crate) fn render_run(
     doc_blocks: &[Block],
     hubgs_instances: &HashMap<SharedString, (SharedString, SharedString, Vec<InstanceLink>)>,
     footnote_map: &HashMap<SharedString, SharedString>,
-    input_state: Entity<gpui_component::input::InputState>,
+    input_state: Entity<gpui_kit::component::input::InputState>,
     run: &TextRun,
     block_idx: usize,
     run_idx: usize,
-    theme: &gpui_component::Theme,
+    theme: &gpui_kit::component::Theme,
 ) -> AnyElement {
     let clean_text = run.text.replace("\r\n", " ").replace('\n', " ");
     if clean_text.trim().is_empty() && run.text.contains('\n') {
@@ -620,7 +620,7 @@ pub(crate) fn render_run(
     let mut text_el = div().child(clean_text);
 
     if run.bold {
-        text_el = text_el.font_weight(gpui::FontWeight::BOLD);
+        text_el = text_el.font_weight(gpui_kit::FontWeight::BOLD);
     }
     if run.italic {
         text_el = text_el.italic();
@@ -661,7 +661,7 @@ pub(crate) fn render_run(
             .text_color(theme.accent)
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
-            .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, move |_, _, _| {
                 log::debug!("[app] User clicked on Hub Reference ID: {}", hub_id);
             });
     } else if let Some(ref fn_id) = run.footnote_ref {
@@ -681,7 +681,7 @@ pub(crate) fn render_run(
             .text_color(theme.accent)
             .underline()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
-            .on_mouse_down(gpui::MouseButton::Left, move |_, _, _cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, move |_, _, _cx| {
                 log::debug!("[app] User clicked on Footnote Reference ID: {}", fn_id);
             });
     } else if let Some(ref link) = run.link {
@@ -704,7 +704,7 @@ pub(crate) fn render_run(
             .underline()
             .cursor_pointer()
             .hover(|s| s.text_color(theme.accent.opacity(0.8)))
-            .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, move |_, window, cx| {
                 log::debug!("[app] User clicked internal/external link: {}", link);
                 if link.starts_with("http") {
                     cx.open_url(&link);
@@ -731,9 +731,9 @@ pub(crate) fn render_run(
     text_el
         .id(("run", block_idx * 1000 + run_idx))
         .tooltip(move |window, cx| {
-            gpui_component::tooltip::Tooltip::new(clean_run_tooltip.clone()).build(window, cx)
+            gpui_kit::component::tooltip::Tooltip::new(clean_run_tooltip.clone()).build(window, cx)
         })
-        .on_mouse_down(gpui::MouseButton::Right, move |_, window, cx| {
+        .on_mouse_down(gpui_kit::MouseButton::Right, move |_, window, cx| {
             if let Some(ref r) = run_range_fmt {
                 let formatted =
                     crate::parser::wrap_text_in_inline_format(&run_text_fmt, "bold", None);
@@ -743,7 +743,7 @@ pub(crate) fn render_run(
                         let mut updated = full_text;
                         updated.replace_range(r.clone(), &formatted);
                         state.set_value(updated, window, cx);
-                        cx.emit(gpui_component::input::InputEvent::Change);
+                        cx.emit(gpui_kit::component::input::InputEvent::Change);
                     }
                 });
             }

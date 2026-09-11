@@ -28,7 +28,7 @@ The core idea: prose lives in a custom XML document format (TWXML), while struct
 |   - Markdown View   |         |   - Outline Scoped View        |
 |   - Raw TWXML View  |         |   - Node-Scoped View           |
 |   - FlowText (Stub) |         +--------------------------------+
-+---------------------+         
++---------------------+
 ----
 
 The default UI layout is a split view consisting of two side-by-side panes. The left pane is for Document Views (with one tab per open document, where each tab has a dropdown menu to select the active mode: Raw Editor, Block Editor, Markdown View, or FlowText Editor stub). The right pane is for Graph Views (with tabs for Twxml Document Graph, HubGs Definitions Schema, and HubGs Instances Relation).
@@ -96,7 +96,7 @@ The vocabulary is intentionally minimal to keep files readable.
     <section alias="The Fellowship">
       <heading>Departure</heading>
       <paragraph>
-        <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword 
+        <bold><hubref id="aragorn">Aragorn</hubref></bold> drew his sword
         and looked across the field toward <hubref id="mordor">Mordor</hubref>.
       </paragraph>
     </section>
@@ -118,7 +118,7 @@ The left pane contains open document tabs. Each tab represents an open document 
 [cols="1,1,1", options="header"]
 |===
 | Mode | Enum Variant | Description
-| **Raw Editor** | `DocumentMode::RawEditor` | Shows raw TWXML code with syntax highlighting using `gpui_component::input::Input`. Precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is.
+| **Raw Editor** | `DocumentMode::RawEditor` | Shows raw TWXML code with syntax highlighting using `gpui_kit::component::input::Input`. Precise and IDE-like, intended for power users. Renders `<include src="..." />` tags as-is.
 | **Block Editor** | `DocumentMode::BlockEditor` | Primary editing and reading mode (continuous scroll). Renders TWXML as Notion/Craft-style editable block cards with left-gutter controls, slash menus, inline `Input` edit surfaces, and LSP-driven inline formatting. Renders `<include src="..." />` by inlining child document contents into a unified block structure.
 | **Markdown View** | `DocumentMode::MarkdownView` | Read-only view rendering TWXML AST as Markdown for users who prefer plain-text workflows. Renders includes using `![[document-name]]` syntax.
 | **FlowText Editor** | `DocumentMode::FlowTextEditor` | Stub mode reserved for future integration of external rich-text engine (`gpui-flowtext`). Displays an experimental / coming-soon placeholder while sharing the same underlying rope buffer and selection/undo history.
@@ -141,7 +141,7 @@ The left pane contains open document tabs. Each tab represents an open document 
 ----
 Workspace
 └── DocumentView (mode switch)
-    ├── RawEditor          → gpui_component::input::Input (code mode, Tree-sitter)
+    ├── RawEditor          → gpui_kit::component::input::Input (code mode, Tree-sitter)
     ├── BlockEditor        → BlockEditorView (new)
     ├── MarkdownView       → existing markdown renderer
     └── FlowTextEditor     → stub ("Coming soon" placeholder sharing rope buffer)
@@ -218,7 +218,7 @@ All markdown-style inline expansions are performed by the **LSP** so behavior re
   - **Code Blocks**: Monospace font with language indicator tag.
   - **Hubrefs**: Interactive chips invoking `on_hubref_clicked` for graph pane navigation.
   - **Includes**: Flattened document body or collapsible "included document" card.
-- Theme tokens and typography source directly from `gpui_component::Theme`.
+- Theme tokens and typography source directly from `gpui_kit::component::Theme`.
 - Continuous vertical scroll for v1 (page-based layout is a future layout switch reusing block cards).
 
 ==== 6. State & Synchronization
@@ -261,7 +261,7 @@ struct BlockEditorView {
 - **Phase 4 – Performance Polish & FlowText Stub**: Virtualized scroll performance optimization for novel-length documents, hubref context menu stubs, and `FlowTextEditor` stub mode implementation.
 
 ==== 10. Technical Trade-Offs & Non-Goals for v1
-- **Rope-Centric Block Model over Character WYSIWYG**: Reuses parsed `Block`/`TextRun` AST and `gpui_component::input::Input` without writing a complex custom rich-text engine for v1. Character-level inline canvas editing is deferred to the `FlowTextEditor` stub.
+- **Rope-Centric Block Model over Character WYSIWYG**: Reuses parsed `Block`/`TextRun` AST and `gpui_kit::component::input::Input` without writing a complex custom rich-text engine for v1. Character-level inline canvas editing is deferred to the `FlowTextEditor` stub.
 - **Rope Range Mapping**: Requires robust byte-range tracking during block editing and re-parsing.
 - **Non-Goals**: Paginated print layout, real-time multi-user collaborative cursors, full image/table WYSIWYG editors (stubs used for v1).
 
@@ -339,7 +339,7 @@ FIELDS [
     hit_points: Number,
     is_active: Boolean,
     realm_association: Realm,   // Enum type reference
-    ids: Array<Number>          // Array of Numbers 
+    ids: Array<Number>          // Array of Numbers
 ]
 ----
 
@@ -404,12 +404,12 @@ HUBS [
         first_name,
         last_name = @default("Anderson"),
         full_name = @computed(first_name + " " + last_name),
-        
+
         // Roles (relationships to other Hubs)
         resides_in -> (1) ALLOWS [World],          // Exactly 1 World, arrow points outward
         companions <-> (0..*) ALLOWS [Person],     // Bidirectional, any number of Person hubs
     },
-    
+
     World {
         name,
         description,
@@ -877,8 +877,8 @@ INSTANCES [
   <section alias="A Shadow of the Past">
     <heading>Departure</heading>
     <paragraph>
-      <hubref id="aragorn">Aragorn</hubref> stood at the edge of 
-      <hubref id="rivendell">Rivendell</hubref>, his hand resting on the hilt of his sword. Beside him, 
+      <hubref id="aragorn">Aragorn</hubref> stood at the edge of
+      <hubref id="rivendell">Rivendell</hubref>, his hand resting on the hilt of his sword. Beside him,
       <hubref id="gandalf"><italic>Gandalf</italic></hubref> gazed into
       the distance.
     </paragraph>

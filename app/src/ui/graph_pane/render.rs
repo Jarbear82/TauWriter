@@ -1,6 +1,6 @@
-//! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui::GraphCanvas.
+//! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui_kit::GraphCanvas.
 
-use gpui::{div, prelude::*, Window};
+use gpui_kit::{div, prelude::*, Window};
 use graphene_core::DataExpansionMode;
 use graphene_gpui::{CanvasConfig, GraphCanvas};
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ impl Render for GraphPaneView {
         let viewport = self.active_viewport();
         let (active_state, active_view, _) = self.active_tab_context();
 
-        let theme_ui = gpui_component::Theme::global(cx);
+        let theme_ui = gpui_kit::component::Theme::global(cx);
         let border_color = theme_ui.border;
         let sidebar_bg = theme_ui.sidebar;
         let fg_color = theme_ui.foreground;
@@ -81,7 +81,7 @@ impl Render for GraphPaneView {
         .into_element();
 
         let view_entity = cx.entity().clone();
-        let bounds_reporter = gpui::canvas(
+        let bounds_reporter = gpui_kit::canvas(
             move |_, _, _| {},
             move |bounds, _, _window, cx| {
                 view_entity.update(cx, |this, cx| {
@@ -96,17 +96,20 @@ impl Render for GraphPaneView {
             .flex_1()
             .h_full()
             .relative()
-            .border_r(gpui::px(1.))
+            .border_r(gpui_kit::px(1.))
             .border_color(border_color)
             .flex()
             .flex_col()
             // GPUI Idiomatic listeners cleanly bind to our helper methods:
             .on_mouse_down(
-                gpui::MouseButton::Left,
+                gpui_kit::MouseButton::Left,
                 cx.listener(Self::handle_mouse_down),
             )
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
-            .on_mouse_up(gpui::MouseButton::Left, cx.listener(Self::handle_mouse_up))
+            .on_mouse_up(
+                gpui_kit::MouseButton::Left,
+                cx.listener(Self::handle_mouse_up),
+            )
             .on_scroll_wheel(cx.listener(Self::handle_scroll_wheel))
             .child(bounds_reporter)
             .child(canvas_element)
@@ -114,16 +117,16 @@ impl Render for GraphPaneView {
             .child(
                 div()
                     .absolute()
-                    .top(gpui::px(8.))
-                    .left(gpui::px(8.))
+                    .top(gpui_kit::px(8.))
+                    .left(gpui_kit::px(8.))
                     .bg(sidebar_bg)
-                    .border(gpui::px(1.))
+                    .border(gpui_kit::px(1.))
                     .border_color(border_color)
-                    .rounded(gpui::px(4.))
+                    .rounded(gpui_kit::px(4.))
                     .py_2()
                     .px_3()
-                    .text_size(gpui::px(9.))
-                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_size(gpui_kit::px(9.))
+                    .font_weight(gpui_kit::FontWeight::BOLD)
                     .text_color(fg_color.opacity(0.8))
                     .child(tab_label),
             )
@@ -135,57 +138,57 @@ impl Render for GraphPaneView {
                     .justify_center()
                     .gap_1()
                     .absolute()
-                    .bottom(gpui::px(8.))
-                    .right(gpui::px(8.))
+                    .bottom(gpui_kit::px(8.))
+                    .right(gpui_kit::px(8.))
                     .bg(sidebar_bg)
-                    .border(gpui::px(1.))
+                    .border(gpui_kit::px(1.))
                     .border_color(border_color)
-                    .rounded(gpui::px(6.))
+                    .rounded(gpui_kit::px(6.))
                     .overflow_hidden()
                     .child(
-                        gpui_component::button::Button::new("zoom_in")
+                        gpui_kit::component::button::Button::new("zoom_in")
                             .on_mouse_down(
-                                gpui::MouseButton::Left,
+                                gpui_kit::MouseButton::Left,
                                 cx.listener(|this, _, _, cx| this.apply_zoom(20.0, cx)),
                             )
                             .label("+")
-                            .text_size(gpui::px(12.))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .min_w(gpui::px(28.))
-                            .h(gpui::px(28.))
-                            .border_r(gpui::px(1.))
+                            .text_size(gpui_kit::px(12.))
+                            .font_weight(gpui_kit::FontWeight::BOLD)
+                            .min_w(gpui_kit::px(28.))
+                            .h(gpui_kit::px(28.))
+                            .border_r(gpui_kit::px(1.))
                             .border_color(border_color),
                     )
                     .child(
-                        gpui_component::button::Button::new("zoom_out")
+                        gpui_kit::component::button::Button::new("zoom_out")
                             .on_mouse_down(
-                                gpui::MouseButton::Left,
+                                gpui_kit::MouseButton::Left,
                                 cx.listener(|this, _, _, cx| this.apply_zoom(-20.0, cx)),
                             )
                             .label("-")
-                            .text_size(gpui::px(12.))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .min_w(gpui::px(28.))
-                            .h(gpui::px(28.))
+                            .text_size(gpui_kit::px(12.))
+                            .font_weight(gpui_kit::FontWeight::BOLD)
+                            .min_w(gpui_kit::px(28.))
+                            .h(gpui_kit::px(28.))
                             .border_color(border_color),
                     ),
             )
             .child(
                 div()
                     .absolute()
-                    .bottom(gpui::px(8.))
-                    .left(gpui::px(8.))
+                    .bottom(gpui_kit::px(8.))
+                    .left(gpui_kit::px(8.))
                     .flex()
                     .items_center()
                     .gap_2()
                     .bg(sidebar_bg)
-                    .border(gpui::px(1.))
+                    .border(gpui_kit::px(1.))
                     .border_color(border_color)
-                    .rounded(gpui::px(6.))
+                    .rounded(gpui_kit::px(6.))
                     .px_3()
                     .py_2()
-                    .text_size(gpui::px(9.))
-                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_size(gpui_kit::px(9.))
+                    .font_weight(gpui_kit::FontWeight::BOLD)
                     .text_color(fg_color.opacity(0.8))
                     .child(format!("Zoom: {:.0}%", (cam.zoom * 100.0).round())),
             )
@@ -210,13 +213,13 @@ impl Render for GraphPaneView {
                 Some(
                     div()
                         .absolute()
-                        .bottom(gpui::px(42.))
-                        .left(gpui::px(8.))
-                        .w(gpui::px(230.))
+                        .bottom(gpui_kit::px(42.))
+                        .left(gpui_kit::px(8.))
+                        .w(gpui_kit::px(230.))
                         .bg(sidebar_bg)
-                        .border(gpui::px(1.))
+                        .border(gpui_kit::px(1.))
                         .border_color(border_color)
-                        .rounded(gpui::px(6.))
+                        .rounded(gpui_kit::px(6.))
                         .shadow_md()
                         .p_3()
                         .flex()
@@ -224,14 +227,14 @@ impl Render for GraphPaneView {
                         .gap_1()
                         .child(
                             div()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_size(gpui::px(12.))
+                                .font_weight(gpui_kit::FontWeight::BOLD)
+                                .text_size(gpui_kit::px(12.))
                                 .text_color(fg_color)
                                 .child(display_name.to_string()),
                         )
                         .child(
                             div()
-                                .text_size(gpui::px(10.))
+                                .text_size(gpui_kit::px(10.))
                                 .text_color(fg_color.opacity(0.7))
                                 .child(format!("«{}»", primary_label)),
                         )
@@ -242,9 +245,9 @@ impl Render for GraphPaneView {
                                 .gap_1()
                                 .py_1()
                                 .child(
-                                    gpui_component::button::Button::new("exp_compact")
+                                    gpui_kit::component::button::Button::new("exp_compact")
                                         .on_mouse_down(
-                                            gpui::MouseButton::Left,
+                                            gpui_kit::MouseButton::Left,
                                             cx.listener(move |this, _, _, cx| {
                                                 this.set_expansion_mode(
                                                     sel_nid,
@@ -258,14 +261,14 @@ impl Render for GraphPaneView {
                                         } else {
                                             "Compact"
                                         })
-                                        .text_size(gpui::px(9.))
+                                        .text_size(gpui_kit::px(9.))
                                         .px_2()
                                         .py_1(),
                                 )
                                 .child(
-                                    gpui_component::button::Button::new("exp_preview")
+                                    gpui_kit::component::button::Button::new("exp_preview")
                                         .on_mouse_down(
-                                            gpui::MouseButton::Left,
+                                            gpui_kit::MouseButton::Left,
                                             cx.listener(move |this, _, _, cx| {
                                                 this.set_expansion_mode(
                                                     sel_nid,
@@ -279,14 +282,14 @@ impl Render for GraphPaneView {
                                         } else {
                                             "Preview"
                                         })
-                                        .text_size(gpui::px(9.))
+                                        .text_size(gpui_kit::px(9.))
                                         .px_2()
                                         .py_1(),
                                 )
                                 .child(
-                                    gpui_component::button::Button::new("exp_full")
+                                    gpui_kit::component::button::Button::new("exp_full")
                                         .on_mouse_down(
-                                            gpui::MouseButton::Left,
+                                            gpui_kit::MouseButton::Left,
                                             cx.listener(move |this, _, _, cx| {
                                                 this.set_expansion_mode(
                                                     sel_nid,
@@ -300,14 +303,14 @@ impl Render for GraphPaneView {
                                         } else {
                                             "Full"
                                         })
-                                        .text_size(gpui::px(9.))
+                                        .text_size(gpui_kit::px(9.))
                                         .px_2()
                                         .py_1(),
                                 ),
                         )
                         .children(prop_rows.into_iter().map(|row| {
                             div()
-                                .text_size(gpui::px(10.))
+                                .text_size(gpui_kit::px(10.))
                                 .font_family("monospace")
                                 .text_color(fg_color.opacity(0.9))
                                 .child(row)
@@ -317,7 +320,7 @@ impl Render for GraphPaneView {
     }
 }
 
-fn hsla_to_graphene_rgb(hsla: gpui::Hsla) -> graphene_style::Rgb {
+fn hsla_to_graphene_rgb(hsla: gpui_kit::Hsla) -> graphene_style::Rgb {
     let rgba = hsla.to_rgb();
     graphene_style::Rgb::new(
         (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8,
@@ -326,7 +329,7 @@ fn hsla_to_graphene_rgb(hsla: gpui::Hsla) -> graphene_style::Rgb {
     )
 }
 
-fn hsla_to_graphene_color(hsla: gpui::Hsla) -> graphene_style::ColorValue {
+fn hsla_to_graphene_color(hsla: gpui_kit::Hsla) -> graphene_style::ColorValue {
     let rgba = hsla.to_rgb();
     graphene_style::ColorValue::Rgba(rgba.r, rgba.g, rgba.b, rgba.a)
 }

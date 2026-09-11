@@ -4,10 +4,10 @@
 //! View is cloned inside the Fn callback body so each click handler owns its own
 //! reference-counted handle, satisfying 'static bounds.
 
-use gpui::Entity;
-use gpui_component::button::{Button, ButtonVariants, DropdownButton};
-use gpui_component::menu::PopupMenuItem;
-use gpui_component::{IconName, Sizable};
+use gpui_kit::component::button::{Button, ButtonVariants, DropdownButton};
+use gpui_kit::component::menu::PopupMenuItem;
+use gpui_kit::component::{IconName, Sizable};
+use gpui_kit::Entity;
 
 use super::DocumentMode;
 
@@ -16,7 +16,7 @@ pub(crate) fn render_mode_selector(
     current_mode: DocumentMode,
     doc_idx: usize,
     view: Entity<super::MainView>,
-) -> impl gpui::IntoElement {
+) -> impl gpui_kit::IntoElement {
     let (mode_label, mode_icon) = match current_mode {
         DocumentMode::RawEditor => ("Raw Editor", IconName::File),
         DocumentMode::BlockEditor => ("Block Editor", IconName::Menu),
@@ -102,7 +102,7 @@ fn switch_view_mode(
     doc_idx: usize,
     mode: DocumentMode,
     view: Entity<super::MainView>,
-    cx: &mut gpui::App,
+    cx: &mut gpui_kit::App,
 ) {
     let _ = view.update(cx, |this, cx| {
         this.workspace.update(cx, |w, _| {

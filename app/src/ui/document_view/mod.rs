@@ -10,28 +10,32 @@ mod renderers;
 
 use crate::ui::{DocumentHome, DocumentMode, Workspace};
 use expansion_state::ExpandedBlocks;
-use gpui::{
-    prelude::*, px, uniform_list, AnyElement, Context, Entity, InteractiveElement,
-    ParentElement, Render, Styled, Window,
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::component::{Icon, IconName};
+use gpui_kit::{
+    prelude::*, px, uniform_list, AnyElement, Context, Entity, InteractiveElement, ParentElement,
+    Render, Styled, Window,
 };
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::{Icon, IconName};
 use std::collections::HashMap;
 
 pub(crate) struct DocumentView {
     workspace: Entity<Workspace>,
     document_home: Entity<DocumentHome>,
-    input_state: Entity<gpui_component::input::InputState>,
+    #[allow(dead_code)]
+    editor_state: Entity<gpui_kit::component::input::EditorState>,
+    #[allow(dead_code)]
+    input_state: Entity<gpui_kit::component::input::InputState>,
     pub(crate) expanded_blocks: Entity<ExpandedBlocks>,
     pub(crate) focused_block_idx: Option<usize>,
-    pub(crate) block_input_states: HashMap<usize, Entity<gpui_component::input::InputState>>,
+    pub(crate) block_input_states: HashMap<usize, Entity<gpui_kit::component::input::InputState>>,
 }
 
 impl DocumentView {
     pub(crate) fn new(
         workspace: Entity<Workspace>,
         document_home: Entity<DocumentHome>,
-        input_state: Entity<gpui_component::input::InputState>,
+        editor_state: Entity<gpui_kit::component::input::EditorState>,
+        input_state: Entity<gpui_kit::component::input::InputState>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&document_home, |_, _, cx| cx.notify()).detach();
@@ -39,6 +43,7 @@ impl DocumentView {
         Self {
             workspace,
             document_home,
+            editor_state,
             input_state,
             expanded_blocks: cx.new(|_cx| ExpandedBlocks::default()),
             focused_block_idx: None,
@@ -49,8 +54,8 @@ impl DocumentView {
 
 impl Render for DocumentView {
     #[allow(refining_impl_trait)]
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme_val = gpui_component::Theme::global(cx).clone();
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let theme_val = gpui_kit::component::Theme::global(cx).clone();
         let sidebar_bg = theme_val.sidebar;
         let border_color = theme_val.border;
         let theme_muted_foreground = theme_val.muted_foreground;
@@ -59,7 +64,7 @@ impl Render for DocumentView {
 
         // 1. Resolve the active document tab from the workspace
         let workspace_entity = self.workspace.clone();
-        let (active_doc_path, active_doc_mode, doc_home_opt, active_input_state_opt) = {
+        let (active_doc_path, active_doc_mode, doc_home_opt, active_editor_state_opt, active_input_state_opt) = {
             let w = workspace_entity.read(cx);
             if let Some(idx) = w.active_doc_idx {
                 if let Some(doc) = w.open_docs.get(idx) {
@@ -67,21 +72,22 @@ impl Render for DocumentView {
                         Some(doc.path.clone()),
                         Some(doc.mode),
                         Some(doc.document_home.clone()),
+                        Some(doc.editor_state.clone()),
                         Some(doc.input_state.clone()),
                     )
                 } else {
-                    (None, None, None, None)
+                    (None, None, None, None, None)
                 }
             } else {
-                (None, None, None, None)
+                (None, None, None, None, None)
             }
         };
 
-        let (doc_home, input_state, mode) =
-            match (doc_home_opt, active_input_state_opt, active_doc_mode) {
-                (Some(dh), Some(is), Some(m)) => (dh, is, m),
+        let (doc_home, editor_state, input_state, mode) =
+            match (doc_home_opt, active_editor_state_opt, active_input_state_opt, active_doc_mode) {
+                (Some(dh), Some(es), Some(is), Some(m)) => (dh, es, is, m),
                 _ => {
-                    return gpui::div()
+                    return gpui_kit::div()
                         .size_full()
                         .flex()
                         .items_center()
@@ -104,17 +110,17 @@ impl Render for DocumentView {
         // LSP Diagnostics list builder
         let make_diagnostics_content = |scroll_id: &'static str| -> AnyElement {
             if diagnostics.is_empty() {
-                gpui::div()
+                gpui_kit::div()
                     .text_color(theme_val.success)
-                    .text_size(gpui::px(12.))
+                    .text_size(gpui_kit::px(12.))
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(Icon::new(IconName::CircleCheck).size(gpui::px(14.)))
+                    .child(Icon::new(IconName::CircleCheck).size(gpui_kit::px(14.)))
                     .child("No diagnostic issues found.")
                     .into_any_element()
             } else {
-                let input_state_clone = input_state.clone();
+                let editor_state_clone = editor_state.clone();
                 let theme_val_clone = theme_val.clone();
                 let theme_foreground_clone = theme_foreground;
                 uniform_list(
@@ -135,34 +141,37 @@ impl Render for DocumentView {
                                 };
                                 let line_val = diag.line + 1;
                                 let message = diag.message.clone();
-                                let input_state = input_state_clone.clone();
+                                let editor_state = editor_state_clone.clone();
                                 let diag_line = diag.line;
-                                gpui::div()
+                                gpui_kit::div()
                                     .id(("diag", idx))
                                     .flex()
                                     .gap_2()
                                     .py_1()
                                     .px_2()
-                                    .rounded(gpui::px(4.))
-                                    .text_size(gpui::px(11.))
+                                    .rounded(gpui_kit::px(4.))
+                                    .text_size(gpui_kit::px(11.))
                                     .text_color(theme_foreground_clone)
                                     .hover(|s| s.bg(theme_val_clone.accent.opacity(0.5)))
-                                    .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
-                                        let pos = gpui_component::input::Position::new(
-                                            diag_line as u32,
-                                            0,
-                                        );
-                                        input_state.update(cx, |state, cx| {
-                                            state.set_cursor_position(pos, window, cx);
-                                        });
-                                    })
-                                    .child(gpui::div().text_color(color).child(severity_icon))
+                                    .on_mouse_down(
+                                        gpui_kit::MouseButton::Left,
+                                        move |_, window, cx| {
+                                            let pos = gpui_kit::component::input::Position::new(
+                                                diag_line as u32,
+                                                0,
+                                            );
+                                            editor_state.update(cx, |state, cx| {
+                                                state.set_cursor_position(pos, window, cx);
+                                            });
+                                        },
+                                    )
+                                    .child(gpui_kit::div().text_color(color).child(severity_icon))
                                     .child(
-                                        gpui::div()
-                                            .font_weight(gpui::FontWeight::BOLD)
+                                        gpui_kit::div()
+                                            .font_weight(gpui_kit::FontWeight::BOLD)
                                             .child(format!("Line {}:", line_val)),
                                     )
-                                    .child(gpui::div().child(message))
+                                    .child(gpui_kit::div().child(message))
                             })
                             .collect::<Vec<_>>()
                     }),
@@ -192,7 +201,7 @@ impl Render for DocumentView {
         let blocks = &blocks_clone;
 
         // Frontmatter builder
-        let make_frontmatter_el = || -> Option<gpui::Div> {
+        let make_frontmatter_el = || -> Option<gpui_kit::Div> {
             let mut frontmatter = String::new();
             if !metadata_clone.is_empty() {
                 frontmatter.push_str("---\n");
@@ -203,13 +212,13 @@ impl Render for DocumentView {
             }
             if !frontmatter.is_empty() {
                 Some(
-                    gpui::div()
+                    gpui_kit::div()
                         .mb_4()
                         .p_3()
                         .bg(sidebar_bg)
-                        .border(gpui::px(1.))
+                        .border(gpui_kit::px(1.))
                         .border_color(border_color)
-                        .rounded(gpui::px(4.))
+                        .rounded(gpui_kit::px(4.))
                         .font_family("Courier New")
                         .text_xs()
                         .text_color(theme_foreground)
@@ -221,71 +230,73 @@ impl Render for DocumentView {
         };
 
         // 1. Raw Editor Panel
-        let editor_panel = gpui_component::resizable::v_resizable("editor-diagnostics")
+        let editor_panel = gpui_kit::component::resizable::v_resizable("editor-diagnostics")
             .child(
-                gpui_component::resizable::resizable_panel().child(
-                    gpui::div()
+                gpui_kit::component::resizable::resizable_panel().child(
+                    gpui_kit::div()
                         .size_full()
                         .flex()
                         .flex_col()
                         .child(
-                            gpui::div()
+                            gpui_kit::div()
                                 .p_2()
                                 .bg(sidebar_bg)
-                                .border_b(gpui::px(1.))
+                                .border_b(gpui_kit::px(1.))
                                 .border_color(border_color)
                                 .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
+                                .font_weight(gpui_kit::FontWeight::BOLD)
                                 .text_color(theme_muted_foreground)
                                 .child(editor_header),
                         )
                         .child(
-                            gpui::div()
+                            gpui_kit::div()
                                 .id("source_editor_container")
                                 .flex_1()
-                                .h(gpui::px(0.))
+                                .h(gpui_kit::px(0.))
                                 .p_4()
                                 .bg(theme_group_box)
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .size_full()
                                         .flex()
                                         .flex_col()
                                         .children(make_frontmatter_el())
                                         .child(
-                                            gpui_component::input::Input::new(&input_state)
+                                            gpui_kit::component::input::Editor::new(&editor_state)
                                                 .flex_1()
-                                                .w_full(),
+                                                .w_full()
+                                                .bordered(false)
+                                                .aria_label("Source Editor"),
                                         ),
                                 ),
                         ),
                 ),
             )
             .child(
-                gpui_component::resizable::resizable_panel()
-                    .size(gpui::px(180.))
-                    .size_range(gpui::px(80.)..gpui::px(400.))
+                gpui_kit::component::resizable::resizable_panel()
+                    .size(gpui_kit::px(180.))
+                    .size_range(gpui_kit::px(80.)..gpui_kit::px(400.))
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .size_full()
-                            .border_t(gpui::px(1.))
+                            .border_t(gpui_kit::px(1.))
                             .border_color(border_color)
                             .bg(sidebar_bg)
                             .flex()
                             .flex_col()
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .p_2()
                                     .bg(sidebar_bg)
-                                    .border_b(gpui::px(1.))
+                                    .border_b(gpui_kit::px(1.))
                                     .border_color(border_color)
                                     .text_xs()
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(gpui_kit::FontWeight::BOLD)
                                     .text_color(theme_muted_foreground)
                                     .child("LSP DIAGNOSTICS"),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .id("diagnostics_list")
                                     .flex_1()
                                     .overflow_hidden()
@@ -316,9 +327,9 @@ impl Render for DocumentView {
         // 3. Markdown read-only panel
         let markdown_text = crate::parser::blocks_to_markdown(blocks);
         let markdown_preview = {
-            let mut preview_content = gpui::div()
+            let mut preview_content = gpui_kit::div()
                 .flex_1()
-                .h(gpui::px(0.))
+                .h(gpui_kit::px(0.))
                 .p_8()
                 .bg(theme_val.background)
                 .text_color(theme_val.foreground)
@@ -328,23 +339,23 @@ impl Render for DocumentView {
 
             for line in markdown_text.lines() {
                 preview_content =
-                    preview_content.child(gpui::div().min_h(px(18.)).child(line.to_string()));
+                    preview_content.child(gpui_kit::div().min_h(px(18.)).child(line.to_string()));
             }
 
-            gpui::div()
+            gpui_kit::div()
                 .size_full()
                 .flex()
                 .flex_col()
                 .overflow_hidden()
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .flex_none()
                         .p_2()
                         .bg(sidebar_bg)
-                        .border_b(gpui::px(1.))
+                        .border_b(gpui_kit::px(1.))
                         .border_color(border_color)
                         .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .text_color(theme_muted_foreground)
                         .child(format!("MARKDOWN VIEW: {}", active_file)),
                 )
@@ -353,9 +364,9 @@ impl Render for DocumentView {
 
         // 4. FlowText Editor stub panel (Experimental / Coming Soon)
         let flow_text_stub = {
-            let stub_content = gpui::div()
+            let stub_content = gpui_kit::div()
                 .flex_1()
-                .h(gpui::px(0.))
+                .h(gpui_kit::px(0.))
                 .flex()
                 .flex_col()
                 .items_center()
@@ -365,32 +376,32 @@ impl Render for DocumentView {
                 .bg(theme_val.background)
                 .text_color(theme_val.foreground)
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_lg()
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .child("FlowText Editor (Experimental / Coming Soon)"),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_sm()
                         .text_color(theme_muted_foreground)
                         .child("Character-level rich text editing powered by `gpui-flowtext` is under development. Shares the underlying rope buffer."),
                 );
 
-            gpui::div()
+            gpui_kit::div()
                 .size_full()
                 .flex()
                 .flex_col()
                 .overflow_hidden()
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .flex_none()
                         .p_2()
                         .bg(sidebar_bg)
-                        .border_b(gpui::px(1.))
+                        .border_b(gpui_kit::px(1.))
                         .border_color(border_color)
                         .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .text_color(theme_muted_foreground)
                         .child(format!("FLOWTEXT EDITOR STUB: {}", active_file)),
                 )
@@ -405,7 +416,7 @@ impl Render for DocumentView {
             DocumentMode::FlowTextEditor => flow_text_stub.into_any_element(),
         };
 
-        gpui::div()
+        gpui_kit::div()
             .size_full()
             .flex()
             .flex_col()

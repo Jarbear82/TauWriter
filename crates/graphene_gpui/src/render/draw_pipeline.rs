@@ -6,14 +6,14 @@ use graphene_style::{ColorValue, ComputedStyle, EdgeCurveStyle, LabelId, NodeSha
 pub struct Viewport {
     pub offset: Vec2,
     pub zoom: f32,
-    pub bounds: gpui::Bounds<f32>,
+    pub bounds: gpui_kit::Bounds<f32>,
 }
 
 pub const MIN_ZOOM: f32 = 0.00001;
 pub const MAX_ZOOM: f32 = 100000.0;
 
 impl Viewport {
-    pub fn new(bounds: gpui::Bounds<f32>) -> Self {
+    pub fn new(bounds: gpui_kit::Bounds<f32>) -> Self {
         Self {
             offset: Vec2::default(),
             zoom: 1.0,
@@ -23,25 +23,25 @@ impl Viewport {
 
     /// Canvas-local coordinates (relative to top-left of canvas element).
     /// Use this for absolutely-positioned UI elements (nodes, edge labels).
-    pub fn model_to_canvas(&self, pos: Vec2) -> gpui::Point<f32> {
+    pub fn model_to_canvas(&self, pos: Vec2) -> gpui_kit::Point<f32> {
         let x = (pos.x + self.offset.x) * self.zoom + self.bounds.size.width / 2.0;
         let y = (pos.y + self.offset.y) * self.zoom + self.bounds.size.height / 2.0;
-        gpui::point(x, y)
+        gpui_kit::point(x, y)
     }
 
     /// Window / absolute coordinates (includes bounds.origin).
     /// Use inside canvas paint callbacks (e.g. window.paint_path).
-    pub fn model_to_window(&self, pos: Vec2) -> gpui::Point<f32> {
+    pub fn model_to_window(&self, pos: Vec2) -> gpui_kit::Point<f32> {
         let canvas_p = self.model_to_canvas(pos);
-        gpui::point(canvas_p.x + self.bounds.origin.x, canvas_p.y + self.bounds.origin.y)
+        gpui_kit::point(canvas_p.x + self.bounds.origin.x, canvas_p.y + self.bounds.origin.y)
     }
 
     #[deprecated(note = "use model_to_canvas or model_to_window")]
-    pub fn model_to_screen(&self, pos: Vec2) -> gpui::Point<f32> {
+    pub fn model_to_screen(&self, pos: Vec2) -> gpui_kit::Point<f32> {
         self.model_to_window(pos)
     }
 
-    pub fn screen_to_model(&self, p: gpui::Point<f32>) -> Vec2 {
+    pub fn screen_to_model(&self, p: gpui_kit::Point<f32>) -> Vec2 {
         let x = (p.x - self.bounds.origin.x - self.bounds.size.width / 2.0) / self.zoom - self.offset.x;
         let y = (p.y - self.bounds.origin.y - self.bounds.size.height / 2.0) / self.zoom - self.offset.y;
         Vec2::new(x, y)
@@ -49,10 +49,10 @@ impl Viewport {
 
     pub fn is_visible(&self, pos: Vec2, size: Size2) -> bool {
         let screen_pos = self.model_to_window(pos);
-        let screen_size = gpui::size(size.w * self.zoom, size.h * self.zoom);
+        let screen_size = gpui_kit::size(size.w * self.zoom, size.h * self.zoom);
 
-        let node_bounds = gpui::Bounds {
-            origin: gpui::point(screen_pos.x - screen_size.width / 2.0, screen_pos.y - screen_size.height / 2.0),
+        let node_bounds = gpui_kit::Bounds {
+            origin: gpui_kit::point(screen_pos.x - screen_size.width / 2.0, screen_pos.y - screen_size.height / 2.0),
             size: screen_size,
         };
 
@@ -251,9 +251,9 @@ mod tests {
 
     #[test]
     fn test_viewport_model_screen_roundtrip() {
-        let bounds = gpui::Bounds {
-            origin: gpui::Point { x: 0.0, y: 0.0 },
-            size: gpui::Size {
+        let bounds = gpui_kit::Bounds {
+            origin: gpui_kit::Point { x: 0.0, y: 0.0 },
+            size: gpui_kit::Size {
                 width: 800.0,
                 height: 600.0,
             },
@@ -272,9 +272,9 @@ mod tests {
 
     #[test]
     fn test_viewport_is_visible_bounds_check() {
-        let bounds = gpui::Bounds {
-            origin: gpui::Point { x: 0.0, y: 0.0 },
-            size: gpui::Size {
+        let bounds = gpui_kit::Bounds {
+            origin: gpui_kit::Point { x: 0.0, y: 0.0 },
+            size: gpui_kit::Size {
                 width: 800.0,
                 height: 600.0,
             },
@@ -291,9 +291,9 @@ mod tests {
 
     #[test]
     fn test_viewport_zoom_100_percent_one_to_one_scale() {
-        let bounds = gpui::Bounds {
-            origin: gpui::Point { x: 10.0, y: 20.0 },
-            size: gpui::Size {
+        let bounds = gpui_kit::Bounds {
+            origin: gpui_kit::Point { x: 10.0, y: 20.0 },
+            size: gpui_kit::Size {
                 width: 1000.0,
                 height: 800.0,
             },

@@ -2,7 +2,7 @@
 //! outline extraction, and markdown generation to the `tauwriter-twxml` crate while
 //! adapting strings to GPUI's `SharedString`.
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 use serde::{Deserialize, Serialize};
 
 pub use tauwriter_twxml::parse_document_outline;

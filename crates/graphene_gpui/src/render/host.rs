@@ -2,8 +2,8 @@ use crate::interaction::state::InteractionState;
 use crate::render::draw_pipeline::Viewport;
 use crate::render::graph_canvas::{CanvasConfig, GraphCanvas};
 use crate::view::GraphView;
-use gpui::prelude::*;
-use gpui::{IntoElement, SharedString, Styled};
+use gpui_kit::prelude::*;
+use gpui_kit::{IntoElement, SharedString, Styled};
 use graphene_core::NodeId;
 use graphene_style::ComputedStyle;
 use std::collections::HashMap;
@@ -75,12 +75,12 @@ impl<'a> GraphCanvasHost<'a, ComputedStyle> {
 }
 
 impl<'a> IntoElement for GraphCanvasHost<'a, ComputedStyle> {
-    type Element = gpui::AnyElement;
+    type Element = gpui_kit::AnyElement;
 
     fn into_element(self) -> Self::Element {
         let bg_color = crate::style_bridge::color_value_to_rgba(self.theme.bg);
 
-        gpui::div()
+        gpui_kit::div()
             .id(self.container_id)
             .flex_1()
             .h_full()

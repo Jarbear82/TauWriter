@@ -188,12 +188,12 @@ pub(crate) fn find_block_range_by_id(
 pub(crate) fn offset_to_position(
     text: &str,
     offset: usize,
-) -> Option<gpui_component::input::Position> {
+) -> Option<gpui_kit::component::input::Position> {
     let mut row = 0;
     let mut col = 0;
     for (i, c) in text.char_indices() {
         if i >= offset {
-            return Some(gpui_component::input::Position::new(row, col));
+            return Some(gpui_kit::component::input::Position::new(row, col));
         }
         if c == '\n' {
             row += 1;
@@ -202,5 +202,5 @@ pub(crate) fn offset_to_position(
             col += 1;
         }
     }
-    Some(gpui_component::input::Position::new(row, col))
+    Some(gpui_kit::component::input::Position::new(row, col))
 }

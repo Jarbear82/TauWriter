@@ -1,5 +1,5 @@
 use graphene_core::{DataExpansionMode, NodeData, PropValue, Properties, Vec2};
-use graphene_gpui::render::graph_canvas::hex_to_rgba;
+use graphene_gpui_kit::render::graph_canvas::hex_to_rgba;
 use graphene_layout::compute_curve_midpoint;
 use graphene_style::EdgeCurveStyle;
 

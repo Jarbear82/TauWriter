@@ -70,7 +70,7 @@ impl SpatialHashGrid {
 #[derive(Debug, Clone)]
 pub struct DragSession {
     pub node_id: NodeId,
-    pub start_mouse_pos: gpui::Point<f32>,
+    pub start_mouse_pos: gpui_kit::Point<f32>,
     pub start_node_pos: Vec2,
     pub optimistic_pos: Vec2,
 }
@@ -78,10 +78,10 @@ pub struct DragSession {
 #[derive(Debug, Clone)]
 pub struct InteractionState {
     pub drag_session: Option<DragSession>,
-    pub pan_origin: Option<gpui::Point<f32>>, // last pan start position
+    pub pan_origin: Option<gpui_kit::Point<f32>>, // last pan start position
     pub spatial_grid: SpatialHashGrid,
     pub is_box_selecting: bool,
-    pub box_select_rect: Option<gpui::Bounds<f32>>,
+    pub box_select_rect: Option<gpui_kit::Bounds<f32>>,
 }
 
 impl InteractionState {
@@ -113,7 +113,7 @@ impl InteractionState {
 
     pub fn hit_test<S: Copy + Send + 'static>(
         &self,
-        screen_pos: gpui::Point<f32>,
+        screen_pos: gpui_kit::Point<f32>,
         viewport: &Viewport,
         view: &GraphView<S>,
         physics_active: bool,
@@ -199,7 +199,7 @@ impl InteractionState {
 
     pub fn hit_test_edge<S: Copy + Send + 'static>(
         &self,
-        screen_pos: gpui::Point<f32>,
+        screen_pos: gpui_kit::Point<f32>,
         viewport: &Viewport,
         view: &GraphView<S>,
         threshold: f32,
@@ -237,8 +237,8 @@ impl InteractionState {
 
                 let dist = distance_to_segment(
                     screen_pos,
-                    gpui::point(src_screen.x, src_screen.y),
-                    gpui::point(tgt_screen.x, tgt_screen.y),
+                    gpui_kit::point(src_screen.x, src_screen.y),
+                    gpui_kit::point(tgt_screen.x, tgt_screen.y),
                 );
                 if dist < threshold {
                     return Some(edge_id);
@@ -250,7 +250,7 @@ impl InteractionState {
 
     pub fn on_mouse_down<S: Copy + Send + 'static>(
         &mut self,
-        position: gpui::Point<f32>,
+        position: gpui_kit::Point<f32>,
         hit_node: Option<NodeId>,
         view: &GraphView<S>,
     ) -> Option<(NodeId, Vec2, graphene_layout::engine::DragPhase)> {
@@ -273,12 +273,12 @@ impl InteractionState {
 
     pub fn on_mouse_drag<S: Copy + Send + 'static>(
         &mut self,
-        position: gpui::Point<f32>,
+        position: gpui_kit::Point<f32>,
         viewport: &mut Viewport,
         _view: &GraphView<S>,
     ) -> Option<(NodeId, Vec2, graphene_layout::engine::DragPhase)> {
         if let Some(ref mut session) = self.drag_session {
-            let total_mouse_delta = gpui::point(
+            let total_mouse_delta = gpui_kit::point(
                 position.x - session.start_mouse_pos.x,
                 position.y - session.start_mouse_pos.y,
             );
@@ -294,7 +294,7 @@ impl InteractionState {
                 graphene_layout::engine::DragPhase::Update,
             ));
         } else if let Some(last_pos) = self.pan_origin {
-            let delta = gpui::point(position.x - last_pos.x, position.y - last_pos.y);
+            let delta = gpui_kit::point(position.x - last_pos.x, position.y - last_pos.y);
             viewport.offset.x += delta.x / viewport.zoom;
             viewport.offset.y += delta.y / viewport.zoom;
             self.pan_origin = Some(position);
@@ -325,7 +325,7 @@ pub fn update_edge_width() {
     // Styling stays on ComputedStyle / commands
 }
 
-pub fn distance_to_segment(p: gpui::Point<f32>, a: gpui::Point<f32>, b: gpui::Point<f32>) -> f32 {
+pub fn distance_to_segment(p: gpui_kit::Point<f32>, a: gpui_kit::Point<f32>, b: gpui_kit::Point<f32>) -> f32 {
     let ab_x = b.x - a.x;
     let ab_y = b.y - a.y;
     let ap_x = p.x - a.x;
@@ -356,9 +356,9 @@ mod tests {
 
         let view = GraphView::from_state(&state);
 
-        let bounds = gpui::Bounds {
-            origin: gpui::Point { x: 0.0, y: 0.0 },
-            size: gpui::Size {
+        let bounds = gpui_kit::Bounds {
+            origin: gpui_kit::Point { x: 0.0, y: 0.0 },
+            size: gpui_kit::Size {
                 width: 800.0,
                 height: 600.0,
             },

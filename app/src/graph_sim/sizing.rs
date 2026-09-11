@@ -5,7 +5,7 @@
 //! unit-testable without a live window. This module is the only place that
 //! touches `Window`/`App`.
 
-use gpui::{px, Font, FontStyle, FontWeight, TextRun as GpuiTextRun, Window};
+use gpui_kit::{px, Font, FontStyle, FontWeight, TextRun as GpuiTextRun, Window};
 
 /// Visual constants shared between measurement and the actual node renderer in
 /// `ui/graph_pane/render.rs`. If you touch padding/font sizes there, touch them
@@ -44,7 +44,7 @@ fn measure_line_width(window: &mut Window, text: &str, font_size: f32, bold: boo
     let run = GpuiTextRun {
         len: text.len(),
         font,
-        color: gpui::black(), // color doesn't affect shaping metrics
+        color: gpui_kit::black(), // color doesn't affect shaping metrics
         background_color: None,
         underline: None,
         strikethrough: None,

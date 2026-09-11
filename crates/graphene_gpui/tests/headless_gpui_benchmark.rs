@@ -1,7 +1,7 @@
-use gpui::{bounds, point, size, Bounds};
+use gpui_kit::{bounds, point, size, Bounds};
 use graphene_core::{GraphState, Size2, Vec2};
-use graphene_gpui::render::draw_pipeline::Viewport;
-use graphene_gpui::render::graph_canvas::{GraphNodeElement, CanvasConfig};
+use graphene_gpui_kit::render::draw_pipeline::Viewport;
+use graphene_gpui_kit::render::graph_canvas::{CanvasConfig, GraphNodeElement};
 use graphene_style::{ComputedStyle, NodeShape};
 use std::time::Instant;
 
@@ -28,7 +28,7 @@ fn test_headless_gpui_viewport_and_culling_performance() {
 
     for &n in SCALES {
         let state = build_test_graph(n);
-        let view = graphene_gpui::GraphView::from_state(&state);
+        let view = graphene_gpui_kit::GraphView::from_state(&state);
         let mut viewport = Viewport::new(screen_bounds);
         viewport.fit_to_graph(&view);
 
@@ -53,16 +53,16 @@ fn test_headless_gpui_viewport_and_culling_performance() {
             if viewport.is_visible(pos, size) {
                 let screen_p = viewport.model_to_canvas(pos);
                 let elem = GraphNodeElement {
-                    id: gpui::SharedString::from(format!("node_{}", i)),
+                    id: gpui_kit::SharedString::from(format!("node_{}", i)),
                     screen_x: screen_p.x,
                     screen_y: screen_p.y,
                     width: size.w * viewport.zoom,
                     height: size.h * viewport.zoom,
                     border_width: 2.0,
-                    border_color: gpui::rgba(0x000000ff),
-                    fill_color: gpui::rgba(0x3b82f6ff),
+                    border_color: gpui_kit::rgba(0x000000ff),
+                    fill_color: gpui_kit::rgba(0x3b82f6ff),
                     shape: NodeShape::Rectangle,
-                    text_color: gpui::rgba(0xffffffff),
+                    text_color: gpui_kit::rgba(0xffffffff),
                     font_size: 12.0,
                     label: format!("N{}", i),
                 };
@@ -76,6 +76,9 @@ fn test_headless_gpui_viewport_and_culling_performance() {
             n, visible_count, cull_duration, elem_duration
         );
 
-        assert!(visible_count <= n, "Visible count cannot exceed total nodes");
+        assert!(
+            visible_count <= n,
+            "Visible count cannot exceed total nodes"
+        );
     }
 }

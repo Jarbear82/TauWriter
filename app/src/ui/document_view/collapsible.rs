@@ -1,6 +1,6 @@
-use gpui::prelude::*;
-use gpui::{div, AnyElement, Context, Entity};
-use gpui_component::{collapsible::Collapsible, Icon, IconName};
+use gpui_kit::prelude::*;
+use gpui_kit::{div, AnyElement, Context, Entity};
+use gpui_kit::component::{collapsible::Collapsible, Icon, IconName};
 
 use super::expansion_state::ExpandedBlocks;
 
@@ -13,15 +13,15 @@ pub(crate) struct CollapsibleBlock {
     /// Header label shown in the toggle row.
     header_label: String,
     /// Left border color.
-    border_color: gpui::Hsla,
+    border_color: gpui_kit::Hsla,
     /// Background color of the container body.
-    bg_color: gpui::Hsla,
+    bg_color: gpui_kit::Hsla,
     /// Children builder closure for lazy rendering.
     children_fn: Option<ChildrenFn>,
 }
 
 impl CollapsibleBlock {
-    pub fn new(header_label: String, border_color: gpui::Hsla, bg_color: gpui::Hsla) -> Self {
+    pub fn new(header_label: String, border_color: gpui_kit::Hsla, bg_color: gpui_kit::Hsla) -> Self {
         Self {
             header_label,
             border_color,
@@ -41,7 +41,7 @@ impl CollapsibleBlock {
         mut self,
         toggle_offset: usize,
         expanded_blocks: Entity<ExpandedBlocks>,
-        cx: &mut Context<impl gpui::Render>,
+        cx: &mut Context<impl gpui_kit::Render>,
     ) -> AnyElement {
         let is_expanded = expanded_blocks.read(cx).expanded.contains(&toggle_offset);
 
@@ -71,18 +71,18 @@ impl CollapsibleBlock {
             .justify_between()
             .px_4()
             .py_1()
-            .bg(gpui_component::Theme::global(cx).accent.opacity(0.3))
-            .hover(|s| s.bg(gpui_component::Theme::global(cx).accent.opacity(0.5)))
+            .bg(gpui_kit::component::Theme::global(cx).accent.opacity(0.3))
+            .hover(|s| s.bg(gpui_kit::component::Theme::global(cx).accent.opacity(0.5)))
             .cursor_pointer()
-            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, move |_, _, cx| {
                 blocks_key.update(cx, |eb, _cx| eb.toggle(toggle_key));
             })
-            .child(Icon::new(chevron).size(gpui::px(14.)))
+            .child(Icon::new(chevron).size(gpui_kit::px(14.)))
             .child(
                 div()
                     .italic()
                     .text_xs()
-                    .text_color(gpui_component::Theme::global(cx).muted_foreground)
+                    .text_color(gpui_kit::component::Theme::global(cx).muted_foreground)
                     .child(header_label),
             );
 

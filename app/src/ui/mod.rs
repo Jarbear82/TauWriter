@@ -5,11 +5,52 @@
 
 use crate::graph_sim::InstanceLink;
 use crate::parser::{Block, TextRun};
-use gpui::{div, prelude::*, Entity, SharedString};
-use gpui_component::input::InputState;
+use gpui_kit::component::input::{EditorState, InputState, TabSize};
+use gpui_kit::{div, prelude::*, Entity, SharedString};
 use std::path::PathBuf;
 
-gpui::actions!(
+/// Generate default Monaco-style LanguageConfig rules for TWXML documents.
+pub(crate) fn create_twxml_language_config() -> gpui_kit::component::input::language_config::LanguageConfig {
+    use gpui_kit::component::input::{
+        AutoClosingPair, BracketPair, language_config::LanguageConfig, SyntaxContext,
+    };
+
+    LanguageConfig::default()
+        .brackets([
+            BracketPair::new("<", ">"),
+            BracketPair::new("{", "}"),
+            BracketPair::new("(", ")"),
+            BracketPair::new("[", "]"),
+        ])
+        .auto_closing_pairs([
+            AutoClosingPair::new("<", ">")
+                .not_in([SyntaxContext::String, SyntaxContext::Comment]),
+            AutoClosingPair::new("\"", "\"")
+                .not_in([SyntaxContext::String, SyntaxContext::Comment]),
+            AutoClosingPair::new("'", "'")
+                .not_in([SyntaxContext::String, SyntaxContext::Comment]),
+            AutoClosingPair::new("{", "}")
+                .not_in([SyntaxContext::String, SyntaxContext::Comment]),
+            AutoClosingPair::new("(", ")")
+                .not_in([SyntaxContext::String, SyntaxContext::Comment]),
+            AutoClosingPair::new("[", "]")
+                .not_in([SyntaxContext::String, SyntaxContext::Comment]),
+        ])
+        .auto_close_before(";:.,=}])>")
+}
+
+/// Map file extension to a syntax highlighting language identifier.
+pub(crate) fn language_for_path(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("twxml") | Some("xml") => "twxml",
+        Some("rs") => "rust",
+        Some("json") => "json",
+        Some("md") | Some("markdown") => "markdown",
+        _ => "plaintext",
+    }
+}
+
+gpui_kit::actions!(
     tauwriter,
     [ToggleSettings, SelectDocumentTab, SelectGraphTab]
 );
@@ -69,10 +110,11 @@ pub(crate) struct OpenDocument {
     pub(crate) path: PathBuf,
     pub(crate) mode: DocumentMode,
     pub(crate) document_home: Entity<DocumentHome>,
+    pub(crate) editor_state: Entity<gpui_kit::component::input::EditorState>,
     #[allow(dead_code)]
-    pub(crate) input_state: Entity<gpui_component::input::InputState>,
+    pub(crate) input_state: Entity<gpui_kit::component::input::InputState>,
     /// Subscriptions owned by this document; dropped when the doc is closed.
-    pub(crate) doc_subscriptions: Vec<gpui::Subscription>,
+    pub(crate) doc_subscriptions: Vec<gpui_kit::Subscription>,
 }
 
 // ─── Workspace Model ────────────────────────────────────────────────────────
@@ -109,7 +151,7 @@ impl Workspace {
 
 // ─── MainView struct ────────────────────────────────────────────────────────
 pub(crate) struct MainView {
-    pub(crate) focus_handle: gpui::FocusHandle,
+    pub(crate) focus_handle: gpui_kit::FocusHandle,
     pub(crate) workspace: Entity<Workspace>,
     #[allow(dead_code)]
     pub(crate) sidebar: Entity<sidebar::SidebarView>,
@@ -117,18 +159,20 @@ pub(crate) struct MainView {
     pub(crate) document_view: Entity<DocumentView>,
     #[allow(dead_code)]
     pub(crate) graph_pane: Entity<graph_pane::GraphPaneView>,
-    pub(crate) dock_area: Entity<gpui_component::dock::DockArea>,
+    pub(crate) dock_area: Entity<gpui_kit::component::dock::DockArea>,
     #[allow(dead_code)]
     pub(crate) document_home: Entity<DocumentHome>,
+    #[allow(dead_code)]
+    pub(crate) editor_state: Entity<EditorState>,
     #[allow(dead_code)]
     pub(crate) input_state: Entity<InputState>,
     /// App-level subscriptions kept alive for the lifetime of MainView.
     #[allow(dead_code)]
-    pub(crate) _sidebar_sub: gpui::Subscription,
+    pub(crate) _sidebar_sub: gpui_kit::Subscription,
     #[allow(dead_code)]
-    pub(crate) _graph_sub: gpui::Subscription,
+    pub(crate) _graph_sub: gpui_kit::Subscription,
     #[allow(dead_code)]
-    pub(crate) _input_sub: gpui::Subscription,
+    pub(crate) _input_sub: gpui_kit::Subscription,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,8 +184,8 @@ pub(crate) enum ParseState {
 // ─── DocumentHome & traits ──────────────────────────────────────────────────
 
 pub(crate) struct DocumentHome {
-    pub(crate) title: gpui::SharedString,
-    pub(crate) author: gpui::SharedString,
+    pub(crate) title: gpui_kit::SharedString,
+    pub(crate) author: gpui_kit::SharedString,
     pub(crate) metadata: Vec<(SharedString, SharedString)>,
     pub(crate) blocks: Vec<Block>,
     pub(crate) parse_state: ParseState,
@@ -155,10 +199,10 @@ impl MainView {
     pub(crate) fn toggle_settings(
         &mut self,
         _: &ToggleSettings,
-        window: &mut gpui::Window,
+        window: &mut gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
-        use gpui_component::WindowExt;
+        use gpui_kit::component::WindowExt;
         if window.has_active_dialog(cx) {
             window.close_dialog(cx);
         } else {
@@ -170,7 +214,7 @@ impl MainView {
     pub(crate) fn select_document_tab(
         &mut self,
         _: &SelectDocumentTab,
-        _: &mut gpui::Window,
+        _: &mut gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
         self.workspace.update(cx, |w, cx| {
@@ -185,7 +229,7 @@ impl MainView {
     pub(crate) fn select_graph_tab(
         &mut self,
         _: &SelectGraphTab,
-        _: &mut gpui::Window,
+        _: &mut gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
         self.workspace.update(cx, |w, cx| {
@@ -198,7 +242,7 @@ impl MainView {
     pub(crate) fn select_file(
         &mut self,
         path: std::path::PathBuf,
-        window: &mut gpui::Window,
+        window: &mut gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
         let mut found_idx = None;
@@ -236,11 +280,19 @@ impl MainView {
             parse_state: ParseState::Synced,
             hubgs_instances: std::collections::HashMap::new(),
         });
-        let input_state = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx)
-                .multi_line(true)
-                .code_editor("twxml")
+        let editor_state = cx.new(|cx| {
+            EditorState::new(window, cx)
+                .language(language_for_path(&path))
                 .line_number(true)
+                .folding(true)
+                .show_whitespaces(true)
+                .tab_size(TabSize {
+                    tab_size: 4,
+                    hard_tabs: false,
+                })
+        });
+        let input_state = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx)
         });
 
         // Push new document tab
@@ -249,6 +301,7 @@ impl MainView {
                 path: path.clone(),
                 mode: DocumentMode::RawEditor,
                 document_home: document_home.clone(),
+                editor_state: editor_state.clone(),
                 input_state: input_state.clone(),
                 doc_subscriptions: Vec::new(),
             });
@@ -259,13 +312,13 @@ impl MainView {
             w.open_docs.len() - 1
         });
 
-        // Sync input state text edits
+        // Sync editor state text edits
         let main_view_weak = cx.entity().downgrade();
-        let input_sub = cx.subscribe_in(
-            &input_state,
+        let editor_sub = cx.subscribe_in(
+            &editor_state,
             window,
             move |_this: &mut MainView, _, ev, _, cx| match ev {
-                gpui_component::input::InputEvent::Change => {
+                gpui_kit::component::input::InputEvent::Change => {
                     if let Some(this) = main_view_weak.upgrade() {
                         this.update(cx, |this, cx| {
                             this.handle_document_change(cx);
@@ -280,14 +333,14 @@ impl MainView {
                 .last_mut()
                 .unwrap()
                 .doc_subscriptions
-                .push(input_sub);
+                .push(editor_sub);
         });
 
         // Async read and parse the file
         let workspace = self.workspace.clone();
         let window_handle = window.window_handle();
         cx.spawn(
-            move |this: gpui::WeakEntity<MainView>, cx: &mut gpui::AsyncApp| {
+            move |this: gpui_kit::WeakEntity<MainView>, cx: &mut gpui_kit::AsyncApp| {
                 let cx = cx.clone();
                 async move {
                     let path_clone = path.clone();
@@ -333,6 +386,9 @@ impl MainView {
 
                     let _ = cx.update(|cx| {
                         let _ = window_handle.update(cx, |_, window, cx| {
+                            editor_state.update(cx, |state, cx| {
+                                state.set_value(xml_content.clone(), window, cx);
+                            });
                             input_state.update(cx, |state, cx| {
                                 state.set_value(xml_content.clone(), window, cx);
                             });
@@ -400,13 +456,13 @@ impl MainView {
     }
 
     pub(crate) fn handle_document_change(&mut self, cx: &mut Context<Self>) {
-        let (active_doc_path, input_state) = {
+        let (active_doc_path, editor_state) = {
             let w = self.workspace.read(cx);
             if let Some(idx) = w.active_doc_idx {
                 if let Some(doc) = w.open_docs.get(idx) {
                     (
                         Some(doc.path.clone()),
-                        doc.input_state.clone(),
+                        doc.editor_state.clone(),
                     )
                 } else {
                     return;
@@ -416,7 +472,7 @@ impl MainView {
             }
         };
 
-        let text = input_state.read(cx).value().to_string();
+        let text = editor_state.read(cx).value().to_string();
         let lsp_client_opt = self.workspace.update(cx, |w, _| w.lsp_client.clone());
 
         if let Some(p) = active_doc_path {
@@ -435,7 +491,7 @@ impl MainView {
             let visited_inner = std::sync::Arc::new(std::sync::Mutex::new(visited));
 
             cx.spawn(
-                async move |_this: gpui::WeakEntity<Self>, cx: &mut gpui::AsyncApp| {
+                async move |_this: gpui_kit::WeakEntity<Self>, cx: &mut gpui_kit::AsyncApp| {
                     cx.background_executor()
                         .timer(std::time::Duration::from_millis(300))
                         .await;
@@ -549,7 +605,7 @@ impl MainView {
     pub(crate) fn handle_node_click(
         &mut self,
         node_id: SharedString,
-        window: &mut gpui::Window,
+        window: &mut gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
         if node_id.contains('_') {
@@ -643,10 +699,10 @@ fn find_file_referencing_hub_impl(
 
 // ─── Render implementation ──────────────────────────────────────────────────
 
-impl gpui::Render for MainView {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl gpui_kit::Render for MainView {
+    fn render(&mut self, _window: &mut gpui_kit::Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Theme setup
-        let theme_val = gpui_component::Theme::global(cx);
+        let theme_val = gpui_kit::component::Theme::global(cx);
         let bg_color = theme_val.background;
         let fg_color = theme_val.foreground;
         let border_color = theme_val.border;
@@ -687,7 +743,7 @@ impl gpui::Render for MainView {
             cx.entity().clone(),
         );
 
-        let dialog_layer = gpui_component::Root::render_dialog_layer(_window, cx);
+        let dialog_layer = gpui_kit::component::Root::render_dialog_layer(_window, cx);
 
         div()
             .key_context("MainView")
@@ -705,7 +761,7 @@ impl gpui::Render for MainView {
                 div()
                     .id("main_content")
                     .flex_1()
-                    .h(gpui::px(0.))
+                    .h(gpui_kit::px(0.))
                     .overflow_hidden()
                     .w_full()
                     .child(self.dock_area.clone()),

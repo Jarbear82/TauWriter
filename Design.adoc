@@ -31,7 +31,7 @@ Strategy Selection Criteria: The application operates as a linear transformation
   ** `MainView` Has-A `Workspace` + `GraphPaneView` (mediating event propagation between them).
   ** `DocumentTabState` Has-A `InputState` (re-used for the Raw Editor and sharing buffer state across modes).
 * *Is-A*:
-  ** `gpui::Render` implemented on view components.
+  ** `gpui_kit::Render` implemented on view components.
   ** Custom `DocumentRenderer` trait to unify block rendering structures (`BlockEditor` layout vs Markdown generator outputs).
 
 == 3. Component Architecture (Level 5)
@@ -58,7 +58,7 @@ app/src/
 │   ├── document_view/
 │   │   ├── mod.rs (DocumentView mode switcher & split layout)
 │   │   ├── block_editor/ (BlockEditorView, virtual list block cards, gutter, slash menu)
-│   │   ├── raw_editor.rs (gpui_component::input::Input code mode)
+│   │   ├── raw_editor.rs (gpui_kit::component::input::Input code mode)
 │   │   ├── markdown_view.rs (TWXML -> Markdown reader)
 │   │   ├── flow_text_editor.rs (FlowTextEditor coming-soon stub)
 │   │   ├── renderers.rs (TWXML block elements render engine)
@@ -82,7 +82,7 @@ app/src/
      * `active_document_idx: Option<usize>`
      * `active_graph_tab: GraphTab` (`DocumentGraph`, `DefinitionsSchema`, `InstancesRelation`)
   2. Implement `DocumentTabState` containing the path, raw text buffer, active display mode (`RawEditor`, `BlockEditor`, `MarkdownView`, `FlowTextEditor` stub), and Tree-sitter query AST caches.
-  3. Render the left half containing `DocumentView` and the right half containing `GraphPaneView` using `gpui_component::resizable::h_resizable("workspace-split")`.
+  3. Render the left half containing `DocumentView` and the right half containing `GraphPaneView` using `gpui_kit::component::resizable::h_resizable("workspace-split")`.
   4. Build the Document Tab Bar (`DocumentTabBar`) to render one tab per open document, with close buttons and click listeners to switch `active_document_idx`.
   5. Add a mode selection dropdown element next to the active document tab to toggle its mode.
 
@@ -90,7 +90,7 @@ app/src/
 
 * *Objective*: Render document content differently depending on the active mode (`RawEditor`, `BlockEditor`, `MarkdownView`, `FlowTextEditor` stub) and compile included files recursively while sharing a single rope buffer (`InputState`) and single document AST (`DocumentHome`).
 * *Implementation & Phased Block Editor Pipeline*:
-  1. Raw Mode (`RawEditor`): Render the raw XML text editor with syntax highlighting using `gpui_component::input::Input`. Render the `<include src="..." />` tags literally.
+  1. Raw Mode (`RawEditor`): Render the raw XML text editor with syntax highlighting using `gpui_kit::component::input::Input`. Render the `<include src="..." />` tags literally.
   2. Block Editor Mode (`BlockEditor`):
      * *Phase 0 (Plumbing)*: Rename `DocumentMode::WysiwygPreview` → `DocumentMode::BlockEditor`, update dropdown selector, verify selection offsets and undo history are rope-centric.
      * *Phase 1 (Read-only Cards)*: Implement virtualized list of block cards rendering all `Block` AST variants.

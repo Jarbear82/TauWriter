@@ -74,6 +74,3 @@ unexpected_cfgs = { level = "allow" }
 [workspace.lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
-
-[patch.crates-io]
-gpui = { git = "https://github.com/zed-industries/zed.git" }

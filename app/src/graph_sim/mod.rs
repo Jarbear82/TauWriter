@@ -1,7 +1,7 @@
 //! HubGS data types and parser/sizing integrations for TauWriter.
 //! Physics and canvas rendering are delegated to graphene-rs (`graphene_core`, `graphene_layout`, `graphene_gpui`).
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 #[cfg(test)]
 mod graph_sim_tests;

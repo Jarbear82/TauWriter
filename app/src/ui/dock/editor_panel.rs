@@ -1,6 +1,8 @@
-use gpui::prelude::*;
-use gpui::{div, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render, Window};
-use gpui_component::dock::{Panel, PanelEvent};
+use gpui_kit::component::dock::{BasePanel, Panel, PanelEvent};
+use gpui_kit::prelude::*;
+use gpui_kit::{
+    div, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement, Render, Window,
+};
 
 use crate::ui::document_tabs;
 use crate::ui::document_view::DocumentView;
@@ -34,16 +36,18 @@ impl EditorPanel {
 impl EventEmitter<PanelEvent> for EditorPanel {}
 
 impl Focusable for EditorPanel {
-    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+    fn focus_handle(&self, _: &gpui_kit::App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Panel for EditorPanel {
+impl BasePanel for EditorPanel {
     fn panel_name(&self) -> &'static str {
         "EditorPanel"
     }
+}
 
+impl Panel for EditorPanel {
     fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         "Document Editor"
     }
@@ -51,7 +55,7 @@ impl Panel for EditorPanel {
 
 impl Render for EditorPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme_val = gpui_component::Theme::global(cx);
+        let theme_val = gpui_kit::component::Theme::global(cx);
         let fg_color = theme_val.foreground;
         let border_color = theme_val.border;
         let sidebar_bg = theme_val.sidebar;
@@ -91,7 +95,7 @@ impl Render for EditorPanel {
             .child(
                 div()
                     .flex_1()
-                    .h(gpui::px(0.))
+                    .h(gpui_kit::px(0.))
                     .w_full()
                     .overflow_hidden()
                     .child(self.document_view.clone()),

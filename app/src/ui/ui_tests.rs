@@ -41,3 +41,29 @@ fn test_ui_document_home_state_transitions_correctly() {
     assert_eq!(doc.parse_state, ParseState::Synced);
     assert_eq!(doc.blocks.len(), 1);
 }
+
+#[test]
+fn test_twxml_language_config_rules() {
+    let rules = crate::ui::create_twxml_language_config();
+    assert_eq!(rules.brackets.len(), 4);
+    assert!(rules.auto_closing_pairs.is_some());
+    let pairs = rules.auto_closing_pairs.as_ref().unwrap();
+    assert_eq!(pairs.len(), 6);
+    assert!(pairs.iter().any(|p| p.open == "<" && p.close == ">"));
+    assert!(pairs.iter().any(|p| p.open == "\"" && p.close == "\""));
+    assert!(rules.auto_close_before.contains('>'));
+}
+
+#[test]
+fn test_language_for_path_mapping() {
+    use std::path::Path;
+
+    assert_eq!(crate::ui::language_for_path(Path::new("doc.twxml")), "twxml");
+    assert_eq!(crate::ui::language_for_path(Path::new("test.xml")), "twxml");
+    assert_eq!(crate::ui::language_for_path(Path::new("src/main.rs")), "rust");
+    assert_eq!(crate::ui::language_for_path(Path::new("package.json")), "json");
+    assert_eq!(crate::ui::language_for_path(Path::new("README.md")), "markdown");
+    assert_eq!(crate::ui::language_for_path(Path::new("unknown.xyz")), "plaintext");
+    assert_eq!(crate::ui::language_for_path(Path::new("no_extension")), "plaintext");
+}
+

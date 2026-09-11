@@ -1,6 +1,6 @@
 //! Data types for graph pane — pure structs and enums.
 
-use gpui::SharedString;
+use gpui_kit::SharedString;
 
 /// Events emitted by the graph pane viewer.
 #[derive(Clone)]

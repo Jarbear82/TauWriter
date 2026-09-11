@@ -53,18 +53,17 @@ pub(crate) fn build_file_tree(dir: &Path) -> Vec<FileNode> {
     nodes
 }
 
-/// Convert hierarchical `FileNode`s into `gpui_component::tree::TreeItem`s.
-pub(crate) fn file_nodes_to_tree_items(nodes: &[FileNode]) -> Vec<gpui_component::tree::TreeItem> {
+/// Convert hierarchical `FileNode`s into `gpui_kit::component::tree::TreeItem`s.
+pub(crate) fn file_nodes_to_tree_items(nodes: &[FileNode]) -> Vec<gpui_kit::component::tree::TreeItem> {
     nodes.iter().map(file_node_to_tree_item).collect()
 }
 
-/// Convert a single `FileNode` into a `gpui_component::tree::TreeItem`.
-pub(crate) fn file_node_to_tree_item(node: &FileNode) -> gpui_component::tree::TreeItem {
+/// Convert a single `FileNode` into a `gpui_kit::component::tree::TreeItem`.
+pub(crate) fn file_node_to_tree_item(node: &FileNode) -> gpui_kit::component::tree::TreeItem {
     let id = node.path.to_string_lossy().to_string();
-    let mut item = gpui_component::tree::TreeItem::new(id, node.name.clone());
+    let mut item = gpui_kit::component::tree::TreeItem::new(id, node.name.clone());
     if node.is_dir {
         item = item.children(file_nodes_to_tree_items(&node.children)).expanded(true);
     }
     item
 }
-
