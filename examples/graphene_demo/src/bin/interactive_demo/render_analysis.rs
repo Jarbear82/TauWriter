@@ -1,13 +1,13 @@
 use crate::app::DemoApp;
 use crate::theme::Theme;
-use gpui::{px, Context, IntoElement, ParentElement, SharedString, Styled};
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_kit::{px, Context, IntoElement, ParentElement, SharedString, Styled};
+use gpui_kit::component::button::{Button, ButtonVariants};
 
 impl DemoApp {
     pub fn render_analysis_panel(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let report_opt = self.analysis_report.as_ref();
 
-        gpui::div()
+        gpui_kit::div()
             .flex()
             .flex_col()
             .gap_3()
@@ -17,14 +17,14 @@ impl DemoApp {
             .border(px(1.0))
             .border_color(theme.border)
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .items_center()
                     .justify_between()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("GRAPH ANALYSIS & METRICS"),
                     )
@@ -38,7 +38,7 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .items_center()
                     .gap_2()
@@ -57,17 +57,17 @@ impl DemoApp {
                     ),
             )
             .child(if let Some(report) = report_opt {
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .flex_col()
                             .gap_1()
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child(format!(
@@ -78,7 +78,7 @@ impl DemoApp {
                                     )),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child(format!(
@@ -87,7 +87,7 @@ impl DemoApp {
                                     )),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child(format!(
@@ -97,7 +97,7 @@ impl DemoApp {
                                     )),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child(format!(
@@ -107,19 +107,19 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(11.0))
                             .child("HEATMAP OVERLAY"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .flex_col()
                             .gap_1()
                             .child(
-                                gpui::div().flex().gap_1().children(vec!["PageRank", "Betweenness"].into_iter().map(|m| {
+                                gpui_kit::div().flex().gap_1().children(vec!["PageRank", "Betweenness"].into_iter().map(|m| {
                                     let is_active = self.active_heatmap.as_deref() == Some(m);
                                     let label = format!("{}", m);
                                     Button::new(SharedString::from(format!("heatmap-btn-{}", m)))
@@ -136,7 +136,7 @@ impl DemoApp {
                                 })),
                             )
                             .child(
-                                gpui::div().flex().gap_1().children(vec!["Degree", "Closeness"].into_iter().map(|m| {
+                                gpui_kit::div().flex().gap_1().children(vec!["Degree", "Closeness"].into_iter().map(|m| {
                                     Button::new(SharedString::from(format!("heatmap-btn-{}", m)))
                                         .primary()
                                         .label(format!("{}", m))
@@ -161,7 +161,7 @@ impl DemoApp {
                             ),
                     )
             } else {
-                gpui::div()
+                gpui_kit::div()
                     .text_color(theme.text_dim)
                     .text_size(px(11.0))
                     .child("Click ANALYZE to run graph analysis.")

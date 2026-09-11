@@ -1,18 +1,18 @@
 use crate::app::DemoApp;
 use crate::theme::{Theme, LAYOUT_NAMES};
-use gpui::prelude::FluentBuilder;
-use gpui::{
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::Input;
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::component::Disableable;
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
     px, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled,
 };
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::Input;
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::Disableable;
 
 impl DemoApp {
     pub fn render_sidebar_left(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        gpui::div()
+        gpui_kit::div()
             .id("sidebar-left-scroll")
             .w(px(280.0))
             .h_full()
@@ -25,19 +25,19 @@ impl DemoApp {
             .flex_col()
             .gap_4()
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("1. SELECT GRAPH FIXTURE"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .id("preset-scroll-container")
                             .flex()
                             .flex_col()
@@ -52,7 +52,7 @@ impl DemoApp {
                             .rounded_md()
                             .children(self.fixtures.iter().enumerate().map(|(idx, f)| {
                                 let is_selected = self.selected_fixture_idx == idx;
-                                gpui::div()
+                                gpui_kit::div()
                                     .id(SharedString::from(format!("preset-{}", idx)))
                                     .p_2()
                                     .border_b(px(1.0))
@@ -60,7 +60,7 @@ impl DemoApp {
                                     .bg(if is_selected {
                                         theme.accent
                                     } else {
-                                        gpui::rgba(0)
+                                        gpui_kit::rgba(0)
                                     })
                                     .text_color(if is_selected {
                                         theme.panel_bg
@@ -68,7 +68,7 @@ impl DemoApp {
                                         theme.text
                                     })
                                     .text_size(px(11.0))
-                                    .font_weight(if is_selected { gpui::FontWeight::BOLD } else { gpui::FontWeight::NORMAL })
+                                    .font_weight(if is_selected { gpui_kit::FontWeight::BOLD } else { gpui_kit::FontWeight::NORMAL })
                                     .cursor_pointer()
                                     .hover(|s| if is_selected { s } else { s.bg(theme.border) })
                                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -83,19 +83,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("2. LAYOUT ENGINE"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .id("layout-accordion-container")
                             .flex()
                             .flex_col()
@@ -109,7 +109,7 @@ impl DemoApp {
                                 let is_selected = self.selected_layout == name;
                                 let is_expanded = self.expanded_layout.as_deref() == Some(name);
 
-                                gpui::div()
+                                gpui_kit::div()
                                     .id(SharedString::from(format!("layout-card-{}", name)))
                                     .flex()
                                     .flex_col()
@@ -118,7 +118,7 @@ impl DemoApp {
                                     .bg(theme.bg)
                                     .rounded_md()
                                     .child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .id(SharedString::from(format!("layout-header-{}", name)))
                                             .flex()
                                             .items_center()
@@ -127,7 +127,7 @@ impl DemoApp {
                                             .bg(if is_selected {
                                                 theme.accent
                                             } else {
-                                                gpui::rgba(0)
+                                                gpui_kit::rgba(0)
                                             })
                                             .text_color(if is_selected {
                                                 theme.panel_bg
@@ -146,9 +146,9 @@ impl DemoApp {
                                                 cx.notify();
                                             }))
                                             .child(
-                                                gpui::div()
+                                                gpui_kit::div()
                                                     .text_size(px(11.0))
-                                                    .font_weight(if is_selected { gpui::FontWeight::BOLD } else { gpui::FontWeight::NORMAL })
+                                                    .font_weight(if is_selected { gpui_kit::FontWeight::BOLD } else { gpui_kit::FontWeight::NORMAL })
                                                     .child(format!("{} {}", if is_expanded { "▼" } else { "▶" }, name)),
                                             ),
                                     )
@@ -156,7 +156,7 @@ impl DemoApp {
                                         let fields = self.render_layout_form_fields(name, theme);
                                         let phase_names = self.get_layout_phases(name);
                                         card.child(
-                                            gpui::div()
+                                            gpui_kit::div()
                                                 .p_2()
                                                 .border_t(px(1.0))
                                                 .border_color(theme.border)
@@ -179,16 +179,16 @@ impl DemoApp {
                                                 )
                                                 .when(!phase_names.is_empty(), |b| {
                                                     b.child(
-                                                        gpui::div()
+                                                        gpui_kit::div()
                                                             .flex()
                                                             .flex_col()
                                                             .gap_1()
                                                             .mt_1()
                                                             .child(
-                                                                gpui::div()
+                                                                gpui_kit::div()
                                                                     .text_color(theme.text)
                                                                     .text_size(px(10.0))
-                                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                                    .font_weight(gpui_kit::FontWeight::BOLD)
                                                                     .child("STEP BY ALGORITHMIC PHASE:"),
                                                             )
                                                             .children(phase_names.into_iter().enumerate().map(|(phase_idx, phase_name)| {
@@ -211,14 +211,14 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("3. LIVE PHYSICS (FORCEATLAS2)"),
                     )
@@ -247,7 +247,7 @@ impl DemoApp {
                             })),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -257,7 +257,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Stop Condition"),
@@ -277,7 +277,7 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -287,19 +287,19 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Scaling Ratio"),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .w(px(50.0))
                                     .child(Input::new(&self.input_fa2_scaling)),
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -309,7 +309,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("LinLog Mode"),
@@ -324,7 +324,7 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -334,7 +334,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Dissuade Hubs"),
@@ -349,7 +349,7 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -359,7 +359,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Strong Gravity"),
@@ -374,7 +374,7 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -384,7 +384,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Telemetry HUD"),
@@ -399,7 +399,7 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -409,7 +409,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Adjust Sizes"),
@@ -424,7 +424,7 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -434,7 +434,7 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Barnes-Hut"),
@@ -450,19 +450,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("4. FONT & TEXT CONFIG"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .items_center()
                             .justify_between()
@@ -472,13 +472,13 @@ impl DemoApp {
                             .border(px(1.0))
                             .border_color(theme.border)
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(11.0))
                                     .child("Max Label Length"),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .w(px(50.0))
                                     .child(Input::new(&self.input_max_len)),
                             ),
@@ -493,7 +493,7 @@ impl DemoApp {
                     })),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .gap_2()
                     .child(
@@ -513,19 +513,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("5. COLOR & WCAG CONTRAST"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .flex_col()
                             .gap_2()
@@ -571,13 +571,14 @@ impl DemoApp {
         let mut fields = Vec::new();
 
         let make_field =
-            |label: &'static str, input: &gpui::Entity<gpui_component::input::InputState>| {
-                gpui::div()
+            |label: &'static str,
+             input: &gpui_kit::Entity<gpui_kit::component::input::InputState>| {
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text_dim)
                             .text_size(px(10.0))
                             .child(label),

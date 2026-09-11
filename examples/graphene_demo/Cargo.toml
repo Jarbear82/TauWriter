@@ -11,6 +11,4 @@ graphene_algorithms = { path = "../../crates/graphene_algorithms" }
 graphene_analysis = { path = "../../crates/graphene_analysis" }
 graphene_layout = { path = "../../crates/graphene_layout" }
 graphene_gpui = { path = "../../crates/graphene_gpui" }
-gpui = { git = "https://github.com/zed-industries/zed.git" }
-gpui_platform = { git = "https://github.com/zed-industries/zed.git", features = ["wayland", "x11"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
+gpui-kit = "0.6"

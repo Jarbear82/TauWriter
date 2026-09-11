@@ -1,4 +1,4 @@
-//! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui_kit::GraphCanvas.
+//! Rendering logic for graph panes — GraphPaneView implementation using graphene_gpui::GraphCanvas.
 
 use gpui_kit::{div, prelude::*, Window};
 use graphene_core::DataExpansionMode;

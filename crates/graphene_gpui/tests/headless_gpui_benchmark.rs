@@ -1,7 +1,7 @@
 use gpui_kit::{bounds, point, size, Bounds};
 use graphene_core::{GraphState, Size2, Vec2};
-use graphene_gpui_kit::render::draw_pipeline::Viewport;
-use graphene_gpui_kit::render::graph_canvas::{CanvasConfig, GraphNodeElement};
+use graphene_gpui::render::draw_pipeline::Viewport;
+use graphene_gpui::render::graph_canvas::{CanvasConfig, GraphNodeElement};
 use graphene_style::{ComputedStyle, NodeShape};
 use std::time::Instant;
 
@@ -28,7 +28,7 @@ fn test_headless_gpui_viewport_and_culling_performance() {
 
     for &n in SCALES {
         let state = build_test_graph(n);
-        let view = graphene_gpui_kit::GraphView::from_state(&state);
+        let view = graphene_gpui::GraphView::from_state(&state);
         let mut viewport = Viewport::new(screen_bounds);
         viewport.fit_to_graph(&view);
 

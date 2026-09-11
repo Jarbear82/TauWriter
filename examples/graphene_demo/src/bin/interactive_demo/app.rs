@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use gpui::{AppContext, Context, Entity, EntityInputHandler, Window};
-use gpui_component::input::InputState;
+use gpui_kit::{AppContext, Context, Entity, EntityInputHandler, Window};
+use gpui_kit::component::input::InputState;
 
 use crate::theme::Theme;
 use graphene_analysis::GraphAnalysisReport;
@@ -240,7 +240,7 @@ impl DemoApp {
             selected_fixture_idx: 0,
             selected_layout: "Circle".to_string(),
             expanded_layout: Some("Circle".to_string()),
-            viewport: Viewport::new(gpui::Bounds::default()),
+            viewport: Viewport::new(gpui_kit::Bounds::default()),
             interaction_state: InteractionState::new(64.0),
             selected_node: None,
             selected_edge: None,
@@ -545,7 +545,7 @@ impl DemoApp {
         } else {
             label
         };
-        let center_pos = self.viewport.screen_to_model(gpui::point(400.0, 300.0));
+        let center_pos = self.viewport.screen_to_model(gpui_kit::point(400.0, 300.0));
         let mut style = ComputedStyle::default();
         if let StylingTarget::Node(ref mut node_style) = style.target {
             node_style.shape = graphene_style::NodeShape::Ellipse;

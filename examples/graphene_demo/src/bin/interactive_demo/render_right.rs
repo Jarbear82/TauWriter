@@ -1,12 +1,12 @@
 use crate::app::DemoApp;
 use crate::theme::Theme;
-use gpui::prelude::FluentBuilder;
-use gpui::{
+use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::{
     px, Context, EntityInputHandler, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::Input;
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::Input;
 use graphene_core::NodeId;
 use graphene_style::{ComputedStyle, NodeShape, StylingTarget};
 
@@ -17,7 +17,7 @@ impl DemoApp {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        gpui::div()
+        gpui_kit::div()
             .id("sidebar-right")
             .flex_col()
             .h_full()
@@ -31,7 +31,7 @@ impl DemoApp {
             .overflow_y_scroll()
             .child(self.render_analysis_panel(theme, cx))
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -41,21 +41,21 @@ impl DemoApp {
                     .border(px(1.0))
                     .border_color(theme.border)
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("CANVAS & ARROW STYLING"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .gap_2()
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .flex_1()
                                     .child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .text_color(theme.text_dim)
                                             .text_size(px(10.0))
                                             .child("Grid Spacing"),
@@ -63,10 +63,10 @@ impl DemoApp {
                                     .child(Input::new(&self.input_grid_spacing)),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .flex_1()
                                     .child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .text_color(theme.text_dim)
                                             .text_size(px(10.0))
                                             .child("Arrow Len"),
@@ -75,14 +75,14 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .gap_2()
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .flex_1()
                                     .child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .text_color(theme.text_dim)
                                             .text_size(px(10.0))
                                             .child("Arrow Width"),
@@ -90,10 +90,10 @@ impl DemoApp {
                                     .child(Input::new(&self.input_arrow_width)),
                             )
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .flex_1()
                                     .child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .text_color(theme.text_dim)
                                             .text_size(px(10.0))
                                             .child("Edge Stroke"),
@@ -102,11 +102,11 @@ impl DemoApp {
                             ),
                     )
                     .child(
-                        gpui::div().flex().gap_2().child(
-                            gpui::div()
+                        gpui_kit::div().flex().gap_2().child(
+                            gpui_kit::div()
                                 .flex_1()
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .text_color(theme.text_dim)
                                         .text_size(px(10.0))
                                         .child("Edge Curvature"),
@@ -116,14 +116,14 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("3. INSPECTOR"),
                     )
@@ -157,7 +157,7 @@ impl DemoApp {
                                 (Vec::new(), Vec::new())
                             };
 
-                            gpui::div()
+                            gpui_kit::div()
                                 .flex()
                                 .flex_col()
                                 .gap_2()
@@ -167,28 +167,28 @@ impl DemoApp {
                                 .border(px(1.0))
                                 .border_color(theme.border)
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .text_color(theme.text)
-                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .font_weight(gpui_kit::FontWeight::BOLD)
                                         .text_size(px(11.0))
                                         .child(format!("Selected Node: {}", label)),
                                 )
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .text_color(theme.text_dim)
                                         .text_size(px(10.0))
                                         .child(format!("Node UUID:\n{}", uuid_str)),
                                 )
                                 .when(!lpg_labels.is_empty(), |parent| {
                                     parent.child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .flex()
                                             .flex_col()
                                             .gap_1()
                                             .child(
-                                                gpui::div()
+                                                gpui_kit::div()
                                                     .text_color(theme.accent)
-                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .font_weight(gpui_kit::FontWeight::BOLD)
                                                     .text_size(px(10.0))
                                                     .child(format!("LPG Labels: [{}]", lpg_labels.join(", "))),
                                             ),
@@ -196,7 +196,7 @@ impl DemoApp {
                                 })
                                 .when(!lpg_props.is_empty(), |parent| {
                                     parent.child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .flex()
                                             .flex_col()
                                             .gap_1()
@@ -204,24 +204,24 @@ impl DemoApp {
                                             .bg(theme.panel_bg)
                                             .rounded_md()
                                             .child(
-                                                gpui::div()
+                                                gpui_kit::div()
                                                     .text_color(theme.text)
-                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .font_weight(gpui_kit::FontWeight::BOLD)
                                                     .text_size(px(10.0))
                                                     .child("PROPERTIES (IndexMap):"),
                                             )
                                             .children(lpg_props.into_iter().map(|(k, v)| {
-                                                gpui::div()
+                                                gpui_kit::div()
                                                     .flex()
                                                     .justify_between()
                                                     .text_size(px(10.0))
                                                     .child(
-                                                        gpui::div()
+                                                        gpui_kit::div()
                                                             .text_color(theme.accent)
                                                             .child(k),
                                                     )
                                                     .child(
-                                                        gpui::div()
+                                                        gpui_kit::div()
                                                             .text_color(theme.text)
                                                             .child(v),
                                                     )
@@ -229,19 +229,19 @@ impl DemoApp {
                                     )
                                 })
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .flex()
                                         .flex_col()
                                         .gap_1()
                                         .child(
-                                            gpui::div()
+                                            gpui_kit::div()
                                                 .text_color(theme.text)
-                                                .font_weight(gpui::FontWeight::BOLD)
+                                                .font_weight(gpui_kit::FontWeight::BOLD)
                                                 .text_size(px(10.0))
                                                 .child("EXPANSION MODE:"),
                                         )
                                         .child(
-                                            gpui::div()
+                                            gpui_kit::div()
                                                 .flex()
                                                 .gap_1()
                                                 .child(
@@ -289,12 +289,12 @@ impl DemoApp {
                                         ),
                                 )
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .flex()
                                         .flex_col()
                                         .gap_1()
                                         .child(
-                                            gpui::div()
+                                            gpui_kit::div()
                                                 .text_color(theme.text_dim)
                                                 .text_size(px(10.0))
                                                 .child("Edit Primary Node Label"),
@@ -310,18 +310,18 @@ impl DemoApp {
                                         ),
                                 )
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .flex()
                                         .flex_col()
                                         .gap_1()
                                         .child(
-                                            gpui::div()
+                                            gpui_kit::div()
                                                 .text_color(theme.text)
                                                 .text_size(px(11.0))
                                                 .child("Shape"),
                                         )
                                         .child(
-                                            gpui::div().flex().flex_col().gap_1().children(
+                                            gpui_kit::div().flex().flex_col().gap_1().children(
                                                 vec![
                                                     NodeShape::Ellipse,
                                                     NodeShape::Rectangle,
@@ -360,7 +360,7 @@ impl DemoApp {
                                         ),
                                 )
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .id("delete-node-container")
                                         .p_1()
                                         .rounded_md()
@@ -395,7 +395,7 @@ impl DemoApp {
                                     ("Directed".to_string(), "None".to_string(), String::new(), Vec::new())
                                 };
 
-                            gpui::div()
+                            gpui_kit::div()
                                 .flex()
                                 .flex_col()
                                 .gap_2()
@@ -405,26 +405,26 @@ impl DemoApp {
                                 .border(px(1.0))
                                 .border_color(theme.border)
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .text_color(theme.text)
                                         .text_size(px(11.0))
                                         .child(format!("Selected Edge: idx={}", edge_idx)),
                                 )
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .text_color(theme.accent)
                                         .text_size(px(10.0))
                                         .child(format!("Direction: {}", edge_dir_str)),
                                 )
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .text_color(theme.text_dim)
                                         .text_size(px(10.0))
                                         .child(format!("Multiplicity: {}", edge_mult_str)),
                                 )
                                 .when(!edge_labels_str.is_empty(), |parent| {
                                     parent.child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .text_color(theme.text)
                                             .text_size(px(10.0))
                                             .child(format!("Edge Labels: [{}]", edge_labels_str)),
@@ -432,7 +432,7 @@ impl DemoApp {
                                 })
                                 .when(!edge_props_list.is_empty(), |parent| {
                                     parent.child(
-                                        gpui::div()
+                                        gpui_kit::div()
                                             .flex()
                                             .flex_col()
                                             .gap_1()
@@ -440,24 +440,24 @@ impl DemoApp {
                                             .bg(theme.panel_bg)
                                             .rounded_md()
                                             .child(
-                                                gpui::div()
+                                                gpui_kit::div()
                                                     .text_color(theme.text)
-                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .font_weight(gpui_kit::FontWeight::BOLD)
                                                     .text_size(px(10.0))
                                                     .child("EDGE PROPERTIES:"),
                                             )
                                             .children(edge_props_list.into_iter().map(|(k, v)| {
-                                                gpui::div()
+                                                gpui_kit::div()
                                                     .flex()
                                                     .justify_between()
                                                     .text_size(px(10.0))
                                                     .child(
-                                                        gpui::div()
+                                                        gpui_kit::div()
                                                             .text_color(theme.accent)
                                                             .child(k),
                                                     )
                                                     .child(
-                                                        gpui::div()
+                                                        gpui_kit::div()
                                                             .text_color(theme.text)
                                                             .child(v),
                                                     )
@@ -465,7 +465,7 @@ impl DemoApp {
                                     )
                                 })
                                 .child(
-                                    gpui::div()
+                                    gpui_kit::div()
                                         .id("delete-edge-container")
                                         .p_1()
                                         .rounded_md()
@@ -484,7 +484,7 @@ impl DemoApp {
                                         ),
                                 )
                         } else {
-                            gpui::div()
+                            gpui_kit::div()
                                 .text_color(theme.text_dim)
                                 .text_size(px(11.0))
                                 .child("Select a node or edge to inspect.")
@@ -492,19 +492,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("ADD NODE"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .p_2()
                             .bg(theme.bg)
                             .rounded_md()
@@ -523,19 +523,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(12.0))
                             .child("ADD EDGE"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .p_2()
                             .bg(theme.bg)
                             .rounded_md()
@@ -543,28 +543,28 @@ impl DemoApp {
                             .flex_col()
                             .gap_2()
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child("Source Node Label"),
                             )
                             .child(Input::new(&self.edge_src_state))
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child("Target Node Label"),
                             )
                             .child(Input::new(&self.edge_tgt_state))
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .text_color(theme.text_dim)
                                     .text_size(px(10.0))
                                     .child("Weight"),
                             )
                             .child(Input::new(&self.edge_weight_state))
                             .child(
-                                gpui::div()
+                                gpui_kit::div()
                                     .flex()
                                     .gap_1()
                                     .child(
@@ -641,19 +641,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(11.0))
                             .child("THEME"),
                     )
                     .child(
-                        gpui::div().flex_col().gap_1().children(
+                        gpui_kit::div().flex_col().gap_1().children(
                             vec![
                                 "Catppuccin Mocha",
                                 "Gruvbox Dark",
@@ -664,7 +664,7 @@ impl DemoApp {
                             .map(|t| {
                                 let is_active =
                                     self.themes.themes[self.current_theme_idx].name == t;
-                                gpui::div()
+                                gpui_kit::div()
                                     .id(SharedString::from(format!("theme-{}", t)))
                                     .p_1()
                                     .bg(if is_active { theme.accent } else { theme.bg })
@@ -689,19 +689,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(11.0))
                             .child("HISTORY"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .gap_2()
                             .child(Button::new("undo-btn").label("UNDO").on_click(cx.listener(
@@ -721,19 +721,19 @@ impl DemoApp {
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .text_size(px(11.0))
                             .child("WORKSPACE IO"),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .flex()
                             .flex_col()
                             .gap_2()

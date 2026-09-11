@@ -1,6 +1,6 @@
 use crate::app::DemoApp;
 use crate::theme::Theme;
-use gpui::{
+use gpui_kit::{
     px, Context, EntityInputHandler, InteractiveElement, IntoElement, MouseDownEvent,
     ParentElement, Render, Styled, Window,
 };
@@ -81,14 +81,14 @@ impl Render for DemoApp {
             .detach();
         }
 
-        gpui::div()
+        gpui_kit::div()
             .flex()
             .flex_col()
             .size_full()
             .bg(theme.bg)
             .child(self.render_title_bar(&theme))
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .flex_1()
                     .h(px(0.0))
@@ -102,32 +102,32 @@ impl Render for DemoApp {
 
 impl DemoApp {
     fn render_title_bar(&self, theme: &Theme) -> impl IntoElement {
-        use gpui_component::TitleBar;
+        use gpui_kit::component::TitleBar;
 
         TitleBar::new()
             .bg(theme.panel_bg)
             .border_color(theme.border)
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .items_center()
                     .gap_2()
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .w(px(12.0))
                             .h(px(12.0))
                             .rounded_full()
                             .bg(theme.accent),
                     )
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text)
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(gpui_kit::FontWeight::BOLD)
                             .child("Graphene-RS Interactive Visualizer"),
                     ),
             )
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .items_center()
                     .gap_4()
@@ -140,13 +140,13 @@ impl DemoApp {
                         } else {
                             format!("{:.5}%", zoom_percent)
                         };
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text_dim)
                             .text_size(px(12.0))
                             .child(format!("Zoom: {}", zoom_str))
                     })
                     .child(
-                        gpui::div()
+                        gpui_kit::div()
                             .text_color(theme.text_dim)
                             .text_size(px(12.0))
                             .child("Status: Live (Message-Passing Engine)"),
@@ -163,7 +163,7 @@ impl DemoApp {
         let weak_entity = cx.weak_entity();
         let fixture = &self.fixtures[self.selected_fixture_idx];
 
-        gpui::div()
+        gpui_kit::div()
             .id("canvas-container")
             .flex_1()
             .h_full()
@@ -171,16 +171,16 @@ impl DemoApp {
             .overflow_hidden()
             .bg(theme.bg)
             .child(
-                gpui::canvas(
+                gpui_kit::canvas(
                     move |bounds, _, cx| {
                         if let Some(entity) = weak_entity.upgrade() {
                             entity.update(cx, |this, _| {
-                                this.viewport.bounds = gpui::Bounds {
-                                    origin: gpui::point(
+                                this.viewport.bounds = gpui_kit::Bounds {
+                                    origin: gpui_kit::point(
                                         f32::from(bounds.origin.x),
                                         f32::from(bounds.origin.y),
                                     ),
-                                    size: gpui::size(
+                                    size: gpui_kit::size(
                                         f32::from(bounds.size.width),
                                         f32::from(bounds.size.height),
                                     ),
@@ -210,9 +210,9 @@ impl DemoApp {
                 .with_config(self.get_canvas_config()),
             )
             .on_mouse_down(
-                gpui::MouseButton::Left,
+                gpui_kit::MouseButton::Left,
                 cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                    let click_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+                    let click_pos = gpui_kit::point(f32::from(ev.position.x), f32::from(ev.position.y));
                     let mut controller = this.controller.clone();
                     let mut interaction = this.interaction_state.clone();
                     let mut expansion = this.collapsed_parents.clone();
@@ -276,8 +276,8 @@ impl DemoApp {
                     cx.notify();
                 }),
             )
-            .on_mouse_move(cx.listener(|this, ev: &gpui::MouseMoveEvent, _, cx| {
-                let mouse_pos = gpui::point(f32::from(ev.position.x), f32::from(ev.position.y));
+            .on_mouse_move(cx.listener(|this, ev: &gpui_kit::MouseMoveEvent, _, cx| {
+                let mouse_pos = gpui_kit::point(f32::from(ev.position.x), f32::from(ev.position.y));
                 let mut interaction = this.interaction_state.clone();
                 let mut vp = this.viewport.clone();
 
@@ -292,7 +292,7 @@ impl DemoApp {
                 cx.notify();
             }))
             .on_mouse_up(
-                gpui::MouseButton::Left,
+                gpui_kit::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     let mut interaction = this.interaction_state.clone();
                     if let Some((node_id, target_pos, phase)) =
@@ -304,10 +304,10 @@ impl DemoApp {
                     cx.notify();
                 }),
             )
-            .on_scroll_wheel(cx.listener(|this, ev: &gpui::ScrollWheelEvent, _, cx| {
+            .on_scroll_wheel(cx.listener(|this, ev: &gpui_kit::ScrollWheelEvent, _, cx| {
                 let amount = match ev.delta {
-                    gpui::ScrollDelta::Pixels(p) => f32::from(p.y),
-                    gpui::ScrollDelta::Lines(p) => p.y * 20.0,
+                    gpui_kit::ScrollDelta::Pixels(p) => f32::from(p.y),
+                    gpui_kit::ScrollDelta::Lines(p) => p.y * 20.0,
                 };
                 let mut vp = this.viewport.clone();
                 this.controller.handle_scroll(amount, &mut vp);
@@ -329,7 +329,7 @@ impl DemoApp {
         let culling_text = format!("{} Visible / {} Formatted Labels", self.telemetry_visible_nodes, self.telemetry_labels_formatted);
 
         Some(
-            gpui::div()
+            gpui_kit::div()
                 .absolute()
                 .top(px(12.0))
                 .right(px(12.0))
@@ -345,38 +345,38 @@ impl DemoApp {
                 .gap_1()
                 .text_size(px(11.0))
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.accent)
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(gpui_kit::FontWeight::BOLD)
                         .child("⚡ Telemetry HUD (Press 'H' to toggle)"),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.text)
                         .child(format!("Frame Rate: {}", fps_text)),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.text_dim)
                         .child(format!("Physics Tick: {}", physics_text)),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.text_dim)
                         .child(format!("Render Time: {}", render_text)),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.text)
                         .child(format!("Engine Threads: {} ({})", self.telemetry_worker_threads, self.telemetry_worker_state)),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.text_dim)
                         .child(scale_text),
                 )
                 .child(
-                    gpui::div()
+                    gpui_kit::div()
                         .text_color(theme.text_dim)
                         .child(culling_text),
                 ),
@@ -384,7 +384,7 @@ impl DemoApp {
     }
 
     fn render_bottom_bar(&self, theme: &Theme) -> impl IntoElement {
-        gpui::div()
+        gpui_kit::div()
             .h(px(28.0))
             .bg(theme.panel_bg)
             .border_t(px(1.0))
@@ -396,7 +396,7 @@ impl DemoApp {
             .text_xs()
             .text_color(theme.text_dim)
             .child(
-                gpui::div()
+                gpui_kit::div()
                     .flex()
                     .items_center()
                     .gap_4()

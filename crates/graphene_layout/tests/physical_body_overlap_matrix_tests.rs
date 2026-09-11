@@ -98,9 +98,9 @@ fn assert_no_overlaps_graph_and_ui<S: Copy + Default>(state: &GraphState<S>, tes
     }
 
     // 2. Verify zero overlap in Rendered UI Pixels (at 100% Zoom = 1.0)
-    let viewport_bounds = gpui::Bounds {
-        origin: gpui::Point { x: 0.0, y: 0.0 },
-        size: gpui::Size {
+    let viewport_bounds = gpui_kit::Bounds {
+        origin: gpui_kit::Point { x: 0.0, y: 0.0 },
+        size: gpui_kit::Size {
             width: 3840.0,
             height: 2160.0,
         },
